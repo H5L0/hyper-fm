@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow } from 'electron';
 import { createLogger } from '../shared/logger.js';
 import { registerIpcHandlers } from './ipc.js';
+import { initSession } from './session.js';
+import { resolveDefaultConfigPath } from './config-store.js';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -14,11 +16,11 @@ const __dirname = path.dirname(__filename);
 
 function createWindow(preloadPath: string): BrowserWindow {
   const window = new BrowserWindow({
-    width: 1200,
-    height: 720,
-    minWidth: 640,
-    minHeight: 480,
-    backgroundColor: '#f5f5f5',
+    width: 1280,
+    height: 800,
+    minWidth: 880,
+    minHeight: 540,
+    backgroundColor: '#fafafa',
     autoHideMenuBar: true,
     webPreferences: {
       preload: preloadPath,
@@ -45,9 +47,25 @@ function createWindow(preloadPath: string): BrowserWindow {
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+function defaultConfigDir(): string {
+  // 打包后 process.execPath 指向可执行文件；开发模式下是 electron 自身，
+  // 此时退回到 cwd（项目根）以满足「同级 fm.config.json」的语义。
+  if (app.isPackaged) {
+    return path.dirname(process.execPath);
+  }
+  return process.cwd();
+}
+
 async function bootstrap(): Promise<void> {
   logger.info('Electron 主进程启动');
   await app.whenReady();
+
+  const defaultPath = resolveDefaultConfigPath(defaultConfigDir());
+  try {
+    await initSession(defaultPath);
+  } catch (error) {
+    logger.error('初始化配置失败', error);
+  }
 
   const preloadPath = path.resolve(__dirname, '../preload/index.js');
   createWindow(preloadPath);

@@ -4,21 +4,38 @@
 
 ## 项目信息
 
-本项目是一个最小化 Electron + React + Vite + TypeScript 模板，提供主进程 / preload / renderer 三层骨架，以及共享日志模块，可作为新桌面应用的起点。
+本项目（fm）是一个面向个人开发者的 **项目文件夹管理器**：扫描散落硬盘的项目目录，按类型/标签整理；支持项目根 `.meta-data` 自描述与 JSON 配置文件双轨持久化。基于 Electron + React + Vite + TypeScript。
 
 ### 环境约束
 
 - 运行时：Node.js >= 22，ESM（package.json: type=module）。
 - 语言：TypeScript 严格模式（strict 与 noUnused 系列规则开启）。
-- UI：Electron + React + Vite。
+- UI：Electron + React + Vite + Tailwind v4 + shadcn（base-ui）。
 - 调用指令前使用 `eval "$(fnm env --shell bash)" && fnm use 22` 确保 Node 版本正确。
 
 ### 主要模块
 
 - 主进程：`src/main/`
-- 预加载层：`src/preload/`
+  - `config-store.ts`：JSON 配置原子读写
+  - `meta-file.ts`：项目根 `.meta-data` 读写
+  - `scanner.ts` + `ignore-matcher.ts`：递归扫描与忽略规则
+  - `project-repo.ts`：DB 与扫描结果合并、分类/扫描根操作
+  - `session.ts`：当前已加载配置 + 串行写盘
+  - `ipc.ts`：`fm:*` IPC 通道
+  - `fm-error.ts`：跨进程错误结构
+  - `index.ts`：Electron 启动
+- 预加载层：`src/preload/`（暴露 `window.app` 与 `window.fm`）
 - 渲染层：`src/renderer/`
-- 共享代码（含日志模块）：`src/shared/`
+  - `src/store/app-store.tsx`：全局状态（useReducer + Context）
+  - `src/components/`：AppShell / Sidebar / Toolbar / ProjectGrid / ProjectDrawer / SettingsPanel / Toaster / ThemeEffect / TitleBar
+- 共享代码：`src/shared/`（types / schema / bridge / id / path-utils / logger）
+- 文档：`docs/`（01-overview / 02-data-model / 03-ipc-contract / 04-ui-design / 05-roadmap）
+
+### 数据模型要点
+
+- **配置文件**：默认 `fm.config.json` 与可执行文件同级；用户可在「设置」中切换。
+- **优先级**：项目根 `.meta-data` 优先，DB 兜底。`.meta-data` 中的 `category` 按名称解析为 `categoryId`，缺失则自动创建。
+- **路径**：内部统一存为正斜杠绝对路径。
 
 ### 更多信息
 

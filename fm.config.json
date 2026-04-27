@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "scanRoots": [
+    {
+      "id": "root_iw577n",
+      "path": "D:/files",
+      "maxDepth": 3,
+      "enabled": true
+    }
+  ],
+  "ignore": {
+    "respectGitignore": true,
+    "globs": [
+      "node_modules",
+      ".git",
+      "dist",
+      "build",
+      ".cache",
+      ".venv",
+      "__pycache__"
+    ]
+  },
+  "categories": [
+    {
+      "id": "cat_p35vq9",
+      "name": "游戏"
+    },
+    {
+      "id": "cat_pdkydo",
+      "name": "Typescript"
+    }
+  ],
+  "projects": [
+    {
+      "id": "prj_zrckj4",
+      "path": "D:/files/bezier-bspline-demo/src/assets",
+      "rootId": "root_iw577n",
+      "name": "assets",
+      "tags": [],
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2025-06-16T11:23:57.114Z"
+    },
+    {
+      "id": "prj_ope0is",
+      "path": "D:/files/bezier-bspline-demo/src/scripts",
+      "rootId": "root_iw577n",
+      "name": "scripts",
+      "tags": [],
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2025-06-16T11:23:57.107Z"
+    },
+    {
+      "id": "prj_dohzdd",
+      "path": "D:/files/bezier-bspline-demo/src/styles",
+      "rootId": "root_iw577n",
+      "name": "styles",
+      "tags": [],
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2025-06-16T11:23:21.637Z"
+    },
+    {
+      "id": "prj_rcoi9y",
+      "path": "D:/files/dear-mt",
+      "rootId": "root_iw577n",
+      "name": "dear-mt",
+      "tags": [],
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2026-04-24T10:22:09.772Z"
+    },
+    {
+      "id": "prj_io76l6",
+      "path": "D:/files/fm",
+      "rootId": "root_iw577n",
+      "name": "fm",
+      "tags": [],
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2026-04-27T13:40:41.166Z"
+    },
+    {
+      "id": "prj_xc5xcb",
+      "path": "D:/files/HalfLink",
+      "rootId": "root_iw577n",
+      "name": "HalfLink",
+      "tags": [],
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2025-12-01T12:21:19.270Z"
+    },
+    {
+      "id": "prj_2xh9ey",
+      "path": "D:/files/hyper-lynx",
+      "rootId": "root_iw577n",
+      "name": "hyper-lynx",
+      "tags": [],
+      "hasMetaFile": true,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2026-04-27T11:38:52.047Z",
+      "description": "",
+      "categoryId": "cat_pdkydo"
+    },
+    {
+      "id": "prj_0t8ok8",
+      "path": "D:/files/llm-translator",
+      "rootId": "root_iw577n",
+      "name": "llm-translator",
+      "tags": [],
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2026-03-19T13:49:17.086Z"
+    },
+    {
+      "id": "prj_pd22po",
+      "path": "D:/files/memory-allocator/MemoryAllocator",
+      "rootId": "root_iw577n",
+      "name": "MemoryAllocator",
+      "tags": [],
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2025-11-19T08:04:06.612Z"
+    },
+    {
+      "id": "prj_bjf0y2",
+      "path": "D:/files/ugen-editor",
+      "rootId": "root_iw577n",
+      "name": "ugen-editor",
+      "tags": [],
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastModifiedAt": "2025-10-30T07:14:05.797Z"
+    }
+  ],
+  "ui": {
+    "theme": "system",
+    "view": "grid"
+  }
+}
