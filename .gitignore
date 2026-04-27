@@ -1,0 +1,13 @@
+# nodejs
+node_modules
+dist
+
+# IDE
+.vscode
+
+# 测试覆盖率
+coverage/
+
+# 本地文件
+.*
+!.gitignore
