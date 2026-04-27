@@ -257,6 +257,62 @@ export function setProjectMetaFlag(
 }
 
 // ---------------------------------------------------------------------------
+// 手动添加项目
+// ---------------------------------------------------------------------------
+
+/**
+ * 手动添加项目：不依赖扫描根。如果给定路径恰好位于某个扫描根之下，则归属该根；
+ * 否则使用合成 rootId，避免被扫描的「removed」检测误删。
+ */
+export const MANUAL_ROOT_ID = 'manual';
+
+export interface AddProjectInput {
+  path: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  categoryId?: string;
+  hasMetaFile?: boolean;
+  mtime?: string;
+}
+
+export function addProjectManual(
+  config: AppConfig,
+  input: AddProjectInput,
+  platform: NodeJS.Platform,
+): { config: AppConfig; project: Project } {
+  const normalized = normalizePath(input.path);
+  if (findProjectByPath(config, normalized, platform)) {
+    throw new FmError('DUPLICATE_PATH', `项目已存在：${normalized}`);
+  }
+  if (input.categoryId && !config.categories.some(c => c.id === input.categoryId)) {
+    throw new FmError('CATEGORY_NOT_FOUND', `分类不存在：${input.categoryId}`);
+  }
+  const root = config.scanRoots.find(r => {
+    const rp = normalizePath(r.path).toLowerCase();
+    return normalized.toLowerCase().startsWith(`${rp}/`) || normalized.toLowerCase() === rp;
+  });
+  const name = input.name?.trim() || normalized.split('/').filter(Boolean).pop() || normalized;
+  const project: Project = {
+    id: generateId(ID_PREFIX.project),
+    path: normalized,
+    rootId: root?.id ?? MANUAL_ROOT_ID,
+    name,
+    description: input.description,
+    tags: input.tags?.map(t => t.trim()).filter(Boolean) ?? [],
+    categoryId: input.categoryId,
+    hasMetaFile: input.hasMetaFile ?? false,
+    lastScannedAt: new Date().toISOString(),
+    lastModifiedAt: input.mtime ?? new Date().toISOString(),
+  };
+  return { config: { ...config, projects: [...config.projects, project] }, project };
+}
+
+export function removeProject(config: AppConfig, id: string): AppConfig {
+  return { ...config, projects: config.projects.filter(p => p.id !== id) };
+}
+
+// ---------------------------------------------------------------------------
 // 扫描根
 // ---------------------------------------------------------------------------
 

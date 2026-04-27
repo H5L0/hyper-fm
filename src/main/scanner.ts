@@ -14,11 +14,12 @@ import { createLogger } from '../shared/logger.js';
 import { normalizePath } from '../shared/path-utils.js';
 import { createIgnoreMatcher, type IgnoreMatcher } from './ignore-matcher.js';
 import { metaFileExists } from './meta-file.js';
+import { META_FILE_NAME } from '../shared/types.js';
 
 const logger = createLogger('main:scanner');
 
 const PROJECT_MARKERS = new Set([
-  '.meta-data',
+  META_FILE_NAME,
   '.git',
   'package.json',
   'Cargo.toml',

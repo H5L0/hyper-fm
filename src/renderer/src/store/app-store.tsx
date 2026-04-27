@@ -16,6 +16,7 @@ import {
 import type {
   AppConfig,
   Category,
+  ManualProjectInput,
   Project,
   ProjectMetaPatch,
   ScanProgressEvent,
@@ -162,6 +163,9 @@ interface AppActions {
   saveProject(id: string, patch: ProjectMetaPatch, writeFile: boolean): Promise<void>;
   removeMetaFile(id: string): Promise<void>;
   revealProject(id: string): Promise<void>;
+  addProject(input: ManualProjectInput): Promise<Project>;
+  removeProject(id: string): Promise<void>;
+  pickProjectDirectory(): Promise<string | null>;
   addCategory(name: string, color?: string): Promise<Category>;
   renameCategory(id: string, name: string): Promise<void>;
   setCategoryColor(id: string, color: string): Promise<void>;
@@ -339,6 +343,34 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [handleError],
   );
 
+  const addProjectAction = useCallback(
+    async (input: ManualProjectInput) => {
+      const project = await window.fm.projects.add(input);
+      dispatch({ type: 'updateProject', project });
+      // 同时插入新项目（store 中 updateProject 仅替换；新增需 reload）
+      await reloadCurrent();
+      return project;
+    },
+    [reloadCurrent],
+  );
+
+  const removeProjectAction = useCallback(
+    async (id: string) => {
+      try {
+        await window.fm.projects.remove(id);
+        await reloadCurrent();
+      } catch (error) {
+        handleError(error, '删除项目失败');
+      }
+    },
+    [handleError, reloadCurrent],
+  );
+
+  const pickProjectDirectoryAction = useCallback(
+    () => window.fm.projects.pickDirectory(),
+    [],
+  );
+
   const addCategoryAction = useCallback(
     async (name: string, color?: string) => {
       const category = await window.fm.categories.create({ name, color });
@@ -445,6 +477,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       saveProject,
       removeMetaFile,
       revealProject,
+      addProject: addProjectAction,
+      removeProject: removeProjectAction,
+      pickProjectDirectory: pickProjectDirectoryAction,
       addCategory: addCategoryAction,
       renameCategory: renameCategoryAction,
       setCategoryColor: setCategoryColorAction,
@@ -460,15 +495,18 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       addCategoryAction,
+      addProjectAction,
       addScanRootAction,
       dismissToast,
       loadConfig,
       pickAndCreateConfig,
       pickAndLoadConfig,
       pickDirectory,
+      pickProjectDirectoryAction,
       refreshProjects,
       removeCategoryAction,
       removeMetaFile,
+      removeProjectAction,
       removeScanRootAction,
       renameCategoryAction,
       revealProject,

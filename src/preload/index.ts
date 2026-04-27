@@ -75,6 +75,10 @@ const fmApi: FmBridge = {
     removeMetaFile: id =>
       ipcRenderer.invoke('fm:projects:removeMetaFile', id) as Promise<Project>,
     revealInOs: id => ipcRenderer.invoke('fm:projects:revealInOs', id) as Promise<void>,
+    add: input => ipcRenderer.invoke('fm:projects:add', input) as Promise<Project>,
+    remove: id => ipcRenderer.invoke('fm:projects:remove', id) as Promise<void>,
+    pickDirectory: () =>
+      ipcRenderer.invoke('fm:projects:pickDirectory') as Promise<string | null>,
   },
   categories: {
     create: input => ipcRenderer.invoke('fm:categories:create', input) as Promise<Category>,

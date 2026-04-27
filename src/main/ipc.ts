@@ -21,11 +21,13 @@ import {
 } from '../shared/sync-types.js';
 import {
   addCategory,
+  addProjectManual,
   addScanRoot,
   applyProjectPatch,
   findProjectById,
   mergeScanResult,
   removeCategory,
+  removeProject,
   removeScanRoot,
   renameCategory,
   setCategoryColor,
@@ -338,6 +340,71 @@ export function registerIpcHandlers(): void {
       if (!project) throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${id}`);
       shell.openPath(path.normalize(project.path));
       return undefined as void;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:projects:add',
+    wrap('fm:projects:add', async (_e, input: unknown) => {
+      const i = input as { path: string; name?: string; description?: string; tags?: string[]; categoryId?: string };
+      assertString(i?.path, 'input.path');
+      return mutate(async config => {
+        const { config: next, project } = addProjectManual(config, i, process.platform);
+        // 若项目根存在 .meta-data，回填名称/标签等
+        const meta = await readMetaFile(project.path);
+        if (meta) {
+          let cfg = next;
+          let categoryId = project.categoryId;
+          if (meta.category) {
+            let cat = cfg.categories.find(c => c.name === meta.category);
+            if (!cat) {
+              const r = addCategory(cfg, { name: meta.category });
+              cfg = r.config;
+              cat = r.category;
+            }
+            categoryId = cat.id;
+          }
+          const merged: Project = {
+            ...project,
+            name: meta.name ?? project.name,
+            description: meta.description ?? project.description,
+            tags: meta.tags ?? project.tags,
+            categoryId,
+            hasMetaFile: true,
+          };
+          cfg = {
+            ...cfg,
+            projects: cfg.projects.map(p => (p.id === merged.id ? merged : p)),
+          };
+          return { next: cfg, result: merged };
+        }
+        return { next, result: project };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:projects:remove',
+    wrap('fm:projects:remove', async (_e, id: unknown) => {
+      assertString(id, 'id');
+      return mutate(config => ({ next: removeProject(config, id), result: undefined as void }));
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:projects:pickDirectory',
+    wrap('fm:projects:pickDirectory', async (event): Promise<string | null> => {
+      const window = senderWindow(event);
+      const res = window
+        ? await dialog.showOpenDialog(window, {
+            title: '选择项目目录',
+            properties: ['openDirectory'],
+          })
+        : await dialog.showOpenDialog({
+            title: '选择项目目录',
+            properties: ['openDirectory'],
+          });
+      return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]!;
     }),
   );
 

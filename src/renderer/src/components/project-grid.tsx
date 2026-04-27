@@ -2,8 +2,9 @@
 // 项目卡片网格 / 列表
 // ---------------------------------------------------------------------------
 
-import { useMemo } from 'react';
-import type { Category, Project } from '@shared/bridge.js';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { Copy, ExternalLink, FileText, Pencil, Terminal, Trash2 } from 'lucide-react';
+import type { Category, PresetCommandDescriptor, Project } from '@shared/bridge.js';
 import {
   type HighlightSegment,
   type MatchExplain,
@@ -57,6 +58,17 @@ function HighlightedText({
 export function ProjectGrid() {
   const { config, categoryFilter, search, view, selectedProjectId } = useAppState();
   const actions = useAppActions();
+  const [menu, setMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
+  const [presets, setPresets] = useState<PresetCommandDescriptor[]>([]);
+
+  useEffect(() => {
+    void window.fm.commands.presets().then(setPresets);
+  }, []);
+
+  const openMenu = (e: MouseEvent, project: Project) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, project });
+  };
 
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>();
@@ -105,6 +117,16 @@ export function ProjectGrid() {
     return <EmptyState title="无匹配项目" hint="试试调整筛选或清空搜索。" />;
   }
 
+  const menuOverlay = menu ? (
+    <ProjectContextMenu
+      x={menu.x}
+      y={menu.y}
+      project={menu.project}
+      presets={presets}
+      onClose={() => setMenu(null)}
+    />
+  ) : null;
+
   if (view === 'list') {
     return (
       <div className="flex-1 overflow-y-auto">
@@ -124,6 +146,7 @@ export function ProjectGrid() {
                 <tr
                   key={p.id}
                   onClick={() => actions.selectProject(p.id)}
+                  onContextMenu={e => openMenu(e, p)}
                   className={cn(
                     'cursor-pointer border-b border-border/60 hover:bg-muted/40',
                     selectedProjectId === p.id && 'bg-muted/60',
@@ -166,6 +189,7 @@ export function ProjectGrid() {
             })}
           </tbody>
         </table>
+        {menuOverlay}
       </div>
     );
   }
@@ -181,11 +205,13 @@ export function ProjectGrid() {
               category={cat}
               selected={selectedProjectId === p.id}
               onSelect={() => actions.selectProject(p.id)}
+              onContextMenu={e => openMenu(e, p)}
               highlightValues={explain.values}
             />
           );
         })}
       </div>
+      {menuOverlay}
     </div>
   );
 }
@@ -195,18 +221,21 @@ function ProjectCard({
   category,
   selected,
   onSelect,
+  onContextMenu,
   highlightValues,
 }: {
   project: Project;
   category?: Category;
   selected: boolean;
   onSelect: () => void;
+  onContextMenu: (e: MouseEvent) => void;
   highlightValues: readonly string[];
 }) {
   return (
     <button
       type="button"
       onClick={onSelect}
+      onContextMenu={onContextMenu}
       className={cn(
         'group relative flex h-32 flex-col rounded-lg border bg-card px-3 py-2.5 text-left transition-all',
         'hover:border-foreground/20 hover:shadow-sm',
@@ -272,4 +301,130 @@ function EmptyState({ title, hint }: { title: string; hint: string }) {
       <p className="mt-1 max-w-sm text-xs text-muted-foreground">{hint}</p>
     </div>
   );
+}
+
+function ProjectContextMenu({
+  x,
+  y,
+  project,
+  presets,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  project: Project;
+  presets: PresetCommandDescriptor[];
+  onClose: () => void;
+}) {
+  const actions = useAppActions();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const run = async (commandId: string) => {
+    onClose();
+    try {
+      const r = await window.fm.commands.run(commandId, project.id);
+      if (r.clipboard) actions.toast('success', `已复制：${r.clipboard}`);
+      else actions.toast('success', '命令已启动');
+    } catch (err) {
+      actions.toast('error', err instanceof Error ? err.message : '命令执行失败');
+    }
+  };
+
+  const iconOf = (id: string) => {
+    if (id.startsWith('open.')) return id === 'open.terminal' ? Terminal : ExternalLink;
+    if (id.startsWith('copy.')) return Copy;
+    return FileText;
+  };
+
+  // 视口边界纠正
+  const style: React.CSSProperties = { top: y, left: x };
+  if (typeof window !== 'undefined') {
+    const margin = 8;
+    if (x + 220 + margin > window.innerWidth) style.left = window.innerWidth - 220 - margin;
+    if (y + 280 + margin > window.innerHeight) style.top = window.innerHeight - 280 - margin;
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="关闭菜单"
+        onClick={onClose}
+        onContextMenu={e => {
+          e.preventDefault();
+          onClose();
+        }}
+        className="fixed inset-0 z-40 cursor-default"
+      />
+      <div
+        role="menu"
+        className="fixed z-50 min-w-[200px] overflow-hidden rounded-md border border-border bg-popover py-1 text-sm shadow-md"
+        style={style}
+      >
+        <MenuItem
+          onClick={() => {
+            actions.selectProject(project.id);
+            onClose();
+          }}
+          icon={<Pencil className="size-3.5" />}
+        >
+          编辑详情…
+        </MenuItem>
+        <MenuSep />
+        {presets.map(p => {
+          const Icon = iconOf(p.id);
+          return (
+            <MenuItem key={p.id} onClick={() => void run(p.id)} icon={<Icon className="size-3.5" />}>
+              {p.label}
+            </MenuItem>
+          );
+        })}
+        <MenuSep />
+        <MenuItem
+          onClick={() => {
+            onClose();
+            if (confirm(`从列表移除项目 “${project.name}”？（不会删除磁盘文件）`)) {
+              void actions.removeProject(project.id);
+            }
+          }}
+          icon={<Trash2 className="size-3.5" />}
+        >
+          从列表移除
+        </MenuItem>
+      </div>
+    </>
+  );
+}
+
+function MenuItem({
+  icon,
+  children,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted"
+    >
+      <span className="text-muted-foreground">{icon}</span>
+      {children}
+    </button>
+  );
+}
+
+function MenuSep() {
+  return <div className="my-1 border-t border-border" />;
 }

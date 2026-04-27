@@ -92,6 +92,17 @@ export interface FmProjectsBridge {
   writeMetaFile(id: string, patch: ProjectMetaPatch): Promise<Project>;
   removeMetaFile(id: string): Promise<Project>;
   revealInOs(id: string): Promise<void>;
+  add(input: ManualProjectInput): Promise<Project>;
+  remove(id: string): Promise<void>;
+  pickDirectory(): Promise<string | null>;
+}
+
+export interface ManualProjectInput {
+  path: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  categoryId?: string;
 }
 
 export interface FmCategoriesBridge {

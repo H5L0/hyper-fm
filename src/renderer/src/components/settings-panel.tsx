@@ -141,11 +141,9 @@ export function SettingsPanel() {
                   key={c.id}
                   className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5"
                 >
-                  <input
-                    type="color"
-                    value={c.color ?? '#888888'}
-                    onChange={e => void actions.setCategoryColor(c.id, e.target.value)}
-                    className="size-5 cursor-pointer rounded border border-border bg-transparent"
+                  <ColorSwatch
+                    color={c.color ?? '#888888'}
+                    onChange={value => void actions.setCategoryColor(c.id, value)}
                   />
                   <input
                     defaultValue={c.name}
@@ -265,6 +263,23 @@ function DepthInput({ value, onChange }: { value: number; onChange: (v: number) 
   );
 }
 
+function ColorSwatch({ color, onChange }: { color: string; onChange: (v: string) => void }) {
+  return (
+    <label
+      className="relative inline-block size-5 shrink-0 cursor-pointer overflow-hidden rounded-full border border-border"
+      style={{ backgroundColor: color }}
+      title="点击选择颜色"
+    >
+      <input
+        type="color"
+        value={color}
+        onChange={e => onChange(e.target.value)}
+        className="absolute inset-0 size-full cursor-pointer opacity-0"
+      />
+    </label>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 同步
 // ---------------------------------------------------------------------------
@@ -366,7 +381,7 @@ function SyncSection() {
   };
 
   return (
-    <Section title="同步" hint="跨设备同步项目元数据与文件。M2 范围：手动推/拉，无中央服务器。">
+    <Section title="同步" hint="跨设备同步项目元数据与文件。">
       <div className="space-y-3 text-sm">
         <div className="rounded-md border border-border bg-card px-3 py-2.5">
           <p className="text-[0.7rem] text-muted-foreground">本机设备</p>
