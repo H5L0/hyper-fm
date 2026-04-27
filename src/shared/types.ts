@@ -42,6 +42,12 @@ export interface Project {
   hasMetaFile: boolean;
   lastScannedAt: string;
   lastModifiedAt?: string;
+  /** 上次同步成功的时间（推送或拉取） */
+  syncedAt?: string;
+  /** 上次同步时该项目的内容指纹 */
+  syncedHash?: string;
+  /** 上次拉取来源设备 ID */
+  syncedFrom?: string;
 }
 
 export type ThemePreference = 'light' | 'dark' | 'system';
@@ -59,6 +65,12 @@ export interface AppConfig {
   categories: Category[];
   projects: Project[];
   ui: UiPreferences;
+  /** M2：设备身份与已知对端 */
+  devices?: import('./sync-types.js').DeviceRegistry;
+  /** M2：同步设置 */
+  sync?: import('./sync-types.js').SyncSettings;
+  /** M3：自定义命令列表 */
+  commands?: import('./sync-types.js').CustomCommand[];
 }
 
 // ---------------------------------------------------------------------------
@@ -119,4 +131,10 @@ export type FmErrorCode =
   | 'CATEGORY_NOT_FOUND'
   | 'DUPLICATE_PATH'
   | 'WRITE_FAILED'
+  | 'SYNC_BUNDLE_INVALID'
+  | 'SYNC_BUNDLE_DIR_MISSING'
+  | 'SYNC_DEVICE_UNKNOWN'
+  | 'SYNC_TRANSPORT_FAILED'
+  | 'COMMAND_NOT_FOUND'
+  | 'COMMAND_FAILED'
   | 'INTERNAL';

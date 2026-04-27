@@ -3,8 +3,9 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import { ExternalLink, FileMinus, FileText, Save, X } from 'lucide-react';
-import type { Project, ProjectMetaPatch } from '@shared/bridge.js';
+import { ChevronDown, ExternalLink, FileMinus, FileText, Save, Terminal, X } from 'lucide-react';
+import type { CustomCommand, PresetCommandDescriptor, Project, ProjectMetaPatch } from '@shared/bridge.js';
+import { explainMatch, matchProject, parseSearchQuery } from '@shared/search.js';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '../store/app-store.js';
@@ -26,7 +27,7 @@ function projectToForm(project: Project): FormState {
 }
 
 export function ProjectDrawer() {
-  const { selectedProjectId, config } = useAppState();
+  const { selectedProjectId, config, search } = useAppState();
   const actions = useAppActions();
   const project = useMemo(
     () => config.projects.find(p => p.id === selectedProjectId),
@@ -35,10 +36,14 @@ export function ProjectDrawer() {
 
   const [form, setForm] = useState<FormState | null>(project ? projectToForm(project) : null);
   const [tagDraft, setTagDraft] = useState('');
+  const [presets, setPresets] = useState<PresetCommandDescriptor[]>([]);
+  const [customCommands, setCustomCommands] = useState<CustomCommand[]>([]);
+  const [commandsOpen, setCommandsOpen] = useState(false);
 
   useEffect(() => {
     setForm(project ? projectToForm(project) : null);
     setTagDraft('');
+    setCommandsOpen(false);
   }, [project?.id, project?.lastScannedAt]);
 
   // ESC 关闭
@@ -51,7 +56,33 @@ export function ProjectDrawer() {
     return () => window.removeEventListener('keydown', onKey);
   }, [project, actions]);
 
+  useEffect(() => {
+    void window.fm.commands.presets().then(setPresets);
+    void window.fm.commands.list().then(setCustomCommands);
+  }, []);
+
+  const matchExplanation = useMemo(() => {
+    if (!project || !search.trim()) return '';
+    const query = parseSearchQuery(search);
+    const cat = project.categoryId
+      ? config.categories.find(c => c.id === project.categoryId)
+      : undefined;
+    const explain = matchProject(project, query, { category: cat });
+    return explain ? explainMatch(explain) : '';
+  }, [project, search, config.categories]);
+
   if (!project || !form) return null;
+
+  const runCommand = async (commandId: string) => {
+    try {
+      const r = await window.fm.commands.run(commandId, project.id);
+      setCommandsOpen(false);
+      if (r.clipboard) actions.toast('success', `已复制：${r.clipboard}`);
+      else actions.toast('success', '命令已启动');
+    } catch (err) {
+      actions.toast('error', err instanceof Error ? err.message : '命令执行失败');
+    }
+  };
 
   const buildPatch = (): ProjectMetaPatch => ({
     name: form.name,
@@ -103,6 +134,47 @@ export function ProjectDrawer() {
             )}
           </div>
           <div className="flex items-center gap-1">
+            <div className="relative">
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                title="项目命令"
+                onClick={() => setCommandsOpen(v => !v)}
+              >
+                <Terminal className="size-3.5" />
+              </Button>
+              {commandsOpen ? (
+                <div className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-md border border-border bg-popover py-1 text-sm shadow-md">
+                  {presets.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => void runCommand(p.id)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                  {customCommands.length > 0 ? (
+                    <>
+                      <div className="my-1 border-t border-border" />
+                      {customCommands.map(c => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => void runCommand(c.id)}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted"
+                          title={c.description ?? c.command}
+                        >
+                          <ChevronDown className="size-3 shrink-0 opacity-0" />
+                          {c.label}
+                        </button>
+                      ))}
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             <Button
               size="icon-xs"
               variant="ghost"
@@ -120,6 +192,12 @@ export function ProjectDrawer() {
             </Button>
           </div>
         </div>
+
+        {matchExplanation ? (
+          <div className="border-b border-border bg-muted/40 px-4 py-1.5 text-[0.7rem] text-muted-foreground">
+            {matchExplanation}
+          </div>
+        ) : null}
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
           <Field label="名称">

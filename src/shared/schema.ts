@@ -12,6 +12,15 @@ import {
   type UiPreferences,
   CONFIG_SCHEMA_VERSION,
 } from './types.js';
+import {
+  type CustomCommand,
+  type DeviceRegistry,
+  type KnownDevice,
+  type SyncSettings,
+  type SyncNetworkSettings,
+  createDefaultSyncNetwork,
+  DEFAULT_SYNC_LISTEN_PORT,
+} from './sync-types.js';
 
 // ---------------------------------------------------------------------------
 // 默认值
@@ -136,6 +145,9 @@ function validateProject(value: unknown, idx: number, errors: ValidationError[])
     hasMetaFile,
     lastScannedAt,
     lastModifiedAt: isString(v.lastModifiedAt) ? v.lastModifiedAt : undefined,
+    syncedAt: isString(v.syncedAt) ? v.syncedAt : undefined,
+    syncedHash: isString(v.syncedHash) ? v.syncedHash : undefined,
+    syncedFrom: isString(v.syncedFrom) ? v.syncedFrom : undefined,
   };
 }
 
@@ -163,6 +175,96 @@ function validateIgnore(value: unknown, errors: ValidationError[]): IgnoreRules 
     typeof value.respectGitignore === 'boolean' ? value.respectGitignore : true;
   const globs = isStringArray(value.globs) ? value.globs : createDefaultIgnore().globs;
   return { respectGitignore, globs };
+}
+
+// ---------------------------------------------------------------------------
+// 设备 / 同步 / 命令（可选字段）
+// ---------------------------------------------------------------------------
+
+function validateKnownDevice(value: unknown): KnownDevice | null {
+  if (!isObject(value)) return null;
+  const { id, name, lastSeenAt, lastEndpoint } = value;
+  if (!isString(id) || !isString(name)) return null;
+  return {
+    id,
+    name,
+    lastSeenAt: isString(lastSeenAt) ? lastSeenAt : undefined,
+    lastEndpoint: isString(lastEndpoint) ? lastEndpoint : undefined,
+  };
+}
+
+function validateDevices(value: unknown, errors: ValidationError[]): DeviceRegistry | undefined {
+  if (value === undefined) return undefined;
+  if (!isObject(value)) {
+    pushError(errors, 'devices', '必须为对象');
+    return undefined;
+  }
+  const { selfId, selfName, known } = value;
+  if (!isString(selfId) || !isString(selfName)) {
+    pushError(errors, 'devices', 'selfId/selfName 缺失');
+    return undefined;
+  }
+  const list = Array.isArray(known)
+    ? known.map(validateKnownDevice).filter((d): d is KnownDevice => d !== null)
+    : [];
+  return { selfId, selfName, known: list };
+}
+
+function validateNetworkSettings(value: unknown): SyncNetworkSettings {
+  if (!isObject(value)) return createDefaultSyncNetwork();
+  const { listenPort, autoStart, relayMode } = value;
+  return {
+    listenPort:
+      typeof listenPort === 'number' && Number.isFinite(listenPort) && listenPort > 0 && listenPort < 65536
+        ? Math.floor(listenPort)
+        : DEFAULT_SYNC_LISTEN_PORT,
+    autoStart: typeof autoStart === 'boolean' ? autoStart : false,
+    relayMode: typeof relayMode === 'boolean' ? relayMode : false,
+  };
+}
+
+function validateSync(value: unknown, errors: ValidationError[]): SyncSettings | undefined {
+  if (value === undefined) return undefined;
+  if (!isObject(value)) {
+    pushError(errors, 'sync', '必须为对象');
+    return undefined;
+  }
+  const out: SyncSettings = {};
+  if (isString(value.bundleDir) && value.bundleDir.length > 0) out.bundleDir = value.bundleDir;
+  if (value.network !== undefined) out.network = validateNetworkSettings(value.network);
+  return out;
+}
+
+function validateCommand(value: unknown, idx: number, errors: ValidationError[]): CustomCommand | null {
+  const base = `commands[${idx}]`;
+  if (!isObject(value)) {
+    pushError(errors, base, '必须为对象');
+    return null;
+  }
+  const { id, label, command, args, cwd, description } = value;
+  if (!isString(id) || !isString(label) || !isString(command)) {
+    pushError(errors, base, 'id/label/command 必须为字符串');
+    return null;
+  }
+  return {
+    id,
+    label,
+    command,
+    args: isStringArray(args) ? args : undefined,
+    cwd: cwd === 'parent' || cwd === 'project' ? cwd : undefined,
+    description: isString(description) ? description : undefined,
+  };
+}
+
+function validateCommands(value: unknown, errors: ValidationError[]): CustomCommand[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    pushError(errors, 'commands', '必须为数组');
+    return undefined;
+  }
+  return value
+    .map((c, i) => validateCommand(c, i, errors))
+    .filter((c): c is CustomCommand => c !== null);
 }
 
 export interface ValidationResult {
@@ -204,6 +306,9 @@ export function validateConfig(input: unknown): ValidationResult {
 
   const ignore = validateIgnore(input.ignore, errors);
   const ui = validateUi(input.ui, errors);
+  const devices = validateDevices(input.devices, errors);
+  const sync = validateSync(input.sync, errors);
+  const commands = validateCommands(input.commands, errors);
 
   const config: AppConfig = {
     version: CONFIG_SCHEMA_VERSION,
@@ -212,6 +317,9 @@ export function validateConfig(input: unknown): ValidationResult {
     categories,
     projects,
     ui,
+    ...(devices ? { devices } : {}),
+    ...(sync ? { sync } : {}),
+    ...(commands ? { commands } : {}),
   };
   return { config, errors };
 }

@@ -9,5 +9,7 @@
 | [03-ipc-contract.md](03-ipc-contract.md) | `window.fm.*` 与 `fm:*` IPC 通道契约 |
 | [04-ui-design.md](04-ui-design.md) | 布局、组件、交互细节、状态空间 |
 | [05-roadmap.md](05-roadmap.md) | 实施路线、任务分解、风险 |
+| [06-sync-design.md](06-sync-design.md) | M2：zip 导入导出、共享目录、TCP P2P、中转设备 |
+| [07-m3-features.md](07-m3-features.md) | M3：预设/自定义命令、元数据搜索增强 |
 
-阅读顺序：01 → 02 → 03 → 04 → 05。
+阅读顺序：01 → 02 → 03 → 04 → 05 → 06 → 07。

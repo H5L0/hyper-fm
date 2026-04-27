@@ -12,7 +12,13 @@ import {
   type Project,
   type ProjectMetaPatch,
   type ScanReport,
+  type SyncImportItem,
+  type SyncPullItem,
+  type SyncSettings,
 } from '../shared/bridge.js';
+import {
+  type CustomCommand,
+} from '../shared/sync-types.js';
 import {
   addCategory,
   addScanRoot,
@@ -31,8 +37,48 @@ import { createConfig as createConfigFile } from './config-store.js';
 import { scanRoot } from './scanner.js';
 import { readMetaFile, removeMetaFile, writeMetaFile } from './meta-file.js';
 import { FmError, toFmError } from './fm-error.js';
+import {
+  ensureDeviceRegistry,
+  setSelfName,
+  upsertKnownDevice,
+} from './sync/device.js';
+import {
+  diffAgainstBundleDir,
+  pushToBundleDir,
+  pullFromBundleDir,
+  exportBundleZip,
+  previewBundleZip,
+  applyBundleZip,
+} from './sync/manager.js';
+import {
+  startSyncServer,
+  type SyncServer,
+  type ServerHandlers,
+} from './sync/tcp-transport.js';
+import {
+  publishToBundleDir,
+  readDeviceManifest,
+  readProjectZip as readBundleProjectZip,
+} from './sync/dir-bundle.js';
+import { buildLocalManifest } from './sync/manager.js';
+import { unpackProjectZip } from './sync/zip-bundle.js';
+import {
+  PRESET_COMMANDS,
+} from '../shared/sync-types.js';
+import {
+  addCustomCommand,
+  removeCustomCommand,
+  runCommand,
+  updateCustomCommand,
+} from './commands/runner.js';
 
 const logger = createLogger('main:ipc');
+
+// ---------------------------------------------------------------------------
+// 模块状态：TCP 服务端实例
+// ---------------------------------------------------------------------------
+
+let activeServer: SyncServer | null = null;
 
 // ---------------------------------------------------------------------------
 // 包装：统一日志与错误归一化
@@ -338,7 +384,325 @@ export function registerIpcHandlers(): void {
     }),
   );
 
+  registerSyncHandlers();
+  registerCommandHandlers();
+
   logger.info('IPC 处理器已注册');
+}
+
+// ---------------------------------------------------------------------------
+// 同步
+// ---------------------------------------------------------------------------
+
+function registerSyncHandlers(): void {
+  ipcMain.handle(
+    'fm:sync:getDevice',
+    wrap('fm:sync:getDevice', async () => {
+      return mutate(config => {
+        const { config: next } = ensureDeviceRegistry(config);
+        return { next, result: next.devices! };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:setSelfName',
+    wrap('fm:sync:setSelfName', async (_e, name: unknown) => {
+      assertString(name, 'name');
+      return mutate(config => {
+        const next = setSelfName(config, name);
+        return { next, result: next.devices! };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:getSettings',
+    wrap('fm:sync:getSettings', () => requireSession().config.sync ?? {}),
+  );
+
+  ipcMain.handle(
+    'fm:sync:setSettings',
+    wrap('fm:sync:setSettings', async (_e, settings: unknown) => {
+      const s = settings as SyncSettings;
+      return mutate(config => ({ next: { ...config, sync: s }, result: s }));
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:pickBundleDir',
+    wrap('fm:sync:pickBundleDir', async event => {
+      const window = senderWindow(event);
+      const res = window
+        ? await dialog.showOpenDialog(window, {
+            title: '选择共享目录',
+            properties: ['openDirectory', 'createDirectory'],
+          })
+        : await dialog.showOpenDialog({
+            title: '选择共享目录',
+            properties: ['openDirectory', 'createDirectory'],
+          });
+      return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]!;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:diffBundleDir',
+    wrap('fm:sync:diffBundleDir', async (_e, projectIds: unknown) => {
+      const ids = Array.isArray(projectIds) ? (projectIds as string[]) : undefined;
+      const session = requireSession();
+      const dir = session.config.sync?.bundleDir;
+      if (!dir) throw new FmError('SYNC_BUNDLE_DIR_MISSING', '未配置共享目录');
+      const { diff } = await diffAgainstBundleDir(session.config, dir, { projectIds: ids });
+      return diff;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:pushBundleDir',
+    wrap('fm:sync:pushBundleDir', async (_e, projectIds: unknown) => {
+      const ids = Array.isArray(projectIds) ? (projectIds as string[]) : [];
+      const session = requireSession();
+      const dir = session.config.sync?.bundleDir;
+      if (!dir) throw new FmError('SYNC_BUNDLE_DIR_MISSING', '未配置共享目录');
+      const result = await pushToBundleDir(session.config, dir, ids);
+      // 更新 syncedAt/syncedHash
+      await mutate(async config => {
+        const { entriesByProject } = await buildLocalManifest(config, { projectIds: ids });
+        const now = new Date().toISOString();
+        const projects = config.projects.map(p => {
+          if (!ids.includes(p.id)) return p;
+          const entry = entriesByProject.get(p.id);
+          return entry ? { ...p, syncedAt: now, syncedHash: entry.hash } : p;
+        });
+        return { next: { ...config, projects }, result: undefined as void };
+      });
+      return result;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:pullBundleDir',
+    wrap('fm:sync:pullBundleDir', async (_e, items: unknown) => {
+      const list = items as SyncPullItem[];
+      const session = requireSession();
+      const dir = session.config.sync?.bundleDir;
+      if (!dir) throw new FmError('SYNC_BUNDLE_DIR_MISSING', '未配置共享目录');
+      return pullFromBundleDir(dir, list);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:exportZip',
+    wrap('fm:sync:exportZip', async (_e, projectIds: unknown, outputFile: unknown) => {
+      const ids = Array.isArray(projectIds) ? (projectIds as string[]) : [];
+      assertString(outputFile, 'outputFile');
+      const session = requireSession();
+      return exportBundleZip(session.config, ids, outputFile);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:pickExportFile',
+    wrap('fm:sync:pickExportFile', async event => {
+      const window = senderWindow(event);
+      const res = window
+        ? await dialog.showSaveDialog(window, {
+            title: '导出 fm bundle',
+            defaultPath: 'fm-bundle.fm-bundle.zip',
+            filters: [{ name: 'fm bundle', extensions: ['zip'] }],
+          })
+        : await dialog.showSaveDialog({
+            title: '导出 fm bundle',
+            defaultPath: 'fm-bundle.fm-bundle.zip',
+            filters: [{ name: 'fm bundle', extensions: ['zip'] }],
+          });
+      return res.canceled || !res.filePath ? null : res.filePath;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:pickImportFile',
+    wrap('fm:sync:pickImportFile', async event => {
+      const window = senderWindow(event);
+      const res = window
+        ? await dialog.showOpenDialog(window, {
+            title: '选择 fm bundle',
+            filters: [{ name: 'fm bundle', extensions: ['zip'] }],
+            properties: ['openFile'],
+          })
+        : await dialog.showOpenDialog({
+            title: '选择 fm bundle',
+            filters: [{ name: 'fm bundle', extensions: ['zip'] }],
+            properties: ['openFile'],
+          });
+      return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]!;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:previewZip',
+    wrap('fm:sync:previewZip', async (_e, file: unknown) => {
+      assertString(file, 'file');
+      return previewBundleZip(file);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:applyZip',
+    wrap('fm:sync:applyZip', async (_e, file: unknown, plan: unknown) => {
+      assertString(file, 'file');
+      return applyBundleZip(file, plan as SyncImportItem[]);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:isServerRunning',
+    wrap('fm:sync:isServerRunning', () => activeServer !== null),
+  );
+
+  ipcMain.handle(
+    'fm:sync:startServer',
+    wrap('fm:sync:startServer', async () => {
+      if (activeServer) return { port: activeServer.port };
+      const session = requireSession();
+      const port = session.config.sync?.network?.listenPort ?? 41555;
+      const handlers = buildServerHandlers();
+      activeServer = await startSyncServer({ port }, handlers);
+      return { port: activeServer.port };
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:stopServer',
+    wrap('fm:sync:stopServer', async () => {
+      if (!activeServer) return undefined as void;
+      await activeServer.close();
+      activeServer = null;
+      return undefined as void;
+    }),
+  );
+}
+
+function buildServerHandlers(): ServerHandlers {
+  return {
+    isAllowedDevice: device => {
+      const session = requireSession();
+      const known = session.config.devices?.known ?? [];
+      return known.some(d => d.id === device.id);
+    },
+    listManifest: async () => {
+      const session = requireSession();
+      const { manifest } = await buildLocalManifest(session.config);
+      return manifest;
+    },
+    getProjectBundle: async id => {
+      const session = requireSession();
+      const project = session.config.projects.find(p => p.id === id);
+      if (!project) throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${id}`);
+      const { entriesByProject } = await buildLocalManifest(session.config, { projectIds: [id] });
+      const entry = entriesByProject.get(id);
+      if (!entry) throw new FmError('PROJECT_NOT_FOUND', `项目快照失败：${id}`);
+      const { packProjectZip } = await import('./sync/zip-bundle.js');
+      const zip = await packProjectZip(project.path, entry);
+      return { entry, zip };
+    },
+    acceptProjectBundle: async (fromDevice, entry, zip) => {
+      const session = requireSession();
+      const relayMode = session.config.sync?.network?.relayMode ?? false;
+      // 自动登记发送方为已知设备
+      await mutate(config => ({
+        next: upsertKnownDevice(config, {
+          id: fromDevice.id,
+          name: fromDevice.name,
+          lastSeenAt: new Date().toISOString(),
+        }),
+        result: undefined as void,
+      }));
+      if (relayMode) {
+        const dir = session.config.sync?.bundleDir;
+        if (!dir) {
+          throw new FmError('SYNC_BUNDLE_DIR_MISSING', 'relay 模式需要配置 bundleDir');
+        }
+        // 把单包合并写入：以发送方设备为目录
+        const manifest = {
+          schema: 'fm.sync/v1' as const,
+          generatedAt: new Date().toISOString(),
+          device: fromDevice,
+          projects: [entry],
+        };
+        await publishToBundleDir(dir, manifest, [{ entry, zip }]);
+      } else {
+        // 非 relay：解包到一个临时目录，由用户后续在 UI 中决定是否落地
+        // 这里采用最简策略：拒绝主动 PUT
+        throw new FmError('SYNC_TRANSPORT_FAILED', '当前设备未启用 relay 模式');
+      }
+      // 这两行只是为了在非 relay 分支也消费引用
+      void readDeviceManifest;
+      void readBundleProjectZip;
+      void unpackProjectZip;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 命令
+// ---------------------------------------------------------------------------
+
+function registerCommandHandlers(): void {
+  ipcMain.handle(
+    'fm:commands:presets',
+    wrap('fm:commands:presets', () => PRESET_COMMANDS),
+  );
+
+  ipcMain.handle(
+    'fm:commands:list',
+    wrap('fm:commands:list', () => requireSession().config.commands ?? []),
+  );
+
+  ipcMain.handle(
+    'fm:commands:add',
+    wrap('fm:commands:add', async (_e, input: unknown) => {
+      const cmdInput = input as Omit<CustomCommand, 'id'>;
+      return mutate(config => {
+        const { config: next, command } = addCustomCommand(config, cmdInput);
+        return { next, result: command };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:commands:update',
+    wrap('fm:commands:update', async (_e, id: unknown, patch: unknown) => {
+      assertString(id, 'id');
+      return mutate(config => {
+        const { config: next, command } = updateCustomCommand(
+          config,
+          id,
+          patch as Partial<Omit<CustomCommand, 'id'>>,
+        );
+        return { next, result: command };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:commands:remove',
+    wrap('fm:commands:remove', async (_e, id: unknown) => {
+      assertString(id, 'id');
+      return mutate(config => ({ next: removeCustomCommand(config, id), result: undefined as void }));
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:commands:run',
+    wrap('fm:commands:run', async (_e, commandId: unknown, projectId: unknown) => {
+      assertString(commandId, 'commandId');
+      assertString(projectId, 'projectId');
+      const session = requireSession();
+      return runCommand(session.config, { commandId, projectId }, process.platform);
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------

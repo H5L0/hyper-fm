@@ -3,13 +3,25 @@ import type {
   AppBridge,
   AppConfig,
   Category,
+  CommandRunResult,
   ConfigSnapshot,
+  CustomCommand,
+  DeviceRegistry,
   FmBridge,
+  PresetCommandDescriptor,
   Project,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanReport,
   ScanRoot,
+  SyncDiff,
+  SyncImportItem,
+  SyncImportResult,
+  SyncManifest,
+  SyncProjectEntry,
+  SyncPullItem,
+  SyncPullResult,
+  SyncSettings,
 } from '../shared/bridge.js';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +83,49 @@ const fmApi: FmBridge = {
     setColor: (id, color) =>
       ipcRenderer.invoke('fm:categories:setColor', id, color) as Promise<Category>,
     remove: id => ipcRenderer.invoke('fm:categories:remove', id) as Promise<void>,
+  },
+  sync: {
+    getDevice: () => ipcRenderer.invoke('fm:sync:getDevice') as Promise<DeviceRegistry>,
+    setSelfName: name => ipcRenderer.invoke('fm:sync:setSelfName', name) as Promise<DeviceRegistry>,
+    getSettings: () => ipcRenderer.invoke('fm:sync:getSettings') as Promise<SyncSettings>,
+    setSettings: settings =>
+      ipcRenderer.invoke('fm:sync:setSettings', settings) as Promise<SyncSettings>,
+    pickBundleDir: () => ipcRenderer.invoke('fm:sync:pickBundleDir') as Promise<string | null>,
+    diffBundleDir: projectIds =>
+      ipcRenderer.invoke('fm:sync:diffBundleDir', projectIds) as Promise<SyncDiff>,
+    pushBundleDir: projectIds =>
+      ipcRenderer.invoke('fm:sync:pushBundleDir', projectIds) as Promise<{ pushed: string[] }>,
+    pullBundleDir: items =>
+      ipcRenderer.invoke('fm:sync:pullBundleDir', items as SyncPullItem[]) as Promise<SyncPullResult[]>,
+    exportZip: (projectIds, outputFile) =>
+      ipcRenderer.invoke('fm:sync:exportZip', projectIds, outputFile) as Promise<{
+        outputFile: string;
+        projects: number;
+      }>,
+    pickExportFile: () =>
+      ipcRenderer.invoke('fm:sync:pickExportFile') as Promise<string | null>,
+    pickImportFile: () =>
+      ipcRenderer.invoke('fm:sync:pickImportFile') as Promise<string | null>,
+    previewZip: file =>
+      ipcRenderer.invoke('fm:sync:previewZip', file) as Promise<{
+        manifest: SyncManifest;
+        entries: SyncProjectEntry[];
+      }>,
+    applyZip: (file, plan) =>
+      ipcRenderer.invoke('fm:sync:applyZip', file, plan as SyncImportItem[]) as Promise<SyncImportResult[]>,
+    startServer: () => ipcRenderer.invoke('fm:sync:startServer') as Promise<{ port: number }>,
+    stopServer: () => ipcRenderer.invoke('fm:sync:stopServer') as Promise<void>,
+    isServerRunning: () => ipcRenderer.invoke('fm:sync:isServerRunning') as Promise<boolean>,
+  },
+  commands: {
+    presets: () => ipcRenderer.invoke('fm:commands:presets') as Promise<PresetCommandDescriptor[]>,
+    list: () => ipcRenderer.invoke('fm:commands:list') as Promise<CustomCommand[]>,
+    add: input => ipcRenderer.invoke('fm:commands:add', input) as Promise<CustomCommand>,
+    update: (id, patch) =>
+      ipcRenderer.invoke('fm:commands:update', id, patch) as Promise<CustomCommand>,
+    remove: id => ipcRenderer.invoke('fm:commands:remove', id) as Promise<void>,
+    run: (commandId, projectId) =>
+      ipcRenderer.invoke('fm:commands:run', commandId, projectId) as Promise<CommandRunResult>,
   },
 };
 

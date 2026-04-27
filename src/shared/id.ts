@@ -21,4 +21,6 @@ export const ID_PREFIX = {
   project: 'prj',
   category: 'cat',
   scanRoot: 'root',
+  device: 'dev',
+  command: 'cmd',
 } as const;

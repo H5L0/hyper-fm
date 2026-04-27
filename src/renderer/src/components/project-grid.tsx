@@ -4,6 +4,14 @@
 
 import { useMemo } from 'react';
 import type { Category, Project } from '@shared/bridge.js';
+import {
+  type HighlightSegment,
+  type MatchExplain,
+  type SearchQuery,
+  highlight,
+  matchProject,
+  parseSearchQuery,
+} from '@shared/search.js';
 import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '../store/app-store.js';
 
@@ -21,15 +29,28 @@ function relativeTime(iso?: string): string {
   return `${Math.floor(diff / (365 * day))} 年前`;
 }
 
-function matchProject(p: Project, search: string): boolean {
-  if (!search) return true;
-  const s = search.trim().toLowerCase();
-  if (!s) return true;
+function HighlightedText({
+  text,
+  values,
+  className,
+}: {
+  text: string;
+  values: readonly string[];
+  className?: string;
+}) {
+  const segs: HighlightSegment[] = useMemo(() => highlight(text, values), [text, values]);
   return (
-    p.name.toLowerCase().includes(s) ||
-    p.path.toLowerCase().includes(s) ||
-    (p.description?.toLowerCase().includes(s) ?? false) ||
-    p.tags.some(t => t.toLowerCase().includes(s))
+    <span className={className}>
+      {segs.map((s, i) =>
+        s.hit ? (
+          <mark key={i} className="rounded bg-yellow-200/60 px-0.5 text-foreground dark:bg-yellow-300/30">
+            {s.text}
+          </mark>
+        ) : (
+          <span key={i}>{s.text}</span>
+        ),
+      )}
+    </span>
   );
 }
 
@@ -43,16 +64,24 @@ export function ProjectGrid() {
     return map;
   }, [config.categories]);
 
+  const query: SearchQuery = useMemo(() => parseSearchQuery(search), [search]);
+
   const filtered = useMemo(() => {
-    return config.projects
-      .filter(p => {
-        if (categoryFilter === 'ALL') return true;
-        if (categoryFilter === 'UNCATEGORIZED') return !p.categoryId;
-        return p.categoryId === categoryFilter;
-      })
-      .filter(p => matchProject(p, search))
-      .sort((a, b) => (b.lastModifiedAt ?? '').localeCompare(a.lastModifiedAt ?? ''));
-  }, [config.projects, categoryFilter, search]);
+    type Row = { project: Project; category: Category | undefined; explain: MatchExplain };
+    const rows: Row[] = [];
+    for (const p of config.projects) {
+      if (categoryFilter === 'UNCATEGORIZED' && p.categoryId) continue;
+      if (categoryFilter !== 'ALL' && categoryFilter !== 'UNCATEGORIZED' && p.categoryId !== categoryFilter) continue;
+      const cat = p.categoryId ? categoryById.get(p.categoryId) : undefined;
+      const explain = matchProject(p, query, { category: cat });
+      if (!explain) continue;
+      rows.push({ project: p, category: cat, explain });
+    }
+    rows.sort((a, b) =>
+      (b.project.lastModifiedAt ?? '').localeCompare(a.project.lastModifiedAt ?? ''),
+    );
+    return rows;
+  }, [config.projects, categoryFilter, query, categoryById]);
 
   if (config.scanRoots.length === 0) {
     return (
@@ -90,8 +119,7 @@ export function ProjectGrid() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(p => {
-              const cat = p.categoryId ? categoryById.get(p.categoryId) : undefined;
+            {filtered.map(({ project: p, category: cat, explain }) => {
               return (
                 <tr
                   key={p.id}
@@ -107,15 +135,28 @@ export function ProjectGrid() {
                         className="size-1.5 rounded-full"
                         style={{ backgroundColor: cat?.color ?? 'var(--border)' }}
                       />
-                      <span className="font-medium text-foreground">{p.name}</span>
+                      <HighlightedText
+                        text={p.name}
+                        values={explain.values}
+                        className="font-medium text-foreground"
+                      />
                     </div>
                   </td>
-                  <td className="py-2 text-xs text-muted-foreground">{cat?.name ?? '—'}</td>
                   <td className="py-2 text-xs text-muted-foreground">
-                    {p.tags.slice(0, 3).join(', ') || '—'}
+                    {cat ? <HighlightedText text={cat.name} values={explain.values} /> : '—'}
+                  </td>
+                  <td className="py-2 text-xs text-muted-foreground">
+                    {p.tags.length > 0 ? (
+                      <HighlightedText
+                        text={p.tags.slice(0, 3).join(', ')}
+                        values={explain.values}
+                      />
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="py-2 max-w-md truncate text-xs text-muted-foreground" title={p.path}>
-                    {p.path}
+                    <HighlightedText text={p.path} values={explain.values} />
                   </td>
                   <td className="py-2 pr-4 text-right text-xs tabular-nums text-muted-foreground">
                     {relativeTime(p.lastModifiedAt)}
@@ -132,8 +173,7 @@ export function ProjectGrid() {
   return (
     <div className="flex-1 overflow-y-auto p-4">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
-        {filtered.map(p => {
-          const cat = p.categoryId ? categoryById.get(p.categoryId) : undefined;
+        {filtered.map(({ project: p, category: cat, explain }) => {
           return (
             <ProjectCard
               key={p.id}
@@ -141,6 +181,7 @@ export function ProjectGrid() {
               category={cat}
               selected={selectedProjectId === p.id}
               onSelect={() => actions.selectProject(p.id)}
+              highlightValues={explain.values}
             />
           );
         })}
@@ -154,11 +195,13 @@ function ProjectCard({
   category,
   selected,
   onSelect,
+  highlightValues,
 }: {
   project: Project;
   category?: Category;
   selected: boolean;
   onSelect: () => void;
+  highlightValues: readonly string[];
 }) {
   return (
     <button
@@ -176,7 +219,11 @@ function ProjectCard({
         style={{ backgroundColor: category?.color ?? 'transparent' }}
       />
       <div className="flex items-start justify-between gap-2 pl-1.5">
-        <span className="truncate text-sm font-medium text-foreground">{project.name}</span>
+        <HighlightedText
+          text={project.name}
+          values={highlightValues}
+          className="truncate text-sm font-medium text-foreground"
+        />
         {project.hasMetaFile ? (
           <span
             title="使用 .meta-data"
@@ -187,7 +234,11 @@ function ProjectCard({
         ) : null}
       </div>
       <p className="mt-1 line-clamp-2 pl-1.5 text-xs text-muted-foreground">
-        {project.description || category?.name || '—'}
+        {project.description ? (
+          <HighlightedText text={project.description} values={highlightValues} />
+        ) : (
+          category?.name || '—'
+        )}
       </p>
       <div className="mt-auto flex items-center gap-1.5 overflow-hidden pl-1.5">
         {project.tags.slice(0, 3).map(t => (
@@ -195,7 +246,7 @@ function ProjectCard({
             key={t}
             className="rounded bg-muted px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
           >
-            #{t}
+            #<HighlightedText text={t} values={highlightValues} />
           </span>
         ))}
         {project.tags.length > 3 ? (
@@ -203,9 +254,11 @@ function ProjectCard({
         ) : null}
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-2 pl-1.5 text-[0.65rem] text-muted-foreground/80">
-        <span className="truncate" title={project.path}>
-          {project.path}
-        </span>
+        <HighlightedText
+          text={project.path}
+          values={highlightValues}
+          className="truncate"
+        />
         <span className="shrink-0 tabular-nums">{relativeTime(project.lastModifiedAt)}</span>
       </div>
     </button>

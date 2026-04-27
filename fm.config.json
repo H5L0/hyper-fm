@@ -23,7 +23,8 @@
   "categories": [
     {
       "id": "cat_p35vq9",
-      "name": "游戏"
+      "name": "游戏",
+      "color": "#44b0f3"
     },
     {
       "id": "cat_pdkydo",
@@ -38,7 +39,7 @@
       "name": "assets",
       "tags": [],
       "hasMetaFile": false,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
       "lastModifiedAt": "2025-06-16T11:23:57.114Z"
     },
     {
@@ -48,7 +49,7 @@
       "name": "scripts",
       "tags": [],
       "hasMetaFile": false,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
       "lastModifiedAt": "2025-06-16T11:23:57.107Z"
     },
     {
@@ -58,7 +59,7 @@
       "name": "styles",
       "tags": [],
       "hasMetaFile": false,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
       "lastModifiedAt": "2025-06-16T11:23:21.637Z"
     },
     {
@@ -68,7 +69,7 @@
       "name": "dear-mt",
       "tags": [],
       "hasMetaFile": false,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
       "lastModifiedAt": "2026-04-24T10:22:09.772Z"
     },
     {
@@ -76,10 +77,12 @@
       "path": "D:/files/fm",
       "rootId": "root_iw577n",
       "name": "fm",
+      "categoryId": "cat_pdkydo",
+      "description": "",
       "tags": [],
       "hasMetaFile": false,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
-      "lastModifiedAt": "2026-04-27T13:40:41.166Z"
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
+      "lastModifiedAt": "2026-04-27T14:48:11.729Z"
     },
     {
       "id": "prj_xc5xcb",
@@ -88,7 +91,7 @@
       "name": "HalfLink",
       "tags": [],
       "hasMetaFile": false,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
       "lastModifiedAt": "2025-12-01T12:21:19.270Z"
     },
     {
@@ -96,12 +99,12 @@
       "path": "D:/files/hyper-lynx",
       "rootId": "root_iw577n",
       "name": "hyper-lynx",
+      "categoryId": "cat_pdkydo",
+      "description": "",
       "tags": [],
       "hasMetaFile": true,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
-      "lastModifiedAt": "2026-04-27T11:38:52.047Z",
-      "description": "",
-      "categoryId": "cat_pdkydo"
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
+      "lastModifiedAt": "2026-04-27T13:43:24.487Z"
     },
     {
       "id": "prj_0t8ok8",
@@ -110,7 +113,7 @@
       "name": "llm-translator",
       "tags": [],
       "hasMetaFile": false,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
       "lastModifiedAt": "2026-03-19T13:49:17.086Z"
     },
     {
@@ -120,7 +123,7 @@
       "name": "MemoryAllocator",
       "tags": [],
       "hasMetaFile": false,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
       "lastModifiedAt": "2025-11-19T08:04:06.612Z"
     },
     {
@@ -130,12 +133,24 @@
       "name": "ugen-editor",
       "tags": [],
       "hasMetaFile": false,
-      "lastScannedAt": "2026-04-27T13:40:51.832Z",
+      "lastScannedAt": "2026-04-27T14:48:13.667Z",
       "lastModifiedAt": "2025-10-30T07:14:05.797Z"
     }
   ],
   "ui": {
     "theme": "system",
     "view": "grid"
+  },
+  "devices": {
+    "selfId": "dev_roc3e4",
+    "selfName": "PC20250180",
+    "known": []
+  },
+  "sync": {
+    "network": {
+      "listenPort": 41555,
+      "autoStart": false,
+      "relayMode": false
+    }
   }
 }
