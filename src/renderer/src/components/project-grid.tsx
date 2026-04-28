@@ -2,9 +2,9 @@
 // 项目卡片网格 / 列表
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { Copy, ExternalLink, FileText, Pencil, Terminal, Trash2 } from 'lucide-react';
-import type { Category, PresetCommandDescriptor, Project } from '@shared/bridge.js';
+import type { PresetCommandDescriptor, Project } from '@shared/bridge.js';
 import {
   type HighlightSegment,
   type MatchExplain,
@@ -15,6 +15,7 @@ import {
 } from '@shared/search.js';
 import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '../store/app-store.js';
+import { TagPill, resolveTagColor } from './tag-pill.js';
 
 function relativeTime(iso?: string): string {
   if (!iso) return '';
@@ -56,7 +57,7 @@ function HighlightedText({
 }
 
 export function ProjectGrid() {
-  const { config, categoryFilter, search, view, selectedProjectId } = useAppState();
+  const { config, tagFilter, search, view, selectedProjectId } = useAppState();
   const actions = useAppActions();
   const [menu, setMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
   const [presets, setPresets] = useState<PresetCommandDescriptor[]>([]);
@@ -70,36 +71,28 @@ export function ProjectGrid() {
     setMenu({ x: e.clientX, y: e.clientY, project });
   };
 
-  const categoryById = useMemo(() => {
-    const map = new Map<string, Category>();
-    for (const c of config.categories) map.set(c.id, c);
-    return map;
-  }, [config.categories]);
-
   const query: SearchQuery = useMemo(() => parseSearchQuery(search), [search]);
 
   const filtered = useMemo(() => {
-    type Row = { project: Project; category: Category | undefined; explain: MatchExplain };
+    type Row = { project: Project; explain: MatchExplain };
     const rows: Row[] = [];
     for (const p of config.projects) {
-      if (categoryFilter === 'UNCATEGORIZED' && p.categoryId) continue;
-      if (categoryFilter !== 'ALL' && categoryFilter !== 'UNCATEGORIZED' && p.categoryId !== categoryFilter) continue;
-      const cat = p.categoryId ? categoryById.get(p.categoryId) : undefined;
-      const explain = matchProject(p, query, { category: cat });
+      if (typeof tagFilter === 'object' && !p.tags.includes(tagFilter.tag)) continue;
+      const explain = matchProject(p, query);
       if (!explain) continue;
-      rows.push({ project: p, category: cat, explain });
+      rows.push({ project: p, explain });
     }
     rows.sort((a, b) =>
       (b.project.lastModifiedAt ?? '').localeCompare(a.project.lastModifiedAt ?? ''),
     );
     return rows;
-  }, [config.projects, categoryFilter, query, categoryById]);
+  }, [config.projects, tagFilter, query]);
 
-  if (config.scanRoots.length === 0) {
+  if (config.scanRoots.length === 0 && config.projects.length === 0) {
     return (
       <EmptyState
         title="尚未配置扫描根"
-        hint="前往「设置」添加包含项目的目录后，点击「扫描」来发现项目。"
+        hint="前往「设置」添加包含项目的目录后，点击「扫描」来发现项目，也可以从工具栏「添加项目」手动添加。"
       />
     );
   }
@@ -130,18 +123,17 @@ export function ProjectGrid() {
   if (view === 'list') {
     return (
       <div className="flex-1 overflow-y-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead className="sticky top-0 bg-background text-[0.7rem] font-medium tracking-wider text-muted-foreground uppercase">
+        <table className="w-full border-collapse">
+          <thead className="text-subheading sticky top-0 bg-background text-muted-foreground">
             <tr className="border-b border-border">
-              <th className="py-2 pl-4 text-left">名称</th>
-              <th className="py-2 text-left">分类</th>
-              <th className="py-2 text-left">标签</th>
-              <th className="py-2 text-left">路径</th>
-              <th className="py-2 pr-4 text-right">修改时间</th>
+              <th className="py-2.5 pl-4 text-left">名称</th>
+              <th className="py-2.5 text-left">标签</th>
+              <th className="py-2.5 text-left">路径</th>
+              <th className="py-2.5 pr-4 text-right">修改时间</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map(({ project: p, category: cat, explain }) => {
+            {filtered.map(({ project: p, explain }) => {
               return (
                 <tr
                   key={p.id}
@@ -152,36 +144,36 @@ export function ProjectGrid() {
                     selectedProjectId === p.id && 'bg-muted/60',
                   )}
                 >
-                  <td className="py-2 pl-4">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="size-1.5 rounded-full"
-                        style={{ backgroundColor: cat?.color ?? 'var(--border)' }}
-                      />
-                      <HighlightedText
-                        text={p.name}
-                        values={explain.values}
-                        className="font-medium text-foreground"
-                      />
+                  <td className="py-2.5 pl-4">
+                    <HighlightedText
+                      text={p.name}
+                      values={explain.values}
+                      className="font-medium text-foreground"
+                    />
+                  </td>
+                  <td className="py-2.5">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {p.tags.slice(0, 3).map(t => (
+                        <TagPill
+                          key={t}
+                          name={t}
+                          color={resolveTagColor(t, config.tags)}
+                          size="sm"
+                        >
+                          <HighlightedText text={t} values={explain.values} />
+                        </TagPill>
+                      ))}
+                      {p.tags.length > 3 ? (
+                        <span className="text-caption text-muted-foreground">
+                          +{p.tags.length - 3}
+                        </span>
+                      ) : null}
                     </div>
                   </td>
-                  <td className="py-2 text-xs text-muted-foreground">
-                    {cat ? <HighlightedText text={cat.name} values={explain.values} /> : '—'}
-                  </td>
-                  <td className="py-2 text-xs text-muted-foreground">
-                    {p.tags.length > 0 ? (
-                      <HighlightedText
-                        text={p.tags.slice(0, 3).join(', ')}
-                        values={explain.values}
-                      />
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="py-2 max-w-md truncate text-xs text-muted-foreground" title={p.path}>
+                  <td className="py-2.5 max-w-md truncate text-note text-muted-foreground" title={p.path}>
                     <HighlightedText text={p.path} values={explain.values} />
                   </td>
-                  <td className="py-2 pr-4 text-right text-xs tabular-nums text-muted-foreground">
+                  <td className="py-2.5 pr-4 text-right text-note tabular-nums text-muted-foreground">
                     {relativeTime(p.lastModifiedAt)}
                   </td>
                 </tr>
@@ -196,13 +188,13 @@ export function ProjectGrid() {
 
   return (
     <div className="flex-1 overflow-y-auto p-4">
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
-        {filtered.map(({ project: p, category: cat, explain }) => {
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+        {filtered.map(({ project: p, explain }) => {
           return (
             <ProjectCard
               key={p.id}
               project={p}
-              category={cat}
+              tagDefs={config.tags}
               selected={selectedProjectId === p.id}
               onSelect={() => actions.selectProject(p.id)}
               onContextMenu={e => openMenu(e, p)}
@@ -218,14 +210,14 @@ export function ProjectGrid() {
 
 function ProjectCard({
   project,
-  category,
+  tagDefs,
   selected,
   onSelect,
   onContextMenu,
   highlightValues,
 }: {
   project: Project;
-  category?: Category;
+  tagDefs: readonly import('@shared/bridge.js').TagDefinition[] | undefined;
   selected: boolean;
   onSelect: () => void;
   onContextMenu: (e: MouseEvent) => void;
@@ -237,52 +229,53 @@ function ProjectCard({
       onClick={onSelect}
       onContextMenu={onContextMenu}
       className={cn(
-        'group relative flex h-32 flex-col rounded-lg border bg-card px-3 py-2.5 text-left transition-all',
+        'group relative flex min-h-[9.5rem] flex-col rounded-lg border bg-card px-3.5 py-3 text-left transition-all',
         'hover:border-foreground/20 hover:shadow-sm',
         selected ? 'border-foreground/30 ring-1 ring-foreground/10' : 'border-border',
       )}
     >
-      <span
-        aria-hidden
-        className="absolute top-2.5 left-0 h-4 w-1 rounded-r"
-        style={{ backgroundColor: category?.color ?? 'transparent' }}
-      />
-      <div className="flex items-start justify-between gap-2 pl-1.5">
+      <div className="flex items-start justify-between gap-2">
         <HighlightedText
           text={project.name}
           values={highlightValues}
-          className="truncate text-sm font-medium text-foreground"
+          className="truncate font-medium text-foreground"
         />
         {project.hasMetaFile ? (
           <span
             title="使用 .meta-data"
-            className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
+            className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-caption text-muted-foreground"
           >
             meta
           </span>
         ) : null}
       </div>
-      <p className="mt-1 line-clamp-2 pl-1.5 text-xs text-muted-foreground">
-        {project.description ? (
+      {project.description ? (
+        <p className="mt-1.5 line-clamp-2 text-muted-foreground">
           <HighlightedText text={project.description} values={highlightValues} />
-        ) : (
-          category?.name || '—'
-        )}
-      </p>
-      <div className="mt-auto flex items-center gap-1.5 overflow-hidden pl-1.5">
-        {project.tags.slice(0, 3).map(t => (
-          <span
-            key={t}
-            className="rounded bg-muted px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
-          >
-            #<HighlightedText text={t} values={highlightValues} />
-          </span>
-        ))}
-        {project.tags.length > 3 ? (
-          <span className="text-[0.65rem] text-muted-foreground">+{project.tags.length - 3}</span>
-        ) : null}
-      </div>
-      <div className="mt-1.5 flex items-center justify-between gap-2 pl-1.5 text-[0.65rem] text-muted-foreground/80">
+        </p>
+      ) : null}
+      {project.tags.length > 0 ? (
+        <div className="mt-auto flex flex-wrap items-center gap-1 overflow-hidden pt-2.5">
+          {project.tags.slice(0, 3).map(t => (
+            <TagPill
+              key={t}
+              name={t}
+              color={resolveTagColor(t, tagDefs)}
+              size="sm"
+            >
+              <HighlightedText text={t} values={highlightValues} />
+            </TagPill>
+          ))}
+          {project.tags.length > 3 ? (
+            <span className="text-caption text-muted-foreground">
+              +{project.tags.length - 3}
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-auto" />
+      )}
+      <div className="mt-2 flex items-center justify-between gap-2 text-note text-muted-foreground/80">
         <HighlightedText
           text={project.path}
           values={highlightValues}
@@ -297,8 +290,8 @@ function ProjectCard({
 function EmptyState({ title, hint }: { title: string; hint: string }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-      <p className="text-sm font-medium text-foreground">{title}</p>
-      <p className="mt-1 max-w-sm text-xs text-muted-foreground">{hint}</p>
+      <p className="text-heading text-foreground">{title}</p>
+      <p className="mt-2 max-w-sm text-note text-muted-foreground">{hint}</p>
     </div>
   );
 }
@@ -317,13 +310,23 @@ function ProjectContextMenu({
   onClose: () => void;
 }) {
   const actions = useAppActions();
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
+    const onDown = (e: globalThis.MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown, true);
+    window.addEventListener('contextmenu', onDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('contextmenu', onDown, true);
+    };
   }, [onClose]);
 
   const run = async (commandId: string) => {
@@ -352,54 +355,43 @@ function ProjectContextMenu({
   }
 
   return (
-    <>
-      <button
-        type="button"
-        aria-label="关闭菜单"
-        onClick={onClose}
-        onContextMenu={e => {
-          e.preventDefault();
+    <div
+      ref={ref}
+      role="menu"
+      className="fixed z-50 min-w-[220px] overflow-hidden rounded-md border border-border bg-popover py-1 shadow-md"
+      style={style}
+    >
+      <MenuItem
+        onClick={() => {
+          actions.selectProject(project.id);
           onClose();
         }}
-        className="fixed inset-0 z-40 cursor-default"
-      />
-      <div
-        role="menu"
-        className="fixed z-50 min-w-[200px] overflow-hidden rounded-md border border-border bg-popover py-1 text-sm shadow-md"
-        style={style}
+        icon={<Pencil className="size-4" />}
       >
-        <MenuItem
-          onClick={() => {
-            actions.selectProject(project.id);
-            onClose();
-          }}
-          icon={<Pencil className="size-3.5" />}
-        >
-          编辑详情…
-        </MenuItem>
-        <MenuSep />
-        {presets.map(p => {
-          const Icon = iconOf(p.id);
-          return (
-            <MenuItem key={p.id} onClick={() => void run(p.id)} icon={<Icon className="size-3.5" />}>
-              {p.label}
-            </MenuItem>
-          );
-        })}
-        <MenuSep />
-        <MenuItem
-          onClick={() => {
-            onClose();
-            if (confirm(`从列表移除项目 “${project.name}”？（不会删除磁盘文件）`)) {
-              void actions.removeProject(project.id);
-            }
-          }}
-          icon={<Trash2 className="size-3.5" />}
-        >
-          从列表移除
-        </MenuItem>
-      </div>
-    </>
+        编辑详情…
+      </MenuItem>
+      <MenuSep />
+      {presets.map(p => {
+        const Icon = iconOf(p.id);
+        return (
+          <MenuItem key={p.id} onClick={() => void run(p.id)} icon={<Icon className="size-4" />}>
+            {p.label}
+          </MenuItem>
+        );
+      })}
+      <MenuSep />
+      <MenuItem
+        onClick={() => {
+          onClose();
+          if (confirm(`从列表移除项目 “${project.name}”？（不会删除磁盘文件）`)) {
+            void actions.removeProject(project.id);
+          }
+        }}
+        icon={<Trash2 className="size-4" />}
+      >
+        从列表移除
+      </MenuItem>
+    </div>
   );
 }
 
@@ -417,7 +409,7 @@ function MenuItem({
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted"
+      className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
     >
       <span className="text-muted-foreground">{icon}</span>
       {children}

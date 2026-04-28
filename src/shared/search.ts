@@ -1,13 +1,13 @@
 // ---------------------------------------------------------------------------
-// 元数据搜索：多关键字 AND + 字段限定（tag: cat: path:）+ 高亮分段
+// 元数据搜索：多关键字 AND + 字段限定（tag: path:）+ 高亮分段
 // 不读取项目内文件，仅基于 Project 元数据
 // ---------------------------------------------------------------------------
 
-import type { Category, Project } from './types.js';
+import type { Project } from './types.js';
 
 export interface SearchTerm {
-  /** 'name' | 'description' | 'tag' | 'category' | 'path' | 'any' */
-  field: 'name' | 'description' | 'tag' | 'category' | 'path' | 'any';
+  /** 'name' | 'description' | 'tag' | 'path' | 'any' */
+  field: 'name' | 'description' | 'tag' | 'path' | 'any';
   value: string;
 }
 
@@ -18,8 +18,6 @@ export interface SearchQuery {
 
 const FIELD_PREFIX: Record<string, SearchTerm['field']> = {
   tag: 'tag',
-  cat: 'category',
-  category: 'category',
   path: 'path',
   name: 'name',
   desc: 'description',
@@ -49,20 +47,15 @@ export function parseSearchQuery(input: string): SearchQuery {
 }
 
 export interface MatchExplain {
-  /** 'name'/'description'/'tag'/'category'/'path' 中的命中字段（去重） */
+  /** 'name'/'description'/'tag'/'path' 中的命中字段（去重） */
   fields: SearchTerm['field'][];
   /** 命中的具体字符串集合 */
   values: string[];
 }
 
-interface ProjectMatchContext {
-  category?: Category;
-}
-
 export function matchProject(
   project: Project,
   query: SearchQuery,
-  ctx: ProjectMatchContext = {},
 ): MatchExplain | null {
   if (query.terms.length === 0) return { fields: [], values: [] };
 
@@ -73,7 +66,6 @@ export function matchProject(
     name: project.name.toLowerCase(),
     description: (project.description ?? '').toLowerCase(),
     tags: project.tags.map(t => t.toLowerCase()),
-    category: (ctx.category?.name ?? '').toLowerCase(),
     path: project.path.toLowerCase(),
   };
 
@@ -81,8 +73,6 @@ export function matchProject(
     let hit: SearchTerm['field'] | null = null;
     if (term.field === 'tag') {
       if (haystack.tags.some(t => t.includes(term.value))) hit = 'tag';
-    } else if (term.field === 'category') {
-      if (haystack.category.includes(term.value)) hit = 'category';
     } else if (term.field === 'path') {
       if (haystack.path.includes(term.value)) hit = 'path';
     } else if (term.field === 'name') {
@@ -94,7 +84,6 @@ export function matchProject(
       if (haystack.name.includes(term.value)) hit = 'name';
       else if (haystack.description.includes(term.value)) hit = 'description';
       else if (haystack.tags.some(t => t.includes(term.value))) hit = 'tag';
-      else if (haystack.category.includes(term.value)) hit = 'category';
       else if (haystack.path.includes(term.value)) hit = 'path';
     }
     if (!hit) return null;
@@ -146,7 +135,6 @@ const FIELD_LABEL: Record<SearchTerm['field'], string> = {
   name: '名称',
   description: '描述',
   tag: '标签',
-  category: '分类',
   path: '路径',
   any: '任意',
 };

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// 设置面板：配置切换、扫描根、忽略规则、主题、分类、同步、命令
+// 设置面板：配置切换、扫描根、忽略规则、主题、同步、命令
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from 'react';
@@ -16,7 +16,6 @@ export function SettingsPanel() {
   const { config, configPath } = useAppState();
   const actions = useAppActions();
   const [globsDraft, setGlobsDraft] = useState(config.ignore.globs.join('\n'));
-  const [newCategory, setNewCategory] = useState('');
 
   const handleAddRoot = async () => {
     const dir = await actions.pickDirectory();
@@ -42,26 +41,15 @@ export function SettingsPanel() {
     }
   };
 
-  const handleAddCategory = async () => {
-    const name = newCategory.trim();
-    if (!name) return;
-    try {
-      await actions.addCategory(name);
-      setNewCategory('');
-    } catch (error) {
-      actions.toast('error', error instanceof Error ? error.message : '新建分类失败');
-    }
-  };
-
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
-      <div className="mx-auto max-w-2xl space-y-8">
-        <h1 className="text-base font-semibold">设置</h1>
+      <div className="mx-auto max-w-2xl space-y-10">
+        <h1 className="text-display">设置</h1>
 
         <Section title="配置文件" hint="加载或新建一份 fm 配置 JSON。">
-          <div className="rounded-md border border-border bg-card px-3 py-2.5">
-            <p className="font-mono text-xs break-all text-muted-foreground">{configPath}</p>
-            <div className="mt-2 flex items-center gap-2">
+          <div className="rounded-md border border-border bg-card px-3 py-3">
+            <p className="text-note break-all text-muted-foreground">{configPath}</p>
+            <div className="mt-2.5 flex items-center gap-2">
               <Button size="sm" variant="outline" onClick={() => void actions.pickAndLoadConfig()}>
                 打开…
               </Button>
@@ -75,19 +63,19 @@ export function SettingsPanel() {
         <Section title="扫描根" hint="预指定可包含项目的目录；扫描时按 maxDepth 递归。">
           <div className="space-y-2">
             {config.scanRoots.length === 0 ? (
-              <p className="text-xs text-muted-foreground">尚未添加扫描根。</p>
+              <p className="text-note text-muted-foreground">尚未添加扫描根。</p>
             ) : (
               config.scanRoots.map(root => (
                 <div
                   key={root.id}
-                  className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2"
+                  className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2.5"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground" title={root.path}>
+                    <p className="truncate font-medium text-foreground" title={root.path}>
                       {root.label || root.path}
                     </p>
                     {root.label ? (
-                      <p className="truncate text-[0.7rem] text-muted-foreground" title={root.path}>
+                      <p className="truncate text-note text-muted-foreground" title={root.path}>
                         {root.path}
                       </p>
                     ) : null}
@@ -96,7 +84,7 @@ export function SettingsPanel() {
                     value={root.maxDepth}
                     onChange={v => void actions.updateScanRoot(root.id, { maxDepth: v })}
                   />
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <label className="flex items-center gap-1.5 text-muted-foreground">
                     <input
                       type="checkbox"
                       checked={root.enabled}
@@ -112,7 +100,7 @@ export function SettingsPanel() {
                     title="单独扫描"
                     onClick={() => void actions.runScanOne(root.id)}
                   >
-                    <RefreshCw className="size-3.5" />
+                    <RefreshCw className="size-4" />
                   </Button>
                   <Button
                     size="icon-xs"
@@ -120,68 +108,19 @@ export function SettingsPanel() {
                     title="删除"
                     onClick={() => void actions.removeScanRoot(root.id)}
                   >
-                    <Trash2 className="size-3.5" />
+                    <Trash2 className="size-4" />
                   </Button>
                 </div>
               ))
             )}
             <Button size="sm" variant="outline" onClick={() => void handleAddRoot()}>
-              <FolderPlus className="size-3.5" /> 添加扫描根
+              <FolderPlus className="size-4" /> 添加扫描根
             </Button>
           </div>
         </Section>
 
-        <Section title="分类" hint="可在项目详情中选择分类，或在 .meta-data 中按名称声明。">
-          <div className="space-y-2">
-            {config.categories.length === 0 ? (
-              <p className="text-xs text-muted-foreground">尚无分类。</p>
-            ) : (
-              config.categories.map(c => (
-                <div
-                  key={c.id}
-                  className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5"
-                >
-                  <ColorSwatch
-                    color={c.color ?? '#888888'}
-                    onChange={value => void actions.setCategoryColor(c.id, value)}
-                  />
-                  <input
-                    defaultValue={c.name}
-                    onBlur={e => {
-                      const v = e.target.value.trim();
-                      if (v && v !== c.name) void actions.renameCategory(c.id, v);
-                    }}
-                    className="flex-1 bg-transparent text-sm outline-none"
-                  />
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    onClick={() => void actions.removeCategory(c.id)}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              ))
-            )}
-            <div className="flex items-center gap-2">
-              <input
-                value={newCategory}
-                onChange={e => setNewCategory(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') void handleAddCategory();
-                }}
-                placeholder="新分类名称"
-                className="h-7 flex-1 rounded-md border border-border bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-              />
-              <Button size="sm" variant="outline" onClick={() => void handleAddCategory()}>
-                <Plus className="size-3.5" /> 添加
-              </Button>
-            </div>
-          </div>
-        </Section>
-
         <Section title="忽略规则" hint="支持精确名称、目录后缀 / 等极简 glob；建议保留 node_modules、.git 等。">
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={config.ignore.respectGitignore}
@@ -193,7 +132,7 @@ export function SettingsPanel() {
             value={globsDraft}
             onChange={e => setGlobsDraft(e.target.value)}
             rows={6}
-            className="mt-2 w-full resize-y rounded-md border border-border bg-background p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="mt-2 w-full resize-y rounded-md border border-border bg-background p-2 text-note outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
           />
           <Button size="sm" variant="outline" className="mt-2" onClick={() => void handleSaveIgnore()}>
             保存忽略规则
@@ -234,9 +173,9 @@ function Section({
 }) {
   return (
     <section>
-      <h2 className="text-sm font-medium text-foreground">{title}</h2>
-      {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
-      <div className="mt-3">{children}</div>
+      <h2 className="text-heading text-foreground">{title}</h2>
+      {hint ? <p className="mt-1 text-note text-muted-foreground">{hint}</p> : null}
+      <div className="mt-3.5">{children}</div>
     </section>
   );
 }
@@ -244,7 +183,7 @@ function Section({
 function DepthInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const [draft, setDraft] = useState(String(value));
   return (
-    <label className="flex items-center gap-1 text-xs text-muted-foreground">
+    <label className="flex items-center gap-1 text-muted-foreground">
       深度
       <input
         type="number"
@@ -257,24 +196,7 @@ function DepthInput({ value, onChange }: { value: number; onChange: (v: number) 
           if (n !== value) onChange(n);
           setDraft(String(n));
         }}
-        className="h-6 w-12 rounded border border-border bg-background px-1 text-center tabular-nums outline-none"
-      />
-    </label>
-  );
-}
-
-function ColorSwatch({ color, onChange }: { color: string; onChange: (v: string) => void }) {
-  return (
-    <label
-      className="relative inline-block size-5 shrink-0 cursor-pointer overflow-hidden rounded-full border border-border"
-      style={{ backgroundColor: color }}
-      title="点击选择颜色"
-    >
-      <input
-        type="color"
-        value={color}
-        onChange={e => onChange(e.target.value)}
-        className="absolute inset-0 size-full cursor-pointer opacity-0"
+        className="h-7 w-14 rounded border border-border bg-background px-1 text-center tabular-nums outline-none"
       />
     </label>
   );
@@ -382,11 +304,11 @@ function SyncSection() {
 
   return (
     <Section title="同步" hint="跨设备同步项目元数据与文件。">
-      <div className="space-y-3 text-sm">
-        <div className="rounded-md border border-border bg-card px-3 py-2.5">
-          <p className="text-[0.7rem] text-muted-foreground">本机设备</p>
+      <div className="space-y-3">
+        <div className="rounded-md border border-border bg-card px-3 py-3">
+          <p className="text-subheading text-muted-foreground">本机设备</p>
           {device ? (
-            <div className="mt-1 flex items-center gap-2">
+            <div className="mt-2 flex items-center gap-2">
               <input
                 defaultValue={device.selfName}
                 onBlur={async e => {
@@ -396,51 +318,51 @@ function SyncSection() {
                     setDevice(next);
                   }
                 }}
-                className="h-7 flex-1 rounded-md border border-border bg-background px-2 text-sm outline-none"
+                className="h-8 flex-1 rounded-md border border-border bg-background px-2 outline-none"
               />
-              <span className="font-mono text-[0.65rem] text-muted-foreground">{device.selfId}</span>
+              <span className="text-note text-muted-foreground">{device.selfId}</span>
             </div>
           ) : (
-            <p className="mt-1 text-xs text-muted-foreground">加载中…</p>
+            <p className="mt-2 text-note text-muted-foreground">加载中…</p>
           )}
         </div>
 
-        <div className="rounded-md border border-border bg-card px-3 py-2.5">
-          <p className="text-[0.7rem] text-muted-foreground">共享目录（OneDrive/Dropbox 或中转设备挂载点）</p>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="flex-1 truncate font-mono text-xs text-foreground" title={settings.bundleDir}>
+        <div className="rounded-md border border-border bg-card px-3 py-3">
+          <p className="text-subheading text-muted-foreground">共享目录（OneDrive/Dropbox 或中转设备挂载点）</p>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="flex-1 truncate text-note text-foreground" title={settings.bundleDir}>
               {settings.bundleDir || '未设置'}
             </span>
             <Button size="sm" variant="outline" onClick={() => void handlePickBundleDir()}>
               选择
             </Button>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" disabled={!settings.bundleDir || busy} onClick={() => void handlePush()}>
-              <Upload className="size-3.5" /> 推送全部
+              <Upload className="size-4" /> 推送全部
             </Button>
-            <span className="text-[0.7rem] text-muted-foreground">
+            <span className="text-note text-muted-foreground">
               拉取请通过项目详情发起（M2 后续完善）
             </span>
           </div>
         </div>
 
-        <div className="rounded-md border border-border bg-card px-3 py-2.5">
-          <p className="text-[0.7rem] text-muted-foreground">zip 导入 / 导出</p>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
+        <div className="rounded-md border border-border bg-card px-3 py-3">
+          <p className="text-subheading text-muted-foreground">zip 导入 / 导出</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void handleExportZip()}>
-              <Upload className="size-3.5" /> 导出 zip
+              <Upload className="size-4" /> 导出 zip
             </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void handleImportZip()}>
-              <Download className="size-3.5" /> 导入 zip
+              <Download className="size-4" /> 导入 zip
             </Button>
           </div>
         </div>
 
-        <div className="rounded-md border border-border bg-card px-3 py-2.5">
-          <p className="text-[0.7rem] text-muted-foreground">TCP P2P</p>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="rounded-md border border-border bg-card px-3 py-3">
+          <p className="text-subheading text-muted-foreground">TCP P2P</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1 text-muted-foreground">
               端口
               <input
                 type="number"
@@ -451,10 +373,10 @@ function SyncSection() {
                   const n = Number(e.target.value);
                   if (Number.isFinite(n) && n > 0 && n < 65536) void updateNetwork({ listenPort: n });
                 }}
-                className="h-6 w-20 rounded border border-border bg-background px-1 text-center tabular-nums outline-none"
+                className="h-7 w-24 rounded border border-border bg-background px-1 text-center tabular-nums outline-none"
               />
             </label>
-            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            <label className="flex items-center gap-1 text-muted-foreground">
               <input
                 type="checkbox"
                 checked={settings.network?.relayMode ?? false}
@@ -463,7 +385,7 @@ function SyncSection() {
               中转模式
             </label>
             <Button size="sm" variant={serverRunning ? 'default' : 'outline'} onClick={() => void toggleServer()}>
-              <Server className="size-3.5" /> {serverRunning ? '停止监听' : '启动监听'}
+              <Server className="size-4" /> {serverRunning ? '停止监听' : '启动监听'}
             </Button>
           </div>
         </div>
@@ -512,52 +434,52 @@ function CommandsSection() {
   };
 
   return (
-    <Section title="命令" hint="占位符：{{path}} {{name}} {{category}} {{tag:foo}}。在项目详情中可一键执行。">
+    <Section title="命令" hint="占位符：{{path}} {{name}} {{tag:foo}}。在项目详情中可一键执行。">
       <div className="space-y-2">
         {list.length === 0 ? (
-          <p className="text-xs text-muted-foreground">尚未配置自定义命令。</p>
+          <p className="text-note text-muted-foreground">尚未配置自定义命令。</p>
         ) : (
           list.map(c => (
             <div
               key={c.id}
-              className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2.5"
             >
               <div className="flex-1 min-w-0">
                 <p className="truncate font-medium text-foreground">{c.label}</p>
-                <p className="truncate font-mono text-[0.7rem] text-muted-foreground">
+                <p className="truncate text-note text-muted-foreground">
                   {c.command}
                   {c.args?.length ? ` ${c.args.join(' ')}` : ''}
                 </p>
               </div>
               <Button size="icon-xs" variant="ghost" onClick={() => void removeCommand(c.id)}>
-                <Trash2 className="size-3.5" />
+                <Trash2 className="size-4" />
               </Button>
             </div>
           ))
         )}
-        <div className="rounded-md border border-dashed border-border px-3 py-2">
+        <div className="rounded-md border border-dashed border-border px-3 py-3">
           <div className="grid grid-cols-3 gap-2">
             <input
               value={draft.label}
               onChange={e => setDraft({ ...draft, label: e.target.value })}
               placeholder="名称"
-              className="h-7 rounded-md border border-border bg-background px-2 text-xs outline-none"
+              className="h-9 rounded-md border border-border bg-background px-2 outline-none"
             />
             <input
               value={draft.command}
               onChange={e => setDraft({ ...draft, command: e.target.value })}
               placeholder="命令，如 idea64"
-              className="h-7 rounded-md border border-border bg-background px-2 text-xs outline-none"
+              className="h-9 rounded-md border border-border bg-background px-2 outline-none"
             />
             <input
               value={draft.args}
               onChange={e => setDraft({ ...draft, args: e.target.value })}
               placeholder="参数（空格分隔），如 {{path}}"
-              className="h-7 rounded-md border border-border bg-background px-2 text-xs outline-none"
+              className="h-9 rounded-md border border-border bg-background px-2 outline-none"
             />
           </div>
-          <Button size="sm" variant="outline" className="mt-2" onClick={() => void addCommand()}>
-            <Plus className="size-3.5" /> 添加命令
+          <Button size="sm" variant="outline" className="mt-2.5" onClick={() => void addCommand()}>
+            <Plus className="size-4" /> 添加命令
           </Button>
         </div>
       </div>

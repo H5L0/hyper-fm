@@ -82,8 +82,6 @@ export interface SyncFileEntry {
 
 export interface SyncProjectMeta {
   name: string;
-  /** 分类名称（不传 ID，跨设备稳定） */
-  category?: string;
   description?: string;
   tags: string[];
 }
@@ -178,7 +176,7 @@ export interface CustomCommand {
   id: string;
   /** 显示名 */
   label: string;
-  /** 可执行命令；占位符 {{path}} {{name}} {{tag:foo}} {{category}} */
+  /** 可执行命令；占位符 {{path}} {{name}} {{tag:foo}} */
   command: string;
   /** 参数列表；与 command 二选一传给 spawn；同样支持占位符 */
   args?: string[];

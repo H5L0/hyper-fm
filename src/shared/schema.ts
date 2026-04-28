@@ -5,10 +5,10 @@
 
 import {
   type AppConfig,
-  type Category,
   type IgnoreRules,
   type Project,
   type ScanRoot,
+  type TagDefinition,
   type UiPreferences,
   CONFIG_SCHEMA_VERSION,
 } from './types.js';
@@ -42,7 +42,6 @@ export function createDefaultConfig(): AppConfig {
     version: CONFIG_SCHEMA_VERSION,
     scanRoots: [],
     ignore: createDefaultIgnore(),
-    categories: [],
     projects: [],
     ui: createDefaultUi(),
   };
@@ -101,20 +100,6 @@ function validateScanRoot(value: unknown, idx: number, errors: ValidationError[]
   };
 }
 
-function validateCategory(value: unknown, idx: number, errors: ValidationError[]): Category | null {
-  const base = `categories[${idx}]`;
-  if (!isObject(value)) {
-    pushError(errors, base, '必须为对象');
-    return null;
-  }
-  const { id, name, color } = value;
-  if (!isString(id)) pushError(errors, `${base}.id`, '缺少 id');
-  if (!isString(name)) pushError(errors, `${base}.name`, '缺少 name');
-  if (color !== undefined && !isString(color)) pushError(errors, `${base}.color`, '必须为字符串');
-  if (!isString(id) || !isString(name)) return null;
-  return { id, name, color: isString(color) ? color : undefined };
-}
-
 function validateProject(value: unknown, idx: number, errors: ValidationError[]): Project | null {
   const base = `projects[${idx}]`;
   if (!isObject(value)) {
@@ -139,7 +124,6 @@ function validateProject(value: unknown, idx: number, errors: ValidationError[])
     path: v.path,
     rootId: v.rootId,
     name: v.name,
-    categoryId: isString(v.categoryId) ? v.categoryId : undefined,
     description: isString(v.description) ? v.description : undefined,
     tags,
     hasMetaFile,
@@ -267,6 +251,41 @@ function validateCommands(value: unknown, errors: ValidationError[]): CustomComm
     .filter((c): c is CustomCommand => c !== null);
 }
 
+function validateTagDefinition(value: unknown, idx: number, errors: ValidationError[]): TagDefinition | null {
+  const base = `tags[${idx}]`;
+  if (!isObject(value)) {
+    pushError(errors, base, '必须为对象');
+    return null;
+  }
+  const { name, color } = value;
+  if (!isString(name) || name.length === 0) {
+    pushError(errors, `${base}.name`, '缺少 name');
+    return null;
+  }
+  return {
+    name,
+    color: isString(color) && color.length > 0 ? color : '#94a3b8',
+  };
+}
+
+function validateTags(value: unknown, errors: ValidationError[]): TagDefinition[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    pushError(errors, 'tags', '必须为数组');
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const result: TagDefinition[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const t = validateTagDefinition(value[i], i, errors);
+    if (!t) continue;
+    if (seen.has(t.name)) continue;
+    seen.add(t.name);
+    result.push(t);
+  }
+  return result;
+}
+
 export interface ValidationResult {
   config: AppConfig;
   errors: ValidationError[];
@@ -294,11 +313,6 @@ export function validateConfig(input: unknown): ValidationResult {
     .map((r, i) => validateScanRoot(r, i, errors))
     .filter((r): r is ScanRoot => r !== null);
 
-  const categoriesRaw = Array.isArray(input.categories) ? input.categories : [];
-  const categories = categoriesRaw
-    .map((c, i) => validateCategory(c, i, errors))
-    .filter((c): c is Category => c !== null);
-
   const projectsRaw = Array.isArray(input.projects) ? input.projects : [];
   const projects = projectsRaw
     .map((p, i) => validateProject(p, i, errors))
@@ -306,6 +320,7 @@ export function validateConfig(input: unknown): ValidationResult {
 
   const ignore = validateIgnore(input.ignore, errors);
   const ui = validateUi(input.ui, errors);
+  const tags = validateTags(input.tags, errors);
   const devices = validateDevices(input.devices, errors);
   const sync = validateSync(input.sync, errors);
   const commands = validateCommands(input.commands, errors);
@@ -314,9 +329,9 @@ export function validateConfig(input: unknown): ValidationResult {
     version: CONFIG_SCHEMA_VERSION,
     scanRoots,
     ignore,
-    categories,
     projects,
     ui,
+    ...(tags ? { tags } : {}),
     ...(devices ? { devices } : {}),
     ...(sync ? { sync } : {}),
     ...(commands ? { commands } : {}),

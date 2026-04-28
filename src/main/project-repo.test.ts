@@ -1,61 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import {
-  addCategory,
   addScanRoot,
   applyProjectPatch,
   mergeScanResult,
-  removeCategory,
   removeScanRoot,
-  renameCategory,
   updateScanRoot,
 } from './project-repo.js';
 import { createDefaultConfig } from '../shared/schema.js';
 import type { ScanCandidate } from './scanner.js';
-
-function withCategory(name = '游戏') {
-  const base = createDefaultConfig();
-  const { config, category } = addCategory(base, { name });
-  return { config, category };
-}
-
-describe('project-repo / categories', () => {
-  test('[addCategory] 重名应抛错', () => {
-    const { config } = withCategory('游戏');
-    expect(() => addCategory(config, { name: '游戏' })).toThrow();
-  });
-
-  test('[renameCategory] 应更新名称且检查冲突', () => {
-    const { config, category } = withCategory('游戏');
-    const { config: renamed } = renameCategory(config, category.id, '游戏开发');
-    expect(renamed.categories[0]?.name).toBe('游戏开发');
-
-    const { config: more } = addCategory(renamed, { name: 'Node' });
-    expect(() => renameCategory(more, category.id, 'Node')).toThrow();
-  });
-
-  test('[removeCategory] 应解除项目关联', () => {
-    const base = createDefaultConfig();
-    const { config: c1, category } = addCategory(base, { name: '游戏' });
-    const c2 = {
-      ...c1,
-      projects: [
-        {
-          id: 'prj_1',
-          path: 'D:/x',
-          rootId: 'root_1',
-          name: 'X',
-          tags: [],
-          categoryId: category.id,
-          hasMetaFile: false,
-          lastScannedAt: '2026-01-01T00:00:00Z',
-        },
-      ],
-    };
-    const next = removeCategory(c2, category.id);
-    expect(next.categories).toHaveLength(0);
-    expect(next.projects[0]?.categoryId).toBeUndefined();
-  });
-});
 
 describe('project-repo / scan roots', () => {
   test('[addScanRoot] 重复路径应抛错', () => {
@@ -136,7 +88,7 @@ describe('project-repo / mergeScanResult', () => {
     expect(second.config.projects.map(p => p.name).sort()).toEqual(['a', 'c']);
   });
 
-  test('[mergeScanResult] metaResolver 应覆盖 name/description 并自动建分类', async () => {
+  test('[mergeScanResult] metaResolver 应覆盖 name/description/tags', async () => {
     const { config: c1 } = addScanRoot(createDefaultConfig(), { path: 'D:/p' });
     const rootId = c1.scanRoots[0]!.id;
     const cand: ScanCandidate = {
@@ -153,42 +105,20 @@ describe('project-repo / mergeScanResult', () => {
         metaResolver: async () => ({
           schema: 'fm.meta/v1',
           name: 'GameX',
-          category: '游戏',
           description: 'desc',
-          tags: ['unity'],
+          tags: ['unity', 'game'],
         }),
       },
       [cand],
     );
-    expect(out.config.categories.find(c => c.name === '游戏')).toBeDefined();
     const project = out.config.projects[0]!;
     expect(project.name).toBe('GameX');
-    expect(project.tags).toEqual(['unity']);
-    expect(project.categoryId).toBe(out.config.categories[0]!.id);
+    expect(project.tags).toEqual(['unity', 'game']);
+    expect(project.description).toBe('desc');
   });
 });
 
 describe('project-repo / applyProjectPatch', () => {
-  test('[applyProjectPatch] 不存在的 categoryId 应抛错', () => {
-    const config = {
-      ...createDefaultConfig(),
-      projects: [
-        {
-          id: 'prj_1',
-          path: 'D:/x',
-          rootId: 'root_1',
-          name: 'X',
-          tags: [],
-          hasMetaFile: false,
-          lastScannedAt: '2026-01-01T00:00:00Z',
-        },
-      ],
-    };
-    expect(() =>
-      applyProjectPatch(config, 'prj_1', { categoryId: 'cat_missing' }),
-    ).toThrow();
-  });
-
   test('[applyProjectPatch] 应裁剪 tags 中的空白项', () => {
     const config = {
       ...createDefaultConfig(),

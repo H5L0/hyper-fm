@@ -20,17 +20,13 @@ import {
   type CustomCommand,
 } from '../shared/sync-types.js';
 import {
-  addCategory,
   addProjectManual,
   addScanRoot,
   applyProjectPatch,
   findProjectById,
   mergeScanResult,
-  removeCategory,
   removeProject,
   removeScanRoot,
-  renameCategory,
-  setCategoryColor,
   setProjectMetaFlag,
   updateScanRoot,
 } from './project-repo.js';
@@ -302,12 +298,8 @@ export function registerIpcHandlers(): void {
       assertString(id, 'id');
       return mutate(async config => {
         const { config: applied, project } = applyProjectPatch(config, id, patch as ProjectMetaPatch);
-        const category = project.categoryId
-          ? applied.categories.find(c => c.id === project.categoryId)
-          : undefined;
         await writeMetaFile(project.path, {
           name: project.name,
-          category: category?.name,
           description: project.description,
           tags: project.tags,
         });
@@ -346,35 +338,23 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'fm:projects:add',
     wrap('fm:projects:add', async (_e, input: unknown) => {
-      const i = input as { path: string; name?: string; description?: string; tags?: string[]; categoryId?: string };
+      const i = input as { path: string; name?: string; description?: string; tags?: string[] };
       assertString(i?.path, 'input.path');
       return mutate(async config => {
         const { config: next, project } = addProjectManual(config, i, process.platform);
         // 若项目根存在 .meta-data，回填名称/标签等
         const meta = await readMetaFile(project.path);
         if (meta) {
-          let cfg = next;
-          let categoryId = project.categoryId;
-          if (meta.category) {
-            let cat = cfg.categories.find(c => c.name === meta.category);
-            if (!cat) {
-              const r = addCategory(cfg, { name: meta.category });
-              cfg = r.config;
-              cat = r.category;
-            }
-            categoryId = cat.id;
-          }
           const merged: Project = {
             ...project,
             name: meta.name ?? project.name,
             description: meta.description ?? project.description,
             tags: meta.tags ?? project.tags,
-            categoryId,
             hasMetaFile: true,
           };
-          cfg = {
-            ...cfg,
-            projects: cfg.projects.map(p => (p.id === merged.id ? merged : p)),
+          const cfg = {
+            ...next,
+            projects: next.projects.map(p => (p.id === merged.id ? merged : p)),
           };
           return { next: cfg, result: merged };
         }
@@ -408,53 +388,99 @@ export function registerIpcHandlers(): void {
     }),
   );
 
-  // ── 分类 ──
-  ipcMain.handle(
-    'fm:categories:create',
-    wrap('fm:categories:create', async (_e, input: unknown) => {
-      return mutate(config => {
-        const { config: next, category } = addCategory(config, input as never);
-        return { next, result: category };
-      });
-    }),
-  );
-
-  ipcMain.handle(
-    'fm:categories:rename',
-    wrap('fm:categories:rename', async (_e, id: unknown, name: unknown) => {
-      assertString(id, 'id');
-      assertString(name, 'name');
-      return mutate(config => {
-        const { config: next, category } = renameCategory(config, id, name);
-        return { next, result: category };
-      });
-    }),
-  );
-
-  ipcMain.handle(
-    'fm:categories:setColor',
-    wrap('fm:categories:setColor', async (_e, id: unknown, color: unknown) => {
-      assertString(id, 'id');
-      assertString(color, 'color');
-      return mutate(config => {
-        const { config: next, category } = setCategoryColor(config, id, color);
-        return { next, result: category };
-      });
-    }),
-  );
-
-  ipcMain.handle(
-    'fm:categories:remove',
-    wrap('fm:categories:remove', async (_e, id: unknown) => {
-      assertString(id, 'id');
-      return mutate(config => ({ next: removeCategory(config, id), result: undefined as void }));
-    }),
-  );
-
+  // ── 同步 ──
   registerSyncHandlers();
   registerCommandHandlers();
+  registerTagHandlers();
 
   logger.info('IPC 处理器已注册');
+}
+
+// ---------------------------------------------------------------------------
+// 标签注册表
+// ---------------------------------------------------------------------------
+
+function registerTagHandlers(): void {
+  ipcMain.handle(
+    'fm:tags:list',
+    wrap('fm:tags:list', () => requireSession().config.tags ?? []),
+  );
+
+  ipcMain.handle(
+    'fm:tags:upsert',
+    wrap('fm:tags:upsert', async (_e, input: unknown) => {
+      if (!input || typeof input !== 'object') {
+        throw new FmError('CONFIG_INVALID', 'tag 必须为对象');
+      }
+      const obj = input as { name?: unknown; color?: unknown };
+      const name = typeof obj.name === 'string' ? obj.name.trim() : '';
+      const color = typeof obj.color === 'string' && obj.color ? obj.color : '#94a3b8';
+      if (!name) throw new FmError('CONFIG_INVALID', 'tag.name 不可为空');
+      return mutate(config => {
+        const existing = config.tags ?? [];
+        const others = existing.filter(t => t.name !== name);
+        const next = { ...config, tags: [...others, { name, color }] };
+        return { next, result: next.tags };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:tags:remove',
+    wrap('fm:tags:remove', async (_e, name: unknown) => {
+      if (typeof name !== 'string') throw new FmError('CONFIG_INVALID', 'name 必须为字符串');
+      return mutate(config => {
+        const next = { ...config, tags: (config.tags ?? []).filter(t => t.name !== name) };
+        return { next, result: next.tags };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:tags:rename',
+    wrap('fm:tags:rename', async (_e, oldName: unknown, newName: unknown) => {
+      if (typeof oldName !== 'string') throw new FmError('CONFIG_INVALID', 'oldName 必须为字符串');
+      if (typeof newName !== 'string') throw new FmError('CONFIG_INVALID', 'newName 必须为字符串');
+      const from = oldName.trim();
+      const to = newName.trim().replace(/^#/, '');
+      if (!from) throw new FmError('CONFIG_INVALID', 'oldName 不可为空');
+      if (!to) throw new FmError('CONFIG_INVALID', 'newName 不可为空');
+      if (from === to) {
+        return (requireSession().config.tags ?? []) as readonly { name: string; color: string }[];
+      }
+      return mutate(async config => {
+        const existing = config.tags ?? [];
+        const target = existing.find(t => t.name === from);
+        if (!target) throw new FmError('CONFIG_INVALID', `标签不存在：${from}`);
+        if (existing.some(t => t.name === to)) {
+          throw new FmError('CONFIG_INVALID', `标签已存在：${to}`);
+        }
+        const tags = existing.map(t => (t.name === from ? { ...t, name: to } : t));
+        const projects = config.projects.map(p =>
+          p.tags.includes(from)
+            ? { ...p, tags: p.tags.map(x => (x === from ? to : x)) }
+            : p,
+        );
+        // 把 .meta-data 中的标签也同步重命名，避免下次扫描覆盖
+        for (const p of projects) {
+          if (!p.hasMetaFile) continue;
+          if (!p.tags.includes(to)) continue;
+          try {
+            await writeMetaFile(p.path, {
+              name: p.name,
+              description: p.description,
+              tags: p.tags,
+            });
+          } catch (err) {
+            logger.warn(
+              `重命名标签时同步 .meta-data 失败：${p.path} ${(err as Error).message}`,
+            );
+          }
+        }
+        return { next: { ...config, tags, projects }, result: tags };
+      });
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------

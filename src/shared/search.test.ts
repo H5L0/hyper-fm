@@ -23,10 +23,9 @@ describe('search', () => {
   });
 
   test('[parseSearchQuery] 字段前缀应被识别', () => {
-    const q = parseSearchQuery('tag:unity cat:游戏 path:projects');
+    const q = parseSearchQuery('tag:unity path:projects');
     expect(q.terms).toEqual([
       { field: 'tag', value: 'unity' },
-      { field: 'category', value: '游戏' },
       { field: 'path', value: 'projects' },
     ]);
   });

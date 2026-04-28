@@ -16,7 +16,7 @@ export function Toaster() {
         <div
           key={t.id}
           className={cn(
-            'pointer-events-auto flex items-start gap-2 rounded-md border bg-card px-3 py-2 text-xs shadow-md',
+            'pointer-events-auto flex items-start gap-2 rounded-md border bg-card px-3 py-2 text-note shadow-md',
             t.level === 'error'
               ? 'border-destructive/40 text-destructive'
               : t.level === 'success'

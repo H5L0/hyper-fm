@@ -61,7 +61,6 @@ export async function buildLocalManifest(
   if (!cfg.devices) throw new FmError('INTERNAL', '设备注册失败');
   const filter = options.projectIds ? new Set(options.projectIds) : null;
   const targets = cfg.projects.filter(p => (filter ? filter.has(p.id) : true));
-  const categoriesById = new Map(cfg.categories.map(c => [c.id, c]));
   const entries: SyncProjectEntry[] = [];
   const map = new Map<string, SyncProjectEntry>();
   for (const project of targets) {
@@ -73,7 +72,6 @@ export async function buildLocalManifest(
         name: project.name,
         description: project.description,
         tags: project.tags,
-        category: project.categoryId ? categoriesById.get(project.categoryId)?.name : undefined,
       },
       ignorePatterns,
     });

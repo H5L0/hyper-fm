@@ -20,14 +20,12 @@ describe('meta-file', () => {
     const dir = await tmpDir();
     await writeMetaFile(dir, {
       name: 'MyGame',
-      category: '游戏',
       description: 'Unity 原型',
       tags: ['unity'],
     });
     expect(await metaFileExists(dir)).toBe(true);
     const meta = await readMetaFile(dir);
     expect(meta?.name).toBe('MyGame');
-    expect(meta?.category).toBe('游戏');
     expect(meta?.tags).toEqual(['unity']);
   });
 

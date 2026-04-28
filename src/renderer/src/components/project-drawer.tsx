@@ -2,17 +2,27 @@
 // 项目详情抽屉：右侧 480px，包含元数据编辑
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import { ChevronDown, ExternalLink, FileMinus, FileText, Save, Terminal, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ChevronDown,
+  ExternalLink,
+  FileMinus,
+  FileText,
+  Plus,
+  Save,
+  Terminal,
+  X,
+} from 'lucide-react';
 import type { CustomCommand, PresetCommandDescriptor, Project, ProjectMetaPatch } from '@shared/bridge.js';
 import { explainMatch, matchProject, parseSearchQuery } from '@shared/search.js';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '../store/app-store.js';
+import { TagPill, resolveTagColor } from './tag-pill.js';
+import { NewTagDialog } from './new-tag-dialog.js';
 
 interface FormState {
   name: string;
-  categoryId: string;
   description: string;
   tags: string[];
 }
@@ -20,10 +30,19 @@ interface FormState {
 function projectToForm(project: Project): FormState {
   return {
     name: project.name,
-    categoryId: project.categoryId ?? '',
     description: project.description ?? '',
     tags: [...project.tags],
   };
+}
+
+function formsEqual(a: FormState, b: FormState): boolean {
+  if (a.name !== b.name) return false;
+  if (a.description !== b.description) return false;
+  if (a.tags.length !== b.tags.length) return false;
+  for (let i = 0; i < a.tags.length; i++) {
+    if (a.tags[i] !== b.tags[i]) return false;
+  }
+  return true;
 }
 
 export function ProjectDrawer() {
@@ -35,26 +54,51 @@ export function ProjectDrawer() {
   );
 
   const [form, setForm] = useState<FormState | null>(project ? projectToForm(project) : null);
-  const [tagDraft, setTagDraft] = useState('');
+  const [initial, setInitial] = useState<FormState | null>(
+    project ? projectToForm(project) : null,
+  );
   const [presets, setPresets] = useState<PresetCommandDescriptor[]>([]);
   const [customCommands, setCustomCommands] = useState<CustomCommand[]>([]);
   const [commandsOpen, setCommandsOpen] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
 
   useEffect(() => {
-    setForm(project ? projectToForm(project) : null);
-    setTagDraft('');
+    const next = project ? projectToForm(project) : null;
+    setForm(next);
+    setInitial(next);
     setCommandsOpen(false);
+    setConfirmClose(false);
   }, [project?.id, project?.lastScannedAt]);
+
+  const isDirty = useMemo(() => {
+    if (!form || !initial) return false;
+    return !formsEqual(form, initial);
+  }, [form, initial]);
+
+  const tryClose = () => {
+    if (isDirty) {
+      setConfirmClose(true);
+    } else {
+      actions.selectProject(undefined);
+    }
+  };
 
   // ESC 关闭
   useEffect(() => {
     if (!project) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') actions.selectProject(undefined);
+      if (e.key === 'Escape') {
+        if (confirmClose) {
+          setConfirmClose(false);
+        } else {
+          tryClose();
+        }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [project, actions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, isDirty, confirmClose]);
 
   useEffect(() => {
     void window.fm.commands.presets().then(setPresets);
@@ -64,12 +108,9 @@ export function ProjectDrawer() {
   const matchExplanation = useMemo(() => {
     if (!project || !search.trim()) return '';
     const query = parseSearchQuery(search);
-    const cat = project.categoryId
-      ? config.categories.find(c => c.id === project.categoryId)
-      : undefined;
-    const explain = matchProject(project, query, { category: cat });
+    const explain = matchProject(project, query);
     return explain ? explainMatch(explain) : '';
-  }, [project, search, config.categories]);
+  }, [project, search]);
 
   if (!project || !form) return null;
 
@@ -88,8 +129,19 @@ export function ProjectDrawer() {
     name: form.name,
     description: form.description,
     tags: form.tags,
-    categoryId: form.categoryId === '' ? null : form.categoryId,
   });
+
+  const doSave = async (writeFile: boolean, then: 'close' | 'keep') => {
+    await actions.saveProject(project.id, buildPatch(), writeFile);
+    if (then === 'close') {
+      setConfirmClose(false);
+      actions.selectProject(undefined);
+    }
+  };
+
+  const removeTag = (tag: string) => {
+    setForm({ ...form, tags: form.tags.filter(x => x !== tag) });
+  };
 
   const addTag = (raw: string) => {
     const t = raw.trim().replace(/^#/, '');
@@ -97,22 +149,12 @@ export function ProjectDrawer() {
     setForm({ ...form, tags: [...form.tags, t] });
   };
 
-  const onTagKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      addTag(tagDraft);
-      setTagDraft('');
-    } else if (e.key === 'Backspace' && tagDraft === '' && form.tags.length > 0) {
-      setForm({ ...form, tags: form.tags.slice(0, -1) });
-    }
-  };
-
   return (
     <>
       <button
         type="button"
         aria-label="关闭详情"
-        onClick={() => actions.selectProject(undefined)}
+        onClick={tryClose}
         className="fixed inset-0 z-30 bg-black/10 backdrop-blur-[1px] dark:bg-black/40"
       />
       <aside
@@ -121,14 +163,14 @@ export function ProjectDrawer() {
           'animate-in slide-in-from-right duration-150',
         )}
       >
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
+        <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
           <div className="flex items-center gap-2">
             {project.hasMetaFile ? (
-              <span className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-secondary-foreground">
-                <FileText className="size-3" /> .meta-data
+              <span className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-caption text-secondary-foreground">
+                <FileText className="size-3.5" /> .meta-data
               </span>
             ) : (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
+              <span className="rounded bg-muted px-1.5 py-0.5 text-caption text-muted-foreground">
                 仅数据库
               </span>
             )}
@@ -144,13 +186,13 @@ export function ProjectDrawer() {
                 <Terminal className="size-3.5" />
               </Button>
               {commandsOpen ? (
-                <div className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-md border border-border bg-popover py-1 text-sm shadow-md">
+                <div className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-md">
                   {presets.map(p => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => void runCommand(p.id)}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
                     >
                       {p.label}
                     </button>
@@ -163,7 +205,7 @@ export function ProjectDrawer() {
                           key={c.id}
                           type="button"
                           onClick={() => void runCommand(c.id)}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
                           title={c.description ?? c.command}
                         >
                           <ChevronDown className="size-3 shrink-0 opacity-0" />
@@ -186,7 +228,7 @@ export function ProjectDrawer() {
             <Button
               size="icon-xs"
               variant="ghost"
-              onClick={() => actions.selectProject(undefined)}
+              onClick={tryClose}
             >
               <X className="size-3.5" />
             </Button>
@@ -194,7 +236,7 @@ export function ProjectDrawer() {
         </div>
 
         {matchExplanation ? (
-          <div className="border-b border-border bg-muted/40 px-4 py-1.5 text-[0.7rem] text-muted-foreground">
+          <div className="border-b border-border bg-muted/40 px-4 py-2 text-caption text-muted-foreground">
             {matchExplanation}
           </div>
         ) : null}
@@ -204,32 +246,17 @@ export function ProjectDrawer() {
             <input
               value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })}
-              className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="h-9 w-full rounded-md border border-border bg-background px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
             />
           </Field>
 
           <Field label="路径">
             <p
-              className="font-mono text-[0.7rem] break-all text-muted-foreground"
+              className="text-note break-all text-muted-foreground"
               title={project.path}
             >
               {project.path}
             </p>
-          </Field>
-
-          <Field label="分类">
-            <select
-              value={form.categoryId}
-              onChange={e => setForm({ ...form, categoryId: e.target.value })}
-              className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-            >
-              <option value="">未分类</option>
-              {config.categories.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
           </Field>
 
           <Field label="描述">
@@ -237,35 +264,17 @@ export function ProjectDrawer() {
               rows={4}
               value={form.description}
               onChange={e => setForm({ ...form, description: e.target.value })}
-              className="w-full resize-none rounded-md border border-border bg-background p-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="w-full resize-none rounded-md border border-border bg-background p-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
             />
           </Field>
 
           <Field label="标签">
-            <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1.5">
-              {form.tags.map(t => (
-                <span
-                  key={t}
-                  className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[0.7rem] text-secondary-foreground"
-                >
-                  #{t}
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={() => setForm({ ...form, tags: form.tags.filter(x => x !== t) })}
-                  >
-                    <X className="size-3" />
-                  </button>
-                </span>
-              ))}
-              <input
-                value={tagDraft}
-                onChange={e => setTagDraft(e.target.value)}
-                onKeyDown={onTagKey}
-                placeholder={form.tags.length === 0 ? '回车添加标签' : ''}
-                className="flex-1 min-w-[80px] bg-transparent text-xs outline-none placeholder:text-muted-foreground/70"
-              />
-            </div>
+            <TagEditor
+              tags={form.tags}
+              tagDefs={config.tags}
+              onRemove={removeTag}
+              onAdd={addTag}
+            />
           </Field>
         </div>
 
@@ -279,36 +288,232 @@ export function ProjectDrawer() {
               <FileMinus className="size-3.5" /> 删除 .meta-data
             </Button>
           ) : (
-            <span className="text-xs text-muted-foreground">未写入 .meta-data</span>
+            <span className="text-note text-muted-foreground">未写入 .meta-data</span>
           )}
           <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="outline"
-              onClick={() => void actions.saveProject(project.id, buildPatch(), true)}
+              onClick={() => void doSave(true, 'close')}
             >
               <FileText className="size-3.5" /> 写入 .meta-data
             </Button>
             <Button
               size="sm"
-              onClick={() => void actions.saveProject(project.id, buildPatch(), false)}
+              onClick={() => void doSave(false, 'close')}
             >
               <Save className="size-3.5" /> 保存
             </Button>
           </div>
         </div>
       </aside>
+
+      {confirmClose ? (
+        <UnsavedConfirmDialog
+          onCancel={() => setConfirmClose(false)}
+          onDiscard={() => {
+            setConfirmClose(false);
+            actions.selectProject(undefined);
+          }}
+          onSave={() => void doSave(project.hasMetaFile, 'close')}
+        />
+      ) : null}
     </>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="mb-4">
-      <label className="mb-1.5 block text-[0.7rem] font-medium tracking-wider text-muted-foreground uppercase">
+    <div className="mb-5">
+      <label className="text-subheading mb-2 block text-muted-foreground">
         {label}
       </label>
       {children}
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// 未保存确认：保存并关闭 / 不保存 / 取消
+// ---------------------------------------------------------------------------
+
+function UnsavedConfirmDialog({
+  onCancel,
+  onDiscard,
+  onSave,
+}: {
+  onCancel: () => void;
+  onDiscard: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="取消"
+        onClick={onCancel}
+        className="fixed inset-0 z-[60] cursor-default bg-black/40 backdrop-blur-[1px]"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="fixed top-1/2 left-1/2 z-[70] w-[360px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-border bg-card shadow-xl"
+      >
+        <div className="px-4 pt-4 pb-2">
+          <h2 className="text-heading">尚未保存的修改</h2>
+          <p className="mt-2 text-note text-muted-foreground">
+            是否在关闭前保存这些修改？
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border bg-card/80 px-4 py-3">
+          <Button size="sm" variant="ghost" onClick={onDiscard}>
+            不保存
+          </Button>
+          <Button size="sm" variant="outline" onClick={onCancel}>
+            取消
+          </Button>
+          <Button size="sm" onClick={onSave}>
+            保存
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 标签编辑：已选标签 + 未选标签 + 新增按钮（带丝滑动画）
+// ---------------------------------------------------------------------------
+
+function startTransition(update: () => void): void {
+  const doc = document as Document & {
+    startViewTransition?: (cb: () => void) => unknown;
+  };
+  if (typeof doc.startViewTransition === 'function') {
+    doc.startViewTransition(() => update());
+  } else {
+    update();
+  }
+}
+
+function tagViewName(name: string): string {
+  // 转为合法 CSS ident：仅保留字母数字与下划线，其它转十六进制
+  const safe = [...name]
+    .map(ch => (/[a-zA-Z0-9_]/.test(ch) ? ch : `_${ch.charCodeAt(0).toString(16)}`))
+    .join('');
+  return `fm-tag-${safe}`;
+}
+
+function TagEditor({
+  tags,
+  tagDefs,
+  onAdd,
+  onRemove,
+}: {
+  tags: string[];
+  tagDefs: readonly import('@shared/bridge.js').TagDefinition[] | undefined;
+  onAdd: (value: string) => void;
+  onRemove: (value: string) => void;
+}) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const selectedSet = useMemo(() => new Set(tags), [tags]);
+  const available = useMemo(
+    () => (tagDefs ?? []).filter(t => !selectedSet.has(t.name)),
+    [tagDefs, selectedSet],
+  );
+
+  const select = (name: string) => {
+    startTransition(() => onAdd(name));
+  };
+
+  const remove = (name: string) => {
+    startTransition(() => onRemove(name));
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* 已选标签 */}
+      <div className="flex min-h-[2.25rem] flex-wrap items-center gap-1.5 p-0.5">
+        {tags.length === 0 ? (
+          <span className="px-1 text-note text-muted-foreground/70">尚未选择标签</span>
+        ) : (
+          tags.map(t => (
+            <span
+              key={`sel-${t}`}
+              style={{ viewTransitionName: tagViewName(t) }}
+              className="inline-block"
+            >
+              <TagPill
+                name={t}
+                color={resolveTagColor(t, tagDefs)}
+                size="md"
+                onRemove={() => remove(t)}
+              />
+            </span>
+          ))
+        )}
+      </div>
+
+      {/* 未选标签 + 新增 */}
+      <div>
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-subheading text-muted-foreground/80">
+            可选标签
+          </span>
+        </div>
+        {available.length === 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="text-note text-muted-foreground/70">
+              全部标签已选择。
+            </p>
+            <button
+              type="button"
+              aria-label="新建标签"
+              onClick={() => setDialogOpen(true)}
+              className="inline-flex size-6 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {available.map(t => (
+              <button
+                key={`opt-${t.name}`}
+                type="button"
+                onClick={() => select(t.name)}
+                style={{ viewTransitionName: tagViewName(t.name) }}
+                className="cursor-pointer rounded-full opacity-70 transition-opacity hover:opacity-100"
+              >
+                <TagPill name={t.name} color={t.color} size="md" />
+              </button>
+            ))}
+            <button
+              type="button"
+              aria-label="新建标签"
+              onClick={() => setDialogOpen(true)}
+              className="inline-flex size-6 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {dialogOpen ? (
+        <NewTagDialog
+          onClose={() => setDialogOpen(false)}
+          onCreated={name => {
+            startTransition(() => onAdd(name));
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 新建标签对话框已移至 new-tag-dialog.tsx，与侧边栏共用
+// ---------------------------------------------------------------------------
+

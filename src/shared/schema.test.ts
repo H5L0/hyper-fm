@@ -34,14 +34,12 @@ describe('schema', () => {
       version: 1,
       scanRoots: [{ id: 'root_1', path: 'D:/p', maxDepth: 2, enabled: true, label: '主' }],
       ignore: { respectGitignore: false, globs: ['x'] },
-      categories: [{ id: 'cat_1', name: '游戏', color: '#fff' }],
       projects: [
         {
           id: 'prj_1',
           path: 'D:/p/game',
           rootId: 'root_1',
           name: 'Game',
-          categoryId: 'cat_1',
           tags: ['unity'],
           hasMetaFile: false,
           lastScannedAt: '2026-01-01T00:00:00Z',
@@ -60,10 +58,8 @@ describe('schema', () => {
     const { config, errors } = validateConfig({
       version: 1,
       scanRoots: [{ id: 'root_1', path: 'D:/p', maxDepth: 0, enabled: true }, 'bad'],
-      categories: [{ name: '缺少 id' }],
       projects: [{}],
     });
-    expect(config.categories).toEqual([]);
     expect(config.projects).toEqual([]);
     expect(errors.length).toBeGreaterThan(0);
   });

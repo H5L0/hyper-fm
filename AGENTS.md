@@ -4,7 +4,7 @@
 
 ## 项目信息
 
-本项目（fm）是一个面向个人开发者的 **项目文件夹管理器**：扫描散落硬盘的项目目录，按类型/标签整理；支持项目根 `.meta-data` 自描述与 JSON 配置文件双轨持久化。基于 Electron + React + Vite + TypeScript。
+本项目（fm）是一个面向个人开发者的 **项目文件夹管理器**：扫描散落硬盘的项目目录，按标签整理；支持项目根 `.meta-data` 自描述与 JSON 配置文件双轨持久化。基于 Electron + React + Vite + TypeScript。
 
 ### 环境约束
 
@@ -19,7 +19,7 @@
   - `config-store.ts`：JSON 配置原子读写
   - `meta-file.ts`：项目根 `.meta-data` 读写
   - `scanner.ts` + `ignore-matcher.ts`：递归扫描与忽略规则
-  - `project-repo.ts`：DB 与扫描结果合并、分类/扫描根操作
+  - `project-repo.ts`：DB 与扫描结果合并、标签/扫描根操作
   - `session.ts`：当前已加载配置 + 串行写盘
   - `ipc.ts`：`fm:*` IPC 通道
   - `fm-error.ts`：跨进程错误结构
@@ -34,7 +34,8 @@
 ### 数据模型要点
 
 - **配置文件**：默认 `fm.config.json` 与可执行文件同级；用户可在「设置」中切换。
-- **优先级**：项目根 `.meta-data` 优先，DB 兜底。`.meta-data` 中的 `category` 按名称解析为 `categoryId`，缺失则自动创建。
+- **优先级**：项目根 `.meta-data` 优先，DB 兜底。
+- **标签**：标签为轻量字符串，颜色与显示在 `AppConfig.tags` 注册表（`TagDefinition: name + color`）中维护。
 - **路径**：内部统一存为正斜杠绝对路径。
 
 ### 更多信息
@@ -81,6 +82,20 @@
 
 - 不吞异常，要么抛出可定位错误，要么返回结构化错误对象。
 - 可恢复错误优先展示到界面，不静默失败。
+
+### 字体与排版规范
+
+- 全站统一 Geist 字体（含 `font-mono`），不再引入额外等宽字体。
+- 在 `src/renderer/index.css` 通过 `@layer components` 暴露语义化字号 token，UI 中**禁止使用 `text-xs`/`text-sm` 或 `text-[13px]` 之类的硬编码**：
+  - `text-display`：20px / 600，页面级大标题（如「设置」）
+  - `text-title`：18px / 600，重要标题
+  - `text-heading`：16px / 600，区块标题（如设置组名）
+  - `text-subheading`：13px / 500，小标题、表单字段标签
+  - `text-body`：14px / 400，正文（默认）
+  - `text-note`：13px / 400，次要说明、路径、时间等灰色备注
+  - `text-caption`：12px / 400，徽标、计数等紧凑信息
+- 基础字号通过 `body` 上的 `text-sm`（14px）控制，`html` 不动以保持 `1rem = 16px`。
+- 按钮在 `default/xs/sm/lg` 尺寸下使用 `pt-0.5` 矫正 Geist 视觉居中。
 
 ### 日志
 

@@ -5,7 +5,6 @@
 
 import {
   type AppConfig,
-  type Category,
   type Project,
   type ProjectMetaPatch,
   type ScanReport,
@@ -32,69 +31,6 @@ export function findProjectByPath(
   return config.projects.find(p => pathEquals(p.path, absPath, platform));
 }
 
-export function findCategoryByName(config: AppConfig, name: string): Category | undefined {
-  const trimmed = name.trim();
-  return config.categories.find(c => c.name === trimmed);
-}
-
-// ---------------------------------------------------------------------------
-// 分类
-// ---------------------------------------------------------------------------
-
-export function addCategory(config: AppConfig, input: { name: string; color?: string }): {
-  config: AppConfig;
-  category: Category;
-} {
-  const name = input.name.trim();
-  if (!name) throw new FmError('CONFIG_INVALID', '分类名称不能为空');
-  if (findCategoryByName(config, name)) {
-    throw new FmError('CONFIG_INVALID', `分类已存在：${name}`);
-  }
-  const category: Category = { id: generateId(ID_PREFIX.category), name, color: input.color };
-  return { config: { ...config, categories: [...config.categories, category] }, category };
-}
-
-export function renameCategory(config: AppConfig, id: string, name: string): {
-  config: AppConfig;
-  category: Category;
-} {
-  const trimmed = name.trim();
-  if (!trimmed) throw new FmError('CONFIG_INVALID', '分类名称不能为空');
-  const exists = config.categories.find(c => c.id === id);
-  if (!exists) throw new FmError('CATEGORY_NOT_FOUND', `分类不存在：${id}`);
-  if (config.categories.some(c => c.id !== id && c.name === trimmed)) {
-    throw new FmError('CONFIG_INVALID', `分类名称冲突：${trimmed}`);
-  }
-  const updated: Category = { ...exists, name: trimmed };
-  return {
-    config: { ...config, categories: config.categories.map(c => (c.id === id ? updated : c)) },
-    category: updated,
-  };
-}
-
-export function setCategoryColor(config: AppConfig, id: string, color: string): {
-  config: AppConfig;
-  category: Category;
-} {
-  const exists = config.categories.find(c => c.id === id);
-  if (!exists) throw new FmError('CATEGORY_NOT_FOUND', `分类不存在：${id}`);
-  const updated: Category = { ...exists, color };
-  return {
-    config: { ...config, categories: config.categories.map(c => (c.id === id ? updated : c)) },
-    category: updated,
-  };
-}
-
-export function removeCategory(config: AppConfig, id: string): AppConfig {
-  return {
-    ...config,
-    categories: config.categories.filter(c => c.id !== id),
-    projects: config.projects.map(p =>
-      p.categoryId === id ? { ...p, categoryId: undefined } : p,
-    ),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // 项目：扫描合并
 // ---------------------------------------------------------------------------
@@ -110,7 +46,7 @@ interface MergeContext {
  * 将一次扫描结果合并到 config 中，并返回新的 config 与 ScanReport。
  *
  * 注意：本函数只更新 DB 中的字段（hasMetaFile / lastScannedAt / lastModifiedAt 等
- * 与扫描相关的元字段），项目名称/分类/描述/标签等用户编辑字段会被保留。
+ * 与扫描相关的元字段），项目名称/描述/标签等用户编辑字段会被保留。
  * 如需让 .meta-data 内容覆盖到 DB，需要由调用方传入 metaResolver。
  */
 export async function mergeScanResult(
@@ -122,7 +58,6 @@ export async function mergeScanResult(
 
   let added = 0;
   let updated = 0;
-  let categoriesUpdate = config.categories;
 
   const projectByPath = new Map<string, Project>();
   for (const p of config.projects) {
@@ -167,14 +102,6 @@ export async function mergeScanResult(
         if (meta.name) project.name = meta.name;
         if (meta.description !== undefined) project.description = meta.description;
         if (meta.tags) project.tags = meta.tags;
-        if (meta.category) {
-          let cat = categoriesUpdate.find(c => c.name === meta.category);
-          if (!cat) {
-            cat = { id: generateId(ID_PREFIX.category), name: meta.category };
-            categoriesUpdate = [...categoriesUpdate, cat];
-          }
-          project.categoryId = cat.id;
-        }
       }
     }
 
@@ -190,7 +117,6 @@ export async function mergeScanResult(
 
   const newConfig: AppConfig = {
     ...config,
-    categories: categoriesUpdate,
     projects: result,
   };
 
@@ -224,17 +150,7 @@ export function applyProjectPatch(
     name: patch.name?.trim() || existing.name,
     description: patch.description !== undefined ? patch.description : existing.description,
     tags: patch.tags ? patch.tags.map(t => t.trim()).filter(Boolean) : existing.tags,
-    categoryId:
-      patch.categoryId === null
-        ? undefined
-        : patch.categoryId !== undefined
-          ? patch.categoryId
-          : existing.categoryId,
   };
-
-  if (next.categoryId && !config.categories.some(c => c.id === next.categoryId)) {
-    throw new FmError('CATEGORY_NOT_FOUND', `分类不存在：${next.categoryId}`);
-  }
 
   return {
     config: {
@@ -271,7 +187,6 @@ export interface AddProjectInput {
   name?: string;
   description?: string;
   tags?: string[];
-  categoryId?: string;
   hasMetaFile?: boolean;
   mtime?: string;
 }
@@ -285,9 +200,6 @@ export function addProjectManual(
   if (findProjectByPath(config, normalized, platform)) {
     throw new FmError('DUPLICATE_PATH', `项目已存在：${normalized}`);
   }
-  if (input.categoryId && !config.categories.some(c => c.id === input.categoryId)) {
-    throw new FmError('CATEGORY_NOT_FOUND', `分类不存在：${input.categoryId}`);
-  }
   const root = config.scanRoots.find(r => {
     const rp = normalizePath(r.path).toLowerCase();
     return normalized.toLowerCase().startsWith(`${rp}/`) || normalized.toLowerCase() === rp;
@@ -300,7 +212,6 @@ export function addProjectManual(
     name,
     description: input.description,
     tags: input.tags?.map(t => t.trim()).filter(Boolean) ?? [],
-    categoryId: input.categoryId,
     hasMetaFile: input.hasMetaFile ?? false,
     lastScannedAt: new Date().toISOString(),
     lastModifiedAt: input.mtime ?? new Date().toISOString(),

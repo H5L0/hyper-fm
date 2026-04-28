@@ -16,19 +16,19 @@ export function Toolbar() {
   const [addOpen, setAddOpen] = useState(false);
 
   return (
-    <div className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-card/40 px-3">
+    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card/40 px-2.5">
       <div className="relative flex-1 max-w-md">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           placeholder="搜索项目名、标签、路径"
           value={search}
           onChange={e => actions.setSearch(e.target.value)}
-          className="h-7 w-full rounded-md border border-border bg-background pr-2 pl-7 text-xs outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="h-7 w-full rounded-md border border-border bg-background pr-2 pl-7 outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
         />
       </div>
 
-      <div className="flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5">
+      <div className="flex h-7 items-center gap-0.5 rounded-md border border-border bg-background p-px">
         <ViewButton
           active={view === 'grid'}
           onClick={() => actions.setView('grid')}
@@ -74,7 +74,7 @@ function ViewButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex size-6 items-center justify-center rounded',
+        'flex size-6 items-center justify-center rounded-sm',
         active ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground',
       )}
     >
@@ -88,13 +88,11 @@ function ViewButton({
 // ---------------------------------------------------------------------------
 
 function AddProjectDialog({ onClose }: { onClose: () => void }) {
-  const { config } = useAppState();
   const actions = useAppActions();
   const [form, setForm] = useState<ManualProjectInput & { tagsDraft: string }>({
     path: '',
     name: '',
     description: '',
-    categoryId: '',
     tags: [],
     tagsDraft: '',
   });
@@ -133,7 +131,6 @@ function AddProjectDialog({ onClose }: { onClose: () => void }) {
         name: form.name?.trim() || undefined,
         description: form.description?.trim() || undefined,
         tags: form.tags,
-        categoryId: form.categoryId || undefined,
       });
       actions.toast('success', `已添加项目：${project.name}`);
       onClose();
@@ -157,20 +154,20 @@ function AddProjectDialog({ onClose }: { onClose: () => void }) {
         aria-modal="true"
         className="fixed top-1/2 left-1/2 z-50 w-[460px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-border bg-card shadow-xl"
       >
-        <div className="flex h-10 items-center justify-between border-b border-border px-3">
-          <h2 className="text-sm font-medium">添加项目</h2>
+        <div className="flex h-11 items-center justify-between border-b border-border px-3">
+          <h2 className="text-heading">添加项目</h2>
           <Button size="icon-xs" variant="ghost" onClick={onClose}>
             <X className="size-3.5" />
           </Button>
         </div>
-        <div className="space-y-3 px-4 py-4">
+        <div className="space-y-4 px-4 py-4">
           <DialogField label="路径">
             <div className="flex items-center gap-2">
               <input
                 value={form.path}
                 onChange={e => setForm(f => ({ ...f, path: e.target.value }))}
                 placeholder="选择或粘贴项目目录"
-                className="h-8 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                className="h-9 flex-1 rounded-md border border-border bg-background px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
               />
               <Button size="sm" variant="outline" onClick={() => void pickDir()}>
                 浏览…
@@ -181,29 +178,15 @@ function AddProjectDialog({ onClose }: { onClose: () => void }) {
             <input
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="h-9 w-full rounded-md border border-border bg-background px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
             />
-          </DialogField>
-          <DialogField label="分类">
-            <select
-              value={form.categoryId}
-              onChange={e => setForm(f => ({ ...f, categoryId: e.target.value }))}
-              className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-            >
-              <option value="">未分类</option>
-              {config.categories.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
           </DialogField>
           <DialogField label="描述">
             <textarea
               rows={3}
               value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              className="w-full resize-none rounded-md border border-border bg-background p-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="w-full resize-none rounded-md border border-border bg-background p-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
             />
           </DialogField>
           <DialogField label="标签">
@@ -211,7 +194,7 @@ function AddProjectDialog({ onClose }: { onClose: () => void }) {
               {form.tags?.map(t => (
                 <span
                   key={t}
-                  className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[0.7rem] text-secondary-foreground"
+                  className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-caption text-secondary-foreground"
                 >
                   #{t}
                   <button
@@ -228,7 +211,7 @@ function AddProjectDialog({ onClose }: { onClose: () => void }) {
                 onChange={e => setForm(f => ({ ...f, tagsDraft: e.target.value }))}
                 onKeyDown={onTagKey}
                 placeholder={form.tags?.length === 0 ? '回车添加标签' : ''}
-                className="flex-1 min-w-[80px] bg-transparent text-xs outline-none placeholder:text-muted-foreground/70"
+                className="flex-1 min-w-[80px] bg-transparent outline-none placeholder:text-muted-foreground/70"
               />
             </div>
           </DialogField>
@@ -249,7 +232,7 @@ function AddProjectDialog({ onClose }: { onClose: () => void }) {
 function DialogField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="mb-1 block text-[0.7rem] font-medium tracking-wider text-muted-foreground uppercase">
+      <label className="text-subheading mb-1.5 block text-muted-foreground">
         {label}
       </label>
       {children}

@@ -25,18 +25,11 @@ export interface IgnoreRules {
   globs: string[];
 }
 
-export interface Category {
-  id: string;
-  name: string;
-  color?: string;
-}
-
 export interface Project {
   id: string;
   path: string;
   rootId: string;
   name: string;
-  categoryId?: string;
   description?: string;
   tags: string[];
   hasMetaFile: boolean;
@@ -62,9 +55,10 @@ export interface AppConfig {
   version: number;
   scanRoots: ScanRoot[];
   ignore: IgnoreRules;
-  categories: Category[];
   projects: Project[];
   ui: UiPreferences;
+  /** 标签注册表：可在项目详情和侧边栏中显示颜色，未在此处注册的标签按默认色渲染 */
+  tags?: TagDefinition[];
   /** M2：设备身份与已知对端 */
   devices?: import('./sync-types.js').DeviceRegistry;
   /** M2：同步设置 */
@@ -74,13 +68,23 @@ export interface AppConfig {
 }
 
 // ---------------------------------------------------------------------------
+// 标签注册
+// ---------------------------------------------------------------------------
+
+export interface TagDefinition {
+  /** 标签名（唯一） */
+  name: string;
+  /** CSS 颜色（hex 或 var） */
+  color: string;
+}
+
+// ---------------------------------------------------------------------------
 // .meta-data 文件
 // ---------------------------------------------------------------------------
 
 export interface MetaFile {
   schema: typeof META_SCHEMA;
   name?: string;
-  category?: string;
   description?: string;
   tags?: string[];
   ignore?: string[];
@@ -92,7 +96,6 @@ export interface MetaFile {
 
 export interface ProjectMetaPatch {
   name?: string;
-  categoryId?: string | null;
   description?: string;
   tags?: string[];
 }
@@ -128,7 +131,6 @@ export type FmErrorCode =
   | 'PATH_NOT_FOUND'
   | 'PATH_NOT_DIRECTORY'
   | 'PROJECT_NOT_FOUND'
-  | 'CATEGORY_NOT_FOUND'
   | 'DUPLICATE_PATH'
   | 'WRITE_FAILED'
   | 'SYNC_BUNDLE_INVALID'

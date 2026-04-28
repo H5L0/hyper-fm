@@ -18,18 +18,17 @@ import { createLogger } from '../../shared/logger.js';
 const logger = createLogger('main:commands');
 
 // ---------------------------------------------------------------------------
-// 占位符替换：{{path}} {{name}} {{category}} {{tag:foo}}
+// 占位符替换：{{path}} {{name}} {{tag:foo}}
 // ---------------------------------------------------------------------------
 
 export function substitute(
   template: string,
-  ctx: { path: string; name: string; category?: string; tags: string[] },
+  ctx: { path: string; name: string; tags: string[] },
 ): string {
   return template.replace(/\{\{(.*?)\}\}/g, (_, raw: string) => {
     const key = raw.trim();
     if (key === 'path') return ctx.path;
     if (key === 'name') return ctx.name;
-    if (key === 'category') return ctx.category ?? '';
     if (key.startsWith('tag:')) {
       const tag = key.slice(4).trim();
       return ctx.tags.includes(tag) ? tag : '';
@@ -38,11 +37,8 @@ export function substitute(
   });
 }
 
-function buildContext(project: Project, config: AppConfig) {
-  const category = project.categoryId
-    ? config.categories.find(c => c.id === project.categoryId)?.name
-    : undefined;
-  return { path: project.path, name: project.name, category, tags: project.tags };
+function buildContext(project: Project) {
+  return { path: project.path, name: project.name, tags: project.tags };
 }
 
 // ---------------------------------------------------------------------------
@@ -112,9 +108,8 @@ async function runPreset(
 async function runCustom(
   command: CustomCommand,
   project: Project,
-  config: AppConfig,
 ): Promise<CommandRunResult> {
-  const ctx = buildContext(project, config);
+  const ctx = buildContext(project);
   const cmd = substitute(command.command, ctx);
   const args = (command.args ?? []).map(a => substitute(a, ctx));
   const cwd =
@@ -143,7 +138,7 @@ export async function runCommand(
   const preset = PRESET_COMMANDS.find(c => c.id === input.commandId);
   if (preset) return runPreset(preset.id, project, platform);
   const custom = (config.commands ?? []).find(c => c.id === input.commandId);
-  if (custom) return runCustom(custom, project, config);
+  if (custom) return runCustom(custom, project);
   throw new FmError('COMMAND_NOT_FOUND', `命令不存在：${input.commandId}`);
 }
 

@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
   AppBridge,
   AppConfig,
-  Category,
   CommandRunResult,
   ConfigSnapshot,
   CustomCommand,
@@ -22,6 +21,7 @@ import type {
   SyncPullItem,
   SyncPullResult,
   SyncSettings,
+  TagDefinition,
 } from '../shared/bridge.js';
 
 // ---------------------------------------------------------------------------
@@ -80,13 +80,12 @@ const fmApi: FmBridge = {
     pickDirectory: () =>
       ipcRenderer.invoke('fm:projects:pickDirectory') as Promise<string | null>,
   },
-  categories: {
-    create: input => ipcRenderer.invoke('fm:categories:create', input) as Promise<Category>,
-    rename: (id, name) =>
-      ipcRenderer.invoke('fm:categories:rename', id, name) as Promise<Category>,
-    setColor: (id, color) =>
-      ipcRenderer.invoke('fm:categories:setColor', id, color) as Promise<Category>,
-    remove: id => ipcRenderer.invoke('fm:categories:remove', id) as Promise<void>,
+  tags: {
+    list: () => ipcRenderer.invoke('fm:tags:list') as Promise<TagDefinition[]>,
+    upsert: tag => ipcRenderer.invoke('fm:tags:upsert', tag) as Promise<TagDefinition[]>,
+    remove: name => ipcRenderer.invoke('fm:tags:remove', name) as Promise<TagDefinition[]>,
+    rename: (oldName, newName) =>
+      ipcRenderer.invoke('fm:tags:rename', oldName, newName) as Promise<TagDefinition[]>,
   },
   sync: {
     getDevice: () => ipcRenderer.invoke('fm:sync:getDevice') as Promise<DeviceRegistry>,

@@ -43,7 +43,7 @@ export function AppShell() {
         <Sidebar />
         <main className="flex flex-1 flex-col overflow-hidden">
           {!ready ? (
-            <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
+            <div className="flex flex-1 items-center justify-center text-muted-foreground">
               加载中…
             </div>
           ) : route === 'settings' ? (

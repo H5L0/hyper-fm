@@ -15,19 +15,19 @@ import {
 } from 'react';
 import type {
   AppConfig,
-  Category,
   ManualProjectInput,
   Project,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanRoot,
+  TagDefinition,
 } from '@shared/bridge.js';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-export type CategoryFilter = 'ALL' | 'UNCATEGORIZED' | string;
+export type TagFilter = 'ALL' | { tag: string };
 export type View = 'grid' | 'list';
 export type Route = 'browse' | 'settings';
 
@@ -41,7 +41,7 @@ export interface AppState {
   ready: boolean;
   configPath: string;
   config: AppConfig;
-  categoryFilter: CategoryFilter;
+  tagFilter: TagFilter;
   search: string;
   view: View;
   route: Route;
@@ -57,11 +57,10 @@ const INITIAL_STATE: AppState = {
     version: 1,
     scanRoots: [],
     ignore: { respectGitignore: true, globs: [] },
-    categories: [],
     projects: [],
     ui: { theme: 'system', view: 'grid' },
   },
-  categoryFilter: 'ALL',
+  tagFilter: 'ALL',
   search: '',
   view: 'grid',
   route: 'browse',
@@ -78,9 +77,8 @@ type Action =
   | { type: 'configPath'; configPath: string }
   | { type: 'projects'; projects: Project[] }
   | { type: 'updateProject'; project: Project }
-  | { type: 'category'; category: Category }
   | { type: 'scanRoot'; root: ScanRoot }
-  | { type: 'categoryFilter'; value: CategoryFilter }
+  | { type: 'tagFilter'; value: TagFilter }
   | { type: 'search'; value: string }
   | { type: 'view'; value: View }
   | { type: 'route'; value: Route }
@@ -111,20 +109,14 @@ function reducer(state: AppState, action: Action): AppState {
       );
       return { ...state, config: { ...state.config, projects } };
     }
-    case 'category': {
-      const categories = state.config.categories.some(c => c.id === action.category.id)
-        ? state.config.categories.map(c => (c.id === action.category.id ? action.category : c))
-        : [...state.config.categories, action.category];
-      return { ...state, config: { ...state.config, categories } };
-    }
     case 'scanRoot': {
       const roots = state.config.scanRoots.some(r => r.id === action.root.id)
         ? state.config.scanRoots.map(r => (r.id === action.root.id ? action.root : r))
         : [...state.config.scanRoots, action.root];
       return { ...state, config: { ...state.config, scanRoots: roots } };
     }
-    case 'categoryFilter':
-      return { ...state, categoryFilter: action.value };
+    case 'tagFilter':
+      return { ...state, tagFilter: action.value };
     case 'search':
       return { ...state, search: action.value };
     case 'view':
@@ -155,7 +147,7 @@ interface AppActions {
   refreshProjects(): Promise<void>;
   runScanAll(): Promise<void>;
   runScanOne(rootId: string): Promise<void>;
-  setCategoryFilter(value: CategoryFilter): void;
+  setTagFilter(value: TagFilter): void;
   setSearch(value: string): void;
   setView(value: View): void;
   setRoute(value: Route): void;
@@ -166,16 +158,15 @@ interface AppActions {
   addProject(input: ManualProjectInput): Promise<Project>;
   removeProject(id: string): Promise<void>;
   pickProjectDirectory(): Promise<string | null>;
-  addCategory(name: string, color?: string): Promise<Category>;
-  renameCategory(id: string, name: string): Promise<void>;
-  setCategoryColor(id: string, color: string): Promise<void>;
-  removeCategory(id: string): Promise<void>;
   addScanRoot(input: { path: string; label?: string; maxDepth?: number }): Promise<void>;
   updateScanRoot(id: string, patch: Partial<Omit<ScanRoot, 'id'>>): Promise<void>;
   removeScanRoot(id: string): Promise<void>;
   pickDirectory(): Promise<string | null>;
   saveIgnore(patch: Partial<AppConfig['ignore']>): Promise<void>;
   saveTheme(theme: AppConfig['ui']['theme']): Promise<void>;
+  upsertTag(tag: TagDefinition): Promise<void>;
+  removeTag(name: string): Promise<void>;
+  renameTag(oldName: string, newName: string): Promise<void>;
   toast(level: ToastMessage['level'], text: string): void;
   dismissToast(id: string): void;
 }
@@ -371,33 +362,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const addCategoryAction = useCallback(
-    async (name: string, color?: string) => {
-      const category = await window.fm.categories.create({ name, color });
-      dispatch({ type: 'category', category });
-      return category;
-    },
-    [],
-  );
-
-  const renameCategoryAction = useCallback(async (id: string, name: string) => {
-    const category = await window.fm.categories.rename(id, name);
-    dispatch({ type: 'category', category });
-  }, []);
-
-  const setCategoryColorAction = useCallback(async (id: string, color: string) => {
-    const category = await window.fm.categories.setColor(id, color);
-    dispatch({ type: 'category', category });
-  }, []);
-
-  const removeCategoryAction = useCallback(
-    async (id: string) => {
-      await window.fm.categories.remove(id);
-      await reloadCurrent();
-    },
-    [reloadCurrent],
-  );
-
   const addScanRootAction = useCallback(
     async (input: { path: string; label?: string; maxDepth?: number }) => {
       const root = await window.fm.scanRoots.add(input);
@@ -445,6 +409,38 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'config', config: next });
   }, []);
 
+  const upsertTag = useCallback(async (tag: TagDefinition) => {
+    try {
+      const tags = await window.fm.tags.upsert(tag);
+      const next: AppConfig = { ...stateRef.current.config, tags };
+      dispatch({ type: 'config', config: next });
+    } catch (error) {
+      handleError(error, '保存标签失败');
+    }
+  }, [handleError]);
+
+  const removeTag = useCallback(async (name: string) => {
+    try {
+      const tags = await window.fm.tags.remove(name);
+      const next: AppConfig = { ...stateRef.current.config, tags };
+      dispatch({ type: 'config', config: next });
+    } catch (error) {
+      handleError(error, '删除标签失败');
+    }
+  }, [handleError]);
+
+  const renameTag = useCallback(async (oldName: string, newName: string) => {
+    try {
+      const tags = await window.fm.tags.rename(oldName, newName);
+      // 标签重命名也会更新项目里的 tags 数组，重新拉一次配置
+      await reloadCurrent();
+      // reloadCurrent 已经覆盖 tags；上面这一行只是为了保证 tags 字段也被更新
+      void tags;
+    } catch (error) {
+      handleError(error, '重命名标签失败');
+    }
+  }, [handleError, reloadCurrent]);
+
   // 初始化：拉取当前会话
   useEffect(() => {
     void loadConfig();
@@ -469,7 +465,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       refreshProjects,
       runScanAll,
       runScanOne,
-      setCategoryFilter: value => dispatch({ type: 'categoryFilter', value }),
+      setTagFilter: value => dispatch({ type: 'tagFilter', value }),
       setSearch: value => dispatch({ type: 'search', value }),
       setView: value => dispatch({ type: 'view', value }),
       setRoute: value => dispatch({ type: 'route', value }),
@@ -480,21 +476,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       addProject: addProjectAction,
       removeProject: removeProjectAction,
       pickProjectDirectory: pickProjectDirectoryAction,
-      addCategory: addCategoryAction,
-      renameCategory: renameCategoryAction,
-      setCategoryColor: setCategoryColorAction,
-      removeCategory: removeCategoryAction,
       addScanRoot: addScanRootAction,
       updateScanRoot: updateScanRootAction,
       removeScanRoot: removeScanRootAction,
       pickDirectory,
       saveIgnore,
       saveTheme,
+      upsertTag,
+      removeTag,
+      renameTag,
       toast,
       dismissToast,
     }),
     [
-      addCategoryAction,
       addProjectAction,
       addScanRootAction,
       dismissToast,
@@ -504,20 +498,20 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       pickDirectory,
       pickProjectDirectoryAction,
       refreshProjects,
-      removeCategoryAction,
       removeMetaFile,
       removeProjectAction,
       removeScanRootAction,
-      renameCategoryAction,
+      removeTag,
+      renameTag,
       revealProject,
       runScanAll,
       runScanOne,
       saveIgnore,
       saveProject,
       saveTheme,
-      setCategoryColorAction,
       toast,
       updateScanRootAction,
+      upsertTag,
     ],
   );
 

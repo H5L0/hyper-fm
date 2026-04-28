@@ -4,13 +4,13 @@
 
 import type {
   AppConfig,
-  Category,
   ConfigSnapshot,
   Project,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanReport,
   ScanRoot,
+  TagDefinition,
 } from './types.js';
 import type {
   CommandRunResult,
@@ -26,13 +26,13 @@ import type {
 
 export type {
   AppConfig,
-  Category,
   ConfigSnapshot,
   Project,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanReport,
   ScanRoot,
+  TagDefinition,
 };
 
 export type {
@@ -97,19 +97,18 @@ export interface FmProjectsBridge {
   pickDirectory(): Promise<string | null>;
 }
 
+export interface FmTagsBridge {
+  list(): Promise<TagDefinition[]>;
+  upsert(tag: TagDefinition): Promise<TagDefinition[]>;
+  remove(name: string): Promise<TagDefinition[]>;
+  rename(oldName: string, newName: string): Promise<TagDefinition[]>;
+}
+
 export interface ManualProjectInput {
   path: string;
   name?: string;
   description?: string;
   tags?: string[];
-  categoryId?: string;
-}
-
-export interface FmCategoriesBridge {
-  create(input: { name: string; color?: string }): Promise<Category>;
-  rename(id: string, name: string): Promise<Category>;
-  setColor(id: string, color: string): Promise<Category>;
-  remove(id: string): Promise<void>;
 }
 
 export interface FmBridge {
@@ -117,7 +116,7 @@ export interface FmBridge {
   scanRoots: FmScanRootsBridge;
   scan: FmScanBridge;
   projects: FmProjectsBridge;
-  categories: FmCategoriesBridge;
+  tags: FmTagsBridge;
   sync: FmSyncBridge;
   commands: FmCommandsBridge;
 }

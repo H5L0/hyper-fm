@@ -10,11 +10,11 @@ export function TitleBar() {
   const actions = useAppActions();
 
   return (
-    <header className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-card/60 px-3 text-xs text-muted-foreground select-none">
+    <header className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-card/60 px-3 text-muted-foreground select-none">
       <div className="flex items-center gap-2">
         <span className="text-foreground font-semibold tracking-tight">fm</span>
         <span className="text-border">/</span>
-        <span className="truncate" title={configPath}>
+        <span className="truncate text-note" title={configPath}>
           {configPath || '未加载配置'}
         </span>
       </div>

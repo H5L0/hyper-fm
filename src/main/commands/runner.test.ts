@@ -2,23 +2,13 @@ import { describe, expect, test } from 'vitest';
 import { substitute } from './runner.js';
 
 describe('runner', () => {
-  test('[substitute] 应替换 path/name/category 占位符', () => {
-    const out = substitute('open {{path}} as {{name}} in {{category}}', {
-      path: '/tmp/x',
-      name: 'demo',
-      category: '游戏',
-      tags: [],
-    });
-    expect(out).toBe('open /tmp/x as demo in 游戏');
-  });
-
-  test('[substitute] category 缺失应替换为空串', () => {
-    const out = substitute('cd {{category}}', {
+  test('[substitute] 应替换 path/name 占位符', () => {
+    const out = substitute('open {{path}} as {{name}}', {
       path: '/tmp/x',
       name: 'demo',
       tags: [],
     });
-    expect(out).toBe('cd ');
+    expect(out).toBe('open /tmp/x as demo');
   });
 
   test('[substitute] tag:foo 命中应返回标签名', () => {
