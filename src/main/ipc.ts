@@ -37,7 +37,11 @@ import {
   updateScanRoot,
 } from './project-repo.js';
 import { switchConfigFile, getSnapshot, mutate, requireSession } from './session.js';
-import { createConfig as createConfigFile } from './config-store.js';
+import {
+  createConfig as createConfigFile,
+  createLocalConfigForShared,
+  inspectOpenConfig,
+} from './config-store.js';
 import { scanRoot } from './scanner.js';
 import { readMetaFile, removeMetaFile, writeMetaFile } from './meta-file.js';
 import { FmError, toFmError } from './fm-error.js';
@@ -143,6 +147,14 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    'fm:config:inspectOpen',
+    wrap('fm:config:inspectOpen', async (_e, filePath: unknown) => {
+      assertString(filePath, 'filePath');
+      return inspectOpenConfig(filePath);
+    }),
+  );
+
+  ipcMain.handle(
     'fm:config:load',
     wrap('fm:config:load', async (_e, filePath: unknown): Promise<ConfigSnapshot> => {
       assertString(filePath, 'filePath');
@@ -155,6 +167,15 @@ export function registerIpcHandlers(): void {
     wrap('fm:config:create', async (_e, filePath: unknown): Promise<ConfigSnapshot> => {
       assertString(filePath, 'filePath');
       const snapshot = await createConfigFile(filePath);
+      return switchConfigFile(snapshot.paths.sharedPath);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:config:createLocalForShared',
+    wrap('fm:config:createLocalForShared', async (_e, sharedPath: unknown): Promise<ConfigSnapshot> => {
+      assertString(sharedPath, 'sharedPath');
+      const snapshot = await createLocalConfigForShared(sharedPath);
       return switchConfigFile(snapshot.paths.sharedPath);
     }),
   );
@@ -431,7 +452,7 @@ export function registerIpcHandlers(): void {
           throw new FmError('FINGERPRINT_CONFLICT', validation.conflicts[0]?.reason ?? '项目指纹冲突', validation.conflicts);
         }
         const inspection = await inspectProjectDirectory(i.path);
-        const baseName = i.name?.trim() || inspection.metaProjectId || inspection.name;
+        const baseName = i.name?.trim() || inspection.name;
         const meta = inspection.hasMetaFile ? await readMetaFile(inspection.path) : null;
         const { nextShared, nextLocal, project } = addProjectManual(
           shared,

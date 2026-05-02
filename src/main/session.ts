@@ -99,8 +99,9 @@ export function mutate<T>(
         let nextLocal = out.nextLocal ?? session.local;
         if (out.nextConfig) {
             nextShared = mergeAppConfigIntoShared(nextShared, out.nextConfig);
-            nextLocal = mergeAppConfigIntoLocal(out.nextConfig);
+            nextLocal = mergeAppConfigIntoLocal(out.nextConfig, session.sharedPath);
         }
+        nextLocal = { ...nextLocal, sharedConfigPath: session.sharedPath };
         const nextConfig = composeAppConfig(nextShared, nextLocal);
 
         await saveConfig(

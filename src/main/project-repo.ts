@@ -127,6 +127,7 @@ export function applyProjectPatch(
         name: patch.name?.trim() || existing.name,
         description: patch.description !== undefined ? patch.description : existing.description,
         tags: patch.tags ? patch.tags.map(t => t.trim()).filter(Boolean) : existing.tags,
+        fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : existing.fingerprint,
     };
 
     return {

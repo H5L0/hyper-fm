@@ -5,39 +5,36 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
-  ExternalLink,
   FileMinus,
   FileText,
-  Plus,
+  FolderOpen,
   Save,
   Terminal,
   X,
 } from 'lucide-react';
-import type { CustomCommand, PresetCommandDescriptor, Project, ProjectMetaPatch } from '@shared/bridge.js';
+import type { CustomCommand, PresetCommandDescriptor, Project, ProjectDirectoryInspection, ProjectMetaPatch } from '@shared/bridge.js';
 import { explainMatch, matchProject, parseSearchQuery } from '@shared/search.js';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '../store/app-store.js';
-import { TagPill, resolveTagColor } from './tag-pill.js';
-import { NewTagDialog } from './new-tag-dialog.js';
+import { ProjectEditorDrawer, type ProjectEditorFormValue } from './project-editor-drawer.js';
 
-interface FormState {
-  name: string;
-  description: string;
-  tags: string[];
-}
+type FormState = ProjectEditorFormValue;
 
 function projectToForm(project: Project): FormState {
   return {
+    path: project.path,
     name: project.name,
     description: project.description ?? '',
     tags: [...project.tags],
+    fingerprint: project.fingerprint,
   };
 }
 
 function formsEqual(a: FormState, b: FormState): boolean {
+  if (a.path !== b.path) return false;
   if (a.name !== b.name) return false;
   if (a.description !== b.description) return false;
+  if (!sameFingerprint(a.fingerprint, b.fingerprint)) return false;
   if (a.tags.length !== b.tags.length) return false;
   for (let i = 0; i < a.tags.length; i++) {
     if (a.tags[i] !== b.tags[i]) return false;
@@ -61,6 +58,7 @@ export function ProjectDrawer() {
   const [customCommands, setCustomCommands] = useState<CustomCommand[]>([]);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
 
   useEffect(() => {
     const next = project ? projectToForm(project) : null;
@@ -68,7 +66,15 @@ export function ProjectDrawer() {
     setInitial(next);
     setCommandsOpen(false);
     setConfirmClose(false);
-  }, [project?.id, project?.lastScannedAt]);
+  }, [project]);
+
+  useEffect(() => {
+    if (!project) {
+      setInspection(null);
+      return;
+    }
+    void window.fm.projects.inspectDirectory(project.path).then(setInspection).catch(() => setInspection(null));
+  }, [project]);
 
   const isDirty = useMemo(() => {
     if (!form || !initial) return false;
@@ -129,6 +135,7 @@ export function ProjectDrawer() {
     name: form.name,
     description: form.description,
     tags: form.tags,
+    fingerprint: form.fingerprint,
   });
 
   const doSave = async (writeFile: boolean, then: 'close' | 'keep') => {
@@ -149,33 +156,36 @@ export function ProjectDrawer() {
     setForm({ ...form, tags: [...form.tags, t] });
   };
 
+  const saveDisabled = form.fingerprint.kind === 'file-paths' && form.fingerprint.paths.length === 0;
+
   return (
     <>
-      <button
-        type="button"
-        aria-label="关闭详情"
-        onClick={tryClose}
-        className="fixed inset-0 z-30 bg-black/10 backdrop-blur-[1px] dark:bg-black/40"
-      />
-      <aside
-        className={cn(
-          'fixed top-0 right-0 z-40 flex h-full w-[480px] flex-col border-l border-border bg-card shadow-xl',
-          'animate-in slide-in-from-right duration-150',
-        )}
-      >
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
-          <div className="flex items-center gap-2">
-            {project.hasMetaFile ? (
-              <span className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-caption text-secondary-foreground">
-                <FileText className="size-3.5" /> .meta-data
-              </span>
-            ) : (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-caption text-muted-foreground">
-                仅数据库
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
+      <ProjectEditorDrawer
+        title="文件夹详情"
+        form={form}
+        onFormChange={setForm}
+        tagDefs={config.tags}
+        inspection={inspection ?? {
+          path: project.path,
+          suggestedName: project.path.split(/[/\\]/).filter(Boolean).pop() ?? project.name,
+          hasMetaFile: project.hasMetaFile,
+          metaProjectId: project.id,
+          files: project.fingerprint.kind === 'file-paths' ? project.fingerprint.paths : [],
+        }}
+        pathEditable={false}
+        banner={matchExplanation || undefined}
+        validation={
+          saveDisabled ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-note text-amber-700 dark:text-amber-300">
+              文件列表指纹至少需要选择一个文件。
+            </div>
+          ) : null
+        }
+        onAddTag={addTag}
+        onRemoveTag={removeTag}
+        onClose={tryClose}
+        headerActions={
+          <>
             <div className="relative">
               <Button
                 size="icon-xs"
@@ -223,90 +233,42 @@ export function ProjectDrawer() {
               title="在资源管理器中显示"
               onClick={() => void actions.revealProject(project.id)}
             >
-              <ExternalLink className="size-3.5" />
+              <FolderOpen className="size-3.5" />
             </Button>
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              onClick={tryClose}
-            >
+            <Button size="icon-xs" variant="ghost" onClick={tryClose}>
               <X className="size-3.5" />
             </Button>
+          </>
+        }
+        footer={
+          <div className="flex items-center justify-between gap-3">
+            {project.hasMetaFile ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void actions.removeMetaFile(project.id)}
+              >
+                <FileMinus className="size-3.5" /> 删除 .meta-data
+              </Button>
+            ) : (
+              <span className="text-note text-muted-foreground">未写入 .meta-data</span>
+            )}
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={saveDisabled}
+                onClick={() => void doSave(true, 'close')}
+              >
+                <FileText className="size-3.5" /> 写入 .meta-data
+              </Button>
+              <Button size="sm" disabled={saveDisabled} onClick={() => void doSave(false, 'close')}>
+                <Save className="size-3.5" /> 保存
+              </Button>
+            </div>
           </div>
-        </div>
-
-        {matchExplanation ? (
-          <div className="border-b border-border bg-muted/40 px-4 py-2 text-caption text-muted-foreground">
-            {matchExplanation}
-          </div>
-        ) : null}
-
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          <Field label="名称">
-            <input
-              value={form.name}
-              onChange={e => setForm({ ...form, name: e.target.value })}
-              className="h-9 w-full rounded-md border border-border bg-background px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-            />
-          </Field>
-
-          <Field label="路径">
-            <p
-              className="text-note break-all text-muted-foreground"
-              title={project.path}
-            >
-              {project.path}
-            </p>
-          </Field>
-
-          <Field label="描述">
-            <textarea
-              rows={4}
-              value={form.description}
-              onChange={e => setForm({ ...form, description: e.target.value })}
-              className="w-full resize-none rounded-md border border-border bg-background p-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-            />
-          </Field>
-
-          <Field label="标签">
-            <TagEditor
-              tags={form.tags}
-              tagDefs={config.tags}
-              onRemove={removeTag}
-              onAdd={addTag}
-            />
-          </Field>
-        </div>
-
-        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border bg-card/80 px-4 py-3">
-          {project.hasMetaFile ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => void actions.removeMetaFile(project.id)}
-            >
-              <FileMinus className="size-3.5" /> 删除 .meta-data
-            </Button>
-          ) : (
-            <span className="text-note text-muted-foreground">未写入 .meta-data</span>
-          )}
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void doSave(true, 'close')}
-            >
-              <FileText className="size-3.5" /> 写入 .meta-data
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => void doSave(false, 'close')}
-            >
-              <Save className="size-3.5" /> 保存
-            </Button>
-          </div>
-        </div>
-      </aside>
+        }
+      />
 
       {confirmClose ? (
         <UnsavedConfirmDialog
@@ -319,17 +281,6 @@ export function ProjectDrawer() {
         />
       ) : null}
     </>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-5">
-      <label className="text-subheading mb-2 block text-muted-foreground">
-        {label}
-      </label>
-      {children}
-    </div>
   );
 }
 
@@ -381,139 +332,14 @@ function UnsavedConfirmDialog({
   );
 }
 
-// ---------------------------------------------------------------------------
-// 标签编辑：已选标签 + 未选标签 + 新增按钮（带丝滑动画）
-// ---------------------------------------------------------------------------
-
-function startTransition(update: () => void): void {
-  const doc = document as Document & {
-    startViewTransition?: (cb: () => void) => unknown;
-  };
-  if (typeof doc.startViewTransition === 'function') {
-    doc.startViewTransition(() => update());
-  } else {
-    update();
+function sameFingerprint(a: ProjectMetaPatch['fingerprint'], b: ProjectMetaPatch['fingerprint']): boolean {
+  if (!a || !b) return a === b;
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'metadata' && b.kind === 'metadata') return true;
+  if (a.kind === 'folder-name' && b.kind === 'folder-name') return a.folderName === b.folderName;
+  if (a.kind === 'file-paths' && b.kind === 'file-paths') {
+    return a.paths.length === b.paths.length && a.paths.every((item, index) => item === b.paths[index]);
   }
+  return false;
 }
-
-function tagViewName(name: string): string {
-  // 转为合法 CSS ident：仅保留字母数字与下划线，其它转十六进制
-  const safe = [...name]
-    .map(ch => (/[a-zA-Z0-9_]/.test(ch) ? ch : `_${ch.charCodeAt(0).toString(16)}`))
-    .join('');
-  return `fm-tag-${safe}`;
-}
-
-function TagEditor({
-  tags,
-  tagDefs,
-  onAdd,
-  onRemove,
-}: {
-  tags: string[];
-  tagDefs: readonly import('@shared/bridge.js').TagDefinition[] | undefined;
-  onAdd: (value: string) => void;
-  onRemove: (value: string) => void;
-}) {
-  const [dialogOpen, setDialogOpen] = useState(false);
-
-  const selectedSet = useMemo(() => new Set(tags), [tags]);
-  const available = useMemo(
-    () => (tagDefs ?? []).filter(t => !selectedSet.has(t.name)),
-    [tagDefs, selectedSet],
-  );
-
-  const select = (name: string) => {
-    startTransition(() => onAdd(name));
-  };
-
-  const remove = (name: string) => {
-    startTransition(() => onRemove(name));
-  };
-
-  return (
-    <div className="space-y-3">
-      {/* 已选标签 */}
-      <div className="flex min-h-[2.25rem] flex-wrap items-center gap-1.5 p-0.5">
-        {tags.length === 0 ? (
-          <span className="px-1 text-note text-muted-foreground/70">尚未选择标签</span>
-        ) : (
-          tags.map(t => (
-            <span
-              key={`sel-${t}`}
-              style={{ viewTransitionName: tagViewName(t) }}
-              className="inline-block"
-            >
-              <TagPill
-                name={t}
-                color={resolveTagColor(t, tagDefs)}
-                size="md"
-                onRemove={() => remove(t)}
-              />
-            </span>
-          ))
-        )}
-      </div>
-
-      {/* 未选标签 + 新增 */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-subheading text-muted-foreground/80">
-            可选标签
-          </span>
-        </div>
-        {available.length === 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <p className="text-note text-muted-foreground/70">
-              全部标签已选择。
-            </p>
-            <button
-              type="button"
-              aria-label="新建标签"
-              onClick={() => setDialogOpen(true)}
-              className="inline-flex size-6 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
-            >
-              <Plus className="size-3.5" />
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {available.map(t => (
-              <button
-                key={`opt-${t.name}`}
-                type="button"
-                onClick={() => select(t.name)}
-                style={{ viewTransitionName: tagViewName(t.name) }}
-                className="cursor-pointer rounded-full opacity-70 transition-opacity hover:opacity-100"
-              >
-                <TagPill name={t.name} color={t.color} size="md" />
-              </button>
-            ))}
-            <button
-              type="button"
-              aria-label="新建标签"
-              onClick={() => setDialogOpen(true)}
-              className="inline-flex size-6 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
-            >
-              <Plus className="size-3.5" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {dialogOpen ? (
-        <NewTagDialog
-          onClose={() => setDialogOpen(false)}
-          onCreated={name => {
-            startTransition(() => onAdd(name));
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 新建标签对话框已移至 new-tag-dialog.tsx，与侧边栏共用
-// ---------------------------------------------------------------------------
 

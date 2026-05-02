@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from 'react';
-import { Download, FolderPlus, Plus, RefreshCw, Server, Trash2, Upload } from 'lucide-react';
+import { Download, FolderPlus, FolderRoot, Plus, Server, Settings2, Trash2, Upload } from 'lucide-react';
 import type {
   CustomCommand,
   DeviceRegistry,
@@ -11,20 +11,34 @@ import type {
 } from '@shared/bridge.js';
 import { Button } from '@/components/ui/button';
 import { useAppActions, useAppState } from '../store/app-store.js';
+import { AddScanRootDialog } from './scan-root-dialog.js';
 
 export function SettingsPanel() {
   const { config, configPaths } = useAppState();
   const actions = useAppActions();
   const [globsDraft, setGlobsDraft] = useState(config.ignore.globs.join('\n'));
+  const [configNameDraft, setConfigNameDraft] = useState(config.name);
+  const [configDescriptionDraft, setConfigDescriptionDraft] = useState(config.description ?? '');
+  const [scanRootDraftPath, setScanRootDraftPath] = useState<string | null>(null);
+  const [editingScanRootId, setEditingScanRootId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setConfigNameDraft(config.name);
+    setConfigDescriptionDraft(config.description ?? '');
+  }, [config.description, config.name]);
 
   const handleAddRoot = async () => {
     const dir = await actions.pickDirectory();
     if (!dir) return;
+    setScanRootDraftPath(dir);
+  };
+
+  const handleSaveConfigMeta = async () => {
     try {
-      await actions.addScanRoot({ path: dir, maxDepth: 3 });
-      actions.toast('success', '已添加扫描根目录');
+      await actions.saveConfigMeta(configNameDraft, configDescriptionDraft);
+      actions.toast('success', '已保存配置元信息');
     } catch (error) {
-      actions.toast('error', error instanceof Error ? error.message : '添加失败');
+      actions.toast('error', error instanceof Error ? error.message : '保存失败');
     }
   };
 
@@ -47,12 +61,45 @@ export function SettingsPanel() {
         <h1 className="text-display">设置</h1>
 
         <Section title="配置文件" hint="加载或新建一份 fm 配置 JSON。">
-          <div className="rounded-md border border-border bg-card px-3 py-3">
-            <div className="space-y-1 text-note text-muted-foreground">
-              <p className="break-all"><span className="text-foreground">共享：</span>{configPaths.sharedPath || '未加载'}</p>
-              <p className="break-all"><span className="text-foreground">本地：</span>{configPaths.localPath || '未加载'}</p>
+          <div className="space-y-3 rounded-xl border border-border bg-card px-4 py-4">
+            <div>
+              <label className="text-subheading mb-1.5 block text-muted-foreground">名称</label>
+              <input
+                value={configNameDraft}
+                onChange={e => setConfigNameDraft(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              />
             </div>
-            <div className="mt-2.5 flex items-center gap-2">
+
+            <div>
+              <label className="text-subheading mb-1.5 block text-muted-foreground">描述</label>
+              <textarea
+                rows={2}
+                value={configDescriptionDraft}
+                onChange={e => setConfigDescriptionDraft(e.target.value)}
+                placeholder="可选，用于标题栏悬浮信息说明"
+                className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              />
+            </div>
+
+            <div>
+              <label className="text-subheading mb-1.5 block text-muted-foreground">共享文件路径</label>
+              <div className="rounded-lg border border-border bg-background px-3 py-2.5 text-note text-muted-foreground">
+                <p className="break-all">{configPaths.sharedPath || '未加载'}</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-subheading mb-1.5 block text-muted-foreground">本地文件路径</label>
+              <div className="rounded-lg border border-border bg-background px-3 py-2.5 text-note text-muted-foreground">
+                <p className="break-all">{configPaths.localPath || '未加载'}</p>
+              </div>
+            </div>
+
+            <div className="mt-1 flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => void handleSaveConfigMeta()}>
+                保存
+              </Button>
               <Button size="sm" variant="outline" onClick={() => void actions.pickAndLoadConfig()}>
                 打开…
               </Button>
@@ -69,46 +116,21 @@ export function SettingsPanel() {
               <p className="text-note text-muted-foreground">尚未添加扫描根目录。</p>
             ) : (
               config.scanRoots.map(root => (
-                <div
-                  key={root.id}
-                  className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2.5"
-                >
+                <div key={root.id} className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
+                  <FolderRoot className="size-4 shrink-0 text-muted-foreground" />
                   <div className="flex-1 min-w-0">
-                    <p className="truncate font-medium text-foreground" title={root.path}>
-                      {root.label || root.path}
-                    </p>
-                    {root.label ? (
-                      <p className="truncate text-note text-muted-foreground" title={root.path}>
-                        {root.path}
-                      </p>
-                    ) : null}
+                    <p className="break-all text-note text-foreground" title={root.path}>{root.path}</p>
                   </div>
-                  <DepthInput
-                    value={root.maxDepth}
-                    onChange={v => void actions.updateScanRoot(root.id, { maxDepth: v })}
-                  />
-                  <label className="flex items-center gap-1.5 text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={root.enabled}
-                      onChange={e =>
-                        void actions.updateScanRoot(root.id, { enabled: e.target.checked })
-                      }
-                    />
-                    启用
-                  </label>
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    title="单独扫描"
-                    onClick={() => void actions.runScanOne(root.id)}
-                  >
-                    <RefreshCw className="size-4" />
+                  <Button size="icon-xs" variant="ghost" title="扫描目录设置" onClick={() => {
+                    setEditingScanRootId(root.id);
+                    setScanRootDraftPath(root.path);
+                  }}>
+                    <Settings2 className="size-4" />
                   </Button>
                   <Button
                     size="icon-xs"
                     variant="ghost"
-                    title="删除"
+                    title="删除扫描目录"
                     onClick={() => void actions.removeScanRoot(root.id)}
                   >
                     <Trash2 className="size-4" />
@@ -117,10 +139,24 @@ export function SettingsPanel() {
               ))
             )}
             <Button size="sm" variant="outline" onClick={() => void handleAddRoot()}>
-              <FolderPlus className="size-4" /> 添加扫描根
+              <FolderPlus className="size-4" /> 添加扫描目录
             </Button>
           </div>
         </Section>
+
+        {scanRootDraftPath ? (
+          <AddScanRootDialog
+            directoryPath={scanRootDraftPath}
+            existingRoot={editingScanRootId ? (() => {
+              const root = config.scanRoots.find(item => item.id === editingScanRootId);
+              return root ? { id: root.id, maxDepth: root.maxDepth } : undefined;
+            })() : undefined}
+            onClose={() => {
+              setScanRootDraftPath(null);
+              setEditingScanRootId(null);
+            }}
+          />
+        ) : null}
 
         <Section title="忽略规则" hint="支持精确名称、目录后缀 / 等极简 glob；建议保留 node_modules、.git 等。">
           <label className="flex items-center gap-2">
@@ -180,28 +216,6 @@ function Section({
       {hint ? <p className="mt-1 text-note text-muted-foreground">{hint}</p> : null}
       <div className="mt-3.5">{children}</div>
     </section>
-  );
-}
-
-function DepthInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const [draft, setDraft] = useState(String(value));
-  return (
-    <label className="flex items-center gap-1 text-muted-foreground">
-      深度
-      <input
-        type="number"
-        min={1}
-        max={10}
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={() => {
-          const n = Math.max(1, Math.min(10, Number(draft) || value));
-          if (n !== value) onChange(n);
-          setDraft(String(n));
-        }}
-        className="h-7 w-14 rounded border border-border bg-background px-1 text-center tabular-nums outline-none"
-      />
-    </label>
   );
 }
 

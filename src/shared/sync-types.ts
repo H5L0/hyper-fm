@@ -199,8 +199,8 @@ export interface PresetCommandDescriptor {
 }
 
 export const PRESET_COMMANDS: PresetCommandDescriptor[] = [
-  { id: 'open.vscode', label: '在 VS Code 中打开' },
   { id: 'open.explorer', label: '在资源管理器中显示' },
+  { id: 'open.vscode', label: '在 VS Code 中打开' },
   { id: 'open.terminal', label: '在终端中打开' },
   { id: 'copy.path', label: '复制路径' },
   { id: 'copy.name', label: '复制名称' },

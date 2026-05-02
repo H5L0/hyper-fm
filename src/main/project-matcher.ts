@@ -26,6 +26,10 @@ export interface DirectoryInspection {
     files: string[];
 }
 
+function normalizeFolderName(name: string): string {
+    return name.trim().toLowerCase();
+}
+
 async function walkFiles(rootPath: string, relDir: string, out: string[]): Promise<void> {
     const abs = relDir ? path.join(rootPath, relDir) : rootPath;
     let entries: import('node:fs').Dirent[];
@@ -65,7 +69,7 @@ function matchesFingerprint(fingerprint: ProjectFingerprint, inspection: Directo
         return inspection.metaProjectId === projectId;
     }
     if (fingerprint.kind === 'folder-name') {
-        return inspection.name === fingerprint.folderName;
+        return normalizeFolderName(inspection.name) === normalizeFolderName(fingerprint.folderName);
     }
     const fileSet = new Set(inspection.files);
     return fingerprint.paths.every(rel => fileSet.has(rel));
@@ -81,7 +85,9 @@ export async function findMatchingProjectsForDirectory(
 function sameFingerprint(a: ProjectFingerprint, b: ProjectFingerprint): boolean {
     if (a.kind !== b.kind) return false;
     if (a.kind === 'metadata' && b.kind === 'metadata') return true;
-    if (a.kind === 'folder-name' && b.kind === 'folder-name') return a.folderName === b.folderName;
+    if (a.kind === 'folder-name' && b.kind === 'folder-name') {
+        return normalizeFolderName(a.folderName) === normalizeFolderName(b.folderName);
+    }
     if (a.kind === 'file-paths' && b.kind === 'file-paths') {
         return a.paths.length === b.paths.length && a.paths.every((item, idx) => item === b.paths[idx]);
     }

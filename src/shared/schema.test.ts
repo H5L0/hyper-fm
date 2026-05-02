@@ -24,6 +24,7 @@ describe('schema', () => {
     test('[validateSharedConfig] 缺失字段应回退默认值', () => {
         const { config, errors } = validateSharedConfig({});
         expect(config.version).toBe(CONFIG_SCHEMA_VERSION);
+        expect(config.name).toBe('fm');
         expect(config.projects).toEqual([]);
         expect(config.ignore.globs.length).toBeGreaterThan(0);
         expect(errors).toEqual([]);
@@ -32,6 +33,7 @@ describe('schema', () => {
     test('[validateLocalConfig] 缺失字段应回退默认值', () => {
         const { config, errors } = validateLocalConfig({});
         expect(config.version).toBe(CONFIG_SCHEMA_VERSION);
+        expect(config.sharedConfigPath).toBe('');
         expect(config.scanRoots).toEqual([]);
         expect(config.bindings).toEqual([]);
         expect(config.ui.view).toBe('grid');
@@ -77,11 +79,14 @@ describe('schema', () => {
         expect(config.projects).toHaveLength(1);
         expect(config.projects[0]?.id).toBe('pj-aaaaaa');
         expect(config.projects[0]?.fingerprint.kind).toBe('metadata');
+        expect(config.name).toBe('fm');
     });
 
     test('[validateSharedConfig] 完整有效共享配置应原样保留', () => {
         const input = {
             version: CONFIG_SCHEMA_VERSION,
+            name: 'workspace',
+            description: 'shared config',
             ignore: { respectGitignore: false, globs: ['x'] },
             projects: [
                 {
@@ -95,6 +100,8 @@ describe('schema', () => {
         };
         const { config, errors } = validateSharedConfig(input);
         expect(errors).toEqual([]);
+        expect(config.name).toBe('workspace');
+        expect(config.description).toBe('shared config');
         expect(config.projects[0]?.fingerprint.kind).toBe('file-paths');
         expect(config.tags?.[0]?.name).toBe('unity');
     });

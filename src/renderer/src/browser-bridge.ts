@@ -1,6 +1,7 @@
 import type {
     AppBridge,
     AppConfig,
+    ConfigOpenInspection,
     ConfigSnapshot,
     FmBridge,
     ManualProjectInput,
@@ -30,7 +31,13 @@ const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 function deriveLocalPath(sharedPath: string): string {
     if (!sharedPath) return 'browser://fm.local.json';
-    return sharedPath.replace(/(^|\/)([^/\\]+)$/u, '$1fm.local.json');
+    if (/\.shared\.json$/iu.test(sharedPath)) {
+        return sharedPath.replace(/\.shared\.json$/iu, '.local.json');
+    }
+    if (/\.json$/iu.test(sharedPath)) {
+        return sharedPath.replace(/\.json$/iu, '.local.json');
+    }
+    return `${sharedPath}.local.json`;
 }
 
 function nowIso(): string {
@@ -48,7 +55,9 @@ function lastSegment(path: string): string {
 function sameFingerprint(a: ProjectFingerprint, b: ProjectFingerprint): boolean {
     if (a.kind !== b.kind) return false;
     if (a.kind === 'metadata') return true;
-    if (a.kind === 'folder-name' && b.kind === 'folder-name') return a.folderName === b.folderName;
+    if (a.kind === 'folder-name' && b.kind === 'folder-name') {
+        return a.folderName.trim().toLowerCase() === b.folderName.trim().toLowerCase();
+    }
     if (a.kind === 'file-paths' && b.kind === 'file-paths') {
         return a.paths.length === b.paths.length && a.paths.every((item, index) => item === b.paths[index]);
     }
@@ -104,6 +113,8 @@ function createSampleConfig(): AppConfig {
 
     return {
         version: 2,
+        name: 'fm 浏览器预览',
+        description: '用于浏览器模式下验证 UI 交互的示例配置。',
         scanRoots: [
             {
                 id: rootId,
@@ -155,6 +166,8 @@ function createSampleConfig(): AppConfig {
 const browserState: {
     snapshot: ConfigSnapshot;
     serverRunning: boolean;
+    nextProjectPick: number;
+    nextScanRootPick: number;
 } = {
     snapshot: {
         paths: {
@@ -164,6 +177,8 @@ const browserState: {
         data: createSampleConfig(),
     },
     serverRunning: false,
+    nextProjectPick: 1,
+    nextScanRootPick: 1,
 };
 
 function getSnapshot(): ConfigSnapshot {
@@ -224,6 +239,18 @@ function createProjectFromInput(input: ManualProjectInput): Project {
     };
 }
 
+function pickMockProjectDirectory(): string {
+    const path = `D:/projects/browser-added-${browserState.nextProjectPick}`;
+    browserState.nextProjectPick += 1;
+    return path;
+}
+
+function pickMockScanRootDirectory(): string {
+    const path = `D:/scan-roots/browser-root-${browserState.nextScanRootPick}`;
+    browserState.nextScanRootPick += 1;
+    return path;
+}
+
 export function ensureBrowserBridge(): void {
     if (typeof window === 'undefined') return;
     if (window.fm && window.app) return;
@@ -241,10 +268,17 @@ export function ensureBrowserBridge(): void {
     const fmApi: FmBridge = {
         config: {
             current: async () => getSnapshot(),
+            inspectOpen: async (filePath: string): Promise<ConfigOpenInspection> => ({
+                selectedPath: filePath,
+                selectedKind: filePath.endsWith('.local.json') ? 'local' : 'shared',
+                sharedPath: filePath.endsWith('.local.json') ? filePath.replace(/\.local\.json$/iu, '.shared.json') : filePath,
+                localPath: filePath.endsWith('.local.json') ? filePath : deriveLocalPath(filePath),
+                localExists: true,
+            }),
             load: async (filePath: string) => {
                 browserState.snapshot.paths = {
-                    sharedPath: filePath,
-                    localPath: deriveLocalPath(filePath),
+                    sharedPath: filePath.endsWith('.local.json') ? filePath.replace(/\.local\.json$/iu, '.shared.json') : filePath,
+                    localPath: filePath.endsWith('.local.json') ? filePath : deriveLocalPath(filePath),
                 };
                 return getSnapshot();
             },
@@ -254,7 +288,17 @@ export function ensureBrowserBridge(): void {
                         sharedPath: filePath,
                         localPath: deriveLocalPath(filePath),
                     },
-                    data: createSampleConfig(),
+                    data: {
+                        ...createSampleConfig(),
+                        name: lastSegment(filePath).replace(/\.shared\.json$/iu, '').replace(/\.json$/iu, ''),
+                    },
+                };
+                return getSnapshot();
+            },
+            createLocalForShared: async (sharedPath: string) => {
+                browserState.snapshot.paths = {
+                    sharedPath,
+                    localPath: deriveLocalPath(sharedPath),
                 };
                 return getSnapshot();
             },
@@ -293,7 +337,7 @@ export function ensureBrowserBridge(): void {
                     scanRoots: browserState.snapshot.data.scanRoots.filter(root => root.id !== id),
                 });
             },
-            pickDirectory: async () => null,
+            pickDirectory: async () => pickMockScanRootDirectory(),
         },
         scan: {
             runAll: async (): Promise<ScanReport[]> =>
@@ -349,12 +393,17 @@ export function ensureBrowserBridge(): void {
                     name: patch.name?.trim() || browserState.snapshot.data.projects.find(item => item.id === id)?.name,
                     description: patch.description,
                     tags: patch.tags?.map(tag => tag.trim()).filter(Boolean),
+                    fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : undefined,
+                    hasMetaFile: patch.fingerprint?.kind === 'metadata'
+                        ? true
+                        : browserState.snapshot.data.projects.find(item => item.id === id)?.hasMetaFile,
                 }),
             writeMetaFile: async (id: string, patch: ProjectMetaPatch) =>
                 updateProject(id, {
                     name: patch.name?.trim() || browserState.snapshot.data.projects.find(item => item.id === id)?.name,
                     description: patch.description,
                     tags: patch.tags?.map(tag => tag.trim()).filter(Boolean),
+                    fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : undefined,
                     hasMetaFile: true,
                 }),
             removeMetaFile: async (id: string) => updateProject(id, { hasMetaFile: false }),
@@ -384,7 +433,7 @@ export function ensureBrowserBridge(): void {
                     projects: browserState.snapshot.data.projects.filter(project => project.id !== id),
                 });
             },
-            pickDirectory: async () => null,
+            pickDirectory: async () => pickMockProjectDirectory(),
         },
         tags: {
             list: async () => clone(browserState.snapshot.data.tags ?? []),

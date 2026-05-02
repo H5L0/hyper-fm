@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
   AppBridge,
   CommandRunResult,
+  ConfigOpenInspection,
   ConfigSnapshot,
   CustomCommand,
   DeviceRegistry,
@@ -44,8 +45,10 @@ contextBridge.exposeInMainWorld('app', appApi);
 const fmApi: FmBridge = {
   config: {
     current: () => ipcRenderer.invoke('fm:config:current') as Promise<ConfigSnapshot>,
+    inspectOpen: filePath => ipcRenderer.invoke('fm:config:inspectOpen', filePath) as Promise<ConfigOpenInspection>,
     load: filePath => ipcRenderer.invoke('fm:config:load', filePath) as Promise<ConfigSnapshot>,
     create: filePath => ipcRenderer.invoke('fm:config:create', filePath) as Promise<ConfigSnapshot>,
+    createLocalForShared: sharedPath => ipcRenderer.invoke('fm:config:createLocalForShared', sharedPath) as Promise<ConfigSnapshot>,
     save: data => ipcRenderer.invoke('fm:config:save', data) as Promise<void>,
     pick: mode => ipcRenderer.invoke('fm:config:pick', mode) as Promise<string | null>,
   },

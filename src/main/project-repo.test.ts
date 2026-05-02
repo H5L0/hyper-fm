@@ -188,6 +188,28 @@ describe('project-repo / mergeScanResult', () => {
         expect(out.report.matched).toBe(1);
     });
 
+    test('[mergeScanResult] folder-name 指纹应大小写不敏感', async () => {
+        const { shared, local } = createBase();
+        const added = addProjectManual(
+            shared,
+            local,
+            {
+                path: 'D:/seed/MyGame',
+                name: 'MyGame',
+                tags: [],
+                fingerprint: { kind: 'folder-name', folderName: 'MyGame' },
+            },
+            'win32',
+        );
+        const { nextLocal: withRoot, root } = addScanRoot(added.nextLocal, { path: 'D:/scan' });
+        const out = await mergeScanResult(
+            { shared: added.nextShared, local: withRoot, rootId: root.id },
+            [{ path: 'D:/scan/mygame', name: 'mygame', mtime: '2026-01-01T00:00:00Z', hasMetaFile: false }],
+        );
+        expect(out.report.matched).toBe(1);
+        expect(out.nextLocal.bindings.some(binding => binding.projectId === added.project.id)).toBe(true);
+    });
+
     test('[mergeScanResult] 多目录命中同一指纹应生成告警且不绑定', async () => {
         const { shared, local } = createBase();
         const added = addProjectManual(

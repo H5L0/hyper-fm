@@ -46,17 +46,20 @@ export function createDefaultUi(): UiPreferences {
     return { theme: 'system', view: 'grid' };
 }
 
-export function createDefaultSharedConfig(): SharedConfig {
+export function createDefaultSharedConfig(meta?: { name?: string; description?: string }): SharedConfig {
     return {
         version: CONFIG_SCHEMA_VERSION,
+        name: meta?.name?.trim() || 'fm',
+        description: meta?.description?.trim() || undefined,
         ignore: createDefaultIgnore(),
         projects: [],
     };
 }
 
-export function createDefaultLocalConfig(): LocalConfig {
+export function createDefaultLocalConfig(sharedConfigPath = ''): LocalConfig {
     return {
         version: CONFIG_SCHEMA_VERSION,
+        sharedConfigPath,
         scanRoots: [],
         bindings: [],
         ui: createDefaultUi(),
@@ -432,6 +435,8 @@ export function validateSharedConfig(input: unknown): ValidationResult<SharedCon
     const tags = validateTags(input.tags, errors);
     const config: SharedConfig = {
         version: CONFIG_SCHEMA_VERSION,
+        name: isString(input.name) && input.name.trim() ? input.name.trim() : 'fm',
+        description: isString(input.description) && input.description.trim() ? input.description.trim() : undefined,
         ignore,
         projects,
         ...(tags ? { tags } : {}),
@@ -459,6 +464,7 @@ export function validateLocalConfig(input: unknown): ValidationResult<LocalConfi
     const commands = validateCommands(input.commands, errors);
     const config: LocalConfig = {
         version: CONFIG_SCHEMA_VERSION,
+        sharedConfigPath: isString(input.sharedConfigPath) ? input.sharedConfigPath : '',
         scanRoots,
         bindings,
         ui,
@@ -481,6 +487,8 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
     }
     const sharedInput = {
         version: input.version,
+        name: input.name,
+        description: input.description,
         ignore: input.ignore,
         projects: Array.isArray(input.projects)
             ? input.projects.map(project => ({
@@ -498,6 +506,7 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
     };
     const localInput = {
         version: input.version,
+        sharedConfigPath: undefined,
         scanRoots: input.scanRoots,
         bindings: Array.isArray(input.projects)
             ? input.projects.map(project => ({
@@ -552,6 +561,8 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
     }
     return {
         version: CONFIG_SCHEMA_VERSION,
+        name: shared.name,
+        description: shared.description,
         scanRoots: [...local.scanRoots],
         ignore: { ...shared.ignore, globs: [...shared.ignore.globs] },
         projects,
@@ -588,6 +599,8 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
     return {
         ...current,
         version: CONFIG_SCHEMA_VERSION,
+        name: appConfig.name.trim() || current.name,
+        description: appConfig.description?.trim() || undefined,
         ignore: {
             respectGitignore: appConfig.ignore.respectGitignore,
             globs: [...appConfig.ignore.globs],
@@ -597,9 +610,10 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
     };
 }
 
-export function mergeAppConfigIntoLocal(appConfig: AppConfig): LocalConfig {
+export function mergeAppConfigIntoLocal(appConfig: AppConfig, sharedConfigPath = ''): LocalConfig {
     return {
         version: CONFIG_SCHEMA_VERSION,
+        sharedConfigPath,
         scanRoots: [...appConfig.scanRoots],
         bindings: appConfig.projects.map(project => ({
             projectId: project.id,

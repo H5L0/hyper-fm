@@ -4,6 +4,7 @@
 
 import type {
   AppConfig,
+  ConfigOpenInspection,
   ConfigPaths,
   ConfigSnapshot,
   ProjectFingerprint,
@@ -29,6 +30,7 @@ import type {
 
 export type {
   AppConfig,
+  ConfigOpenInspection,
   ConfigPaths,
   ConfigSnapshot,
   ProjectFingerprint,
@@ -71,8 +73,10 @@ export interface AppBridge {
 
 export interface FmConfigBridge {
   current(): Promise<ConfigSnapshot>;
+  inspectOpen(filePath: string): Promise<ConfigOpenInspection>;
   load(filePath: string): Promise<ConfigSnapshot>;
   create(filePath: string): Promise<ConfigSnapshot>;
+  createLocalForShared(sharedPath: string): Promise<ConfigSnapshot>;
   save(data: AppConfig): Promise<void>;
   pick(mode: 'open' | 'save'): Promise<string | null>;
 }

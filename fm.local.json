@@ -6,6 +6,12 @@
       "path": "C:/DATA/_legecy/Projects/Programs",
       "maxDepth": 1,
       "enabled": true
+    },
+    {
+      "id": "root_ubsqu9",
+      "path": "C:/DATA/_legecy/Projects/Programs/LLamaCSharp",
+      "maxDepth": 1,
+      "enabled": true
     }
   ],
   "bindings": [
@@ -15,8 +21,8 @@
       "path": "C:/DATA/_legecy/Projects/Programs/dear-mt",
       "rootId": "root_13ffho",
       "hasMetaFile": false,
-      "lastScannedAt": "2026-05-02T09:56:16.400Z",
-      "lastModifiedAt": "2026-05-02T09:56:16.400Z"
+      "lastScannedAt": "2026-05-02T14:00:13.738Z",
+      "lastModifiedAt": "2026-05-02T14:00:13.738Z"
     }
   ],
   "ui": {

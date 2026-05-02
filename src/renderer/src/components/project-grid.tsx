@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { Copy, ExternalLink, FileText, Pencil, Terminal, Trash2 } from 'lucide-react';
+import { Copy, FileText, FolderOpen, Pencil, Terminal, Trash2 } from 'lucide-react';
 import type { PresetCommandDescriptor, Project } from '@shared/bridge.js';
 import {
   type HighlightSegment,
@@ -341,7 +341,7 @@ function ProjectContextMenu({
   };
 
   const iconOf = (id: string) => {
-    if (id.startsWith('open.')) return id === 'open.terminal' ? Terminal : ExternalLink;
+    if (id.startsWith('open.')) return id === 'open.terminal' ? Terminal : FolderOpen;
     if (id.startsWith('copy.')) return Copy;
     return FileText;
   };

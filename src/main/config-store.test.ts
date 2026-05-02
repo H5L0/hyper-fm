@@ -3,8 +3,10 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+    createLocalConfigForShared,
     createConfig,
     deriveLocalConfigPath,
+    inspectOpenConfig,
     loadConfig,
     loadOrInitConfig,
     resolveDefaultConfigPaths,
@@ -25,7 +27,7 @@ describe('config-store', () => {
     });
 
     test('[deriveLocalConfigPath] 应从 shared 路径推导同目录 local 路径', () => {
-        expect(deriveLocalConfigPath('/tmp/foo.json').replace(/\\/g, '/')).toMatch(/\/tmp\/fm\.local\.json$/);
+        expect(deriveLocalConfigPath('/tmp/foo.shared.json').replace(/\\/g, '/')).toMatch(/\/tmp\/foo\.local\.json$/);
     });
 
     test('[loadConfig] 文件不存在应抛 FmError(CONFIG_NOT_FOUND)', async () => {
@@ -42,9 +44,10 @@ describe('config-store', () => {
         const dir = await tmpDir();
         const file = path.join(dir, 'fm.shared.json');
         const snapshot = await createConfig(file);
-        expect(snapshot.paths.sharedPath).toBe(file);
-        expect(snapshot.paths.localPath).toBe(path.join(dir, 'fm.local.json'));
+        expect(snapshot.paths.sharedPath.replace(/\\/g, '/')).toBe(file.replace(/\\/g, '/'));
+        expect(snapshot.paths.localPath.replace(/\\/g, '/')).toBe(path.join(dir, 'fm.local.json').replace(/\\/g, '/'));
         expect(snapshot.data.version).toBe(2);
+        expect(snapshot.data.name).toBe('fm');
         expect(snapshot.data.scanRoots).toEqual([]);
 
         try {
@@ -60,7 +63,7 @@ describe('config-store', () => {
         const sharedPath = path.join(dir, 'fm.shared.json');
         const localPath = path.join(dir, 'fm.local.json');
         const shared = createDefaultSharedConfig();
-        const local = createDefaultLocalConfig();
+        const local = createDefaultLocalConfig(sharedPath);
         shared.projects.push({
             id: 'pj-aaaaaa',
             name: 'demo',
@@ -82,6 +85,7 @@ describe('config-store', () => {
         expect(reloaded.data.scanRoots).toHaveLength(1);
         expect(reloaded.data.projects).toHaveLength(1);
         expect(reloaded.data.projects[0]?.path).toBe('D:/p/demo');
+        expect(reloaded.paths.localPath.replace(/\\/g, '/')).toBe(localPath.replace(/\\/g, '/'));
     });
 
     test('[loadOrInitConfig] 不存在时应初始化 shared/local', async () => {
@@ -92,5 +96,36 @@ describe('config-store', () => {
         const localExists = await fs.stat(path.join(path.dirname(file), 'fm.local.json'));
         expect(sharedExists.isFile()).toBe(true);
         expect(localExists.isFile()).toBe(true);
+    });
+
+    test('[inspectOpenConfig] 选择 shared 时应返回对应 local 是否存在', async () => {
+        const dir = await tmpDir();
+        const sharedPath = path.join(dir, 'demo.shared.json');
+        await fs.writeFile(sharedPath, JSON.stringify(createDefaultSharedConfig({ name: 'demo' })));
+        const inspection = await inspectOpenConfig(sharedPath);
+        expect(inspection.selectedKind).toBe('shared');
+        expect(inspection.localExists).toBe(false);
+        expect(inspection.localPath.replace(/\\/g, '/')).toMatch(/demo\.local\.json$/);
+    });
+
+    test('[createLocalConfigForShared] 应为指定 shared 自动创建同名 local', async () => {
+        const dir = await tmpDir();
+        const sharedPath = path.join(dir, 'workspace.shared.json');
+        await fs.writeFile(sharedPath, JSON.stringify(createDefaultSharedConfig({ name: 'workspace' })));
+        const snapshot = await createLocalConfigForShared(sharedPath);
+        expect(snapshot.paths.localPath.replace(/\\/g, '/')).toMatch(/workspace\.local\.json$/);
+        const stat = await fs.stat(snapshot.paths.localPath);
+        expect(stat.isFile()).toBe(true);
+    });
+
+    test('[inspectOpenConfig] 选择 local 时应读取其中记录的 shared 路径', async () => {
+        const dir = await tmpDir();
+        const sharedPath = path.join(dir, 'team.shared.json');
+        const localPath = path.join(dir, 'team.local.json');
+        await fs.writeFile(sharedPath, JSON.stringify(createDefaultSharedConfig({ name: 'team' })));
+        await fs.writeFile(localPath, JSON.stringify(createDefaultLocalConfig(sharedPath)));
+        const inspection = await inspectOpenConfig(localPath);
+        expect(inspection.selectedKind).toBe('local');
+        expect(inspection.sharedPath).toBe(sharedPath.replace(/\\/g, '/'));
     });
 });

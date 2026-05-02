@@ -6,23 +6,42 @@ import { Button } from '@/components/ui/button';
 import { useAppActions, useAppState } from '../store/app-store.js';
 
 export function TitleBar() {
-  const { configPaths } = useAppState();
+  const { config, configPaths } = useAppState();
   const actions = useAppActions();
 
-  const title = configPaths.sharedPath
-    ? `共享：${configPaths.sharedPath} | 本地：${configPaths.localPath}`
-    : '未加载配置';
+  const configName = config.name?.trim() || '未命名配置';
 
   return (
-    <header className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-card/60 px-3 text-muted-foreground select-none">
-      <div className="flex items-center gap-2">
+    <header className="flex h-8 shrink-0 items-center justify-between border-b border-border bg-card/60 px-3 text-muted-foreground select-none">
+      <div className="flex items-center gap-1.5">
         <span className="text-foreground font-semibold tracking-tight">fm</span>
         <span className="text-border">/</span>
-        <span className="truncate text-note" title={title}>
-          {title}
-        </span>
+        <div className="group relative min-w-0">
+          <button
+            type="button"
+            className="max-w-[360px] truncate rounded px-1 py-0.5 text-note text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          >
+            {configName}
+          </button>
+          <div className="pointer-events-none absolute top-full left-0 z-50 mt-2 hidden w-[420px] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover px-3 py-3 text-left shadow-lg group-hover:block group-focus-within:block">
+            <p className="text-subheading text-foreground">{configName}</p>
+            {config.description ? (
+              <p className="mt-1 text-note text-muted-foreground">{config.description}</p>
+            ) : null}
+            <div className="mt-3 space-y-2 text-note text-muted-foreground">
+              <div>
+                <span className="text-foreground">共享配置</span>
+                <p className="mt-0.5 break-all">{configPaths.sharedPath || '未加载'}</p>
+              </div>
+              <div>
+                <span className="text-foreground">本地配置</span>
+                <p className="mt-0.5 break-all">{configPaths.localPath || '未加载'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0.5">
         <Button size="xs" variant="ghost" onClick={() => void actions.pickAndLoadConfig()}>
           打开…
         </Button>

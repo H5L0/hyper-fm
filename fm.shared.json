@@ -35,6 +35,14 @@
     {
       "name": "Typescript",
       "color": "#10b981"
+    },
+    {
+      "name": "Unity 3D",
+      "color": "#64748b"
+    },
+    {
+      "name": "C#",
+      "color": "#14b8a6"
     }
   ]
 }

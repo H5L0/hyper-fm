@@ -98,6 +98,8 @@ export interface UiPreferences {
 
 export interface SharedConfig {
   version: number;
+  name: string;
+  description?: string;
   ignore: IgnoreRules;
   projects: SharedProject[];
   /** 标签注册表：可在项目详情和侧边栏中显示颜色，未在此处注册的标签按默认色渲染 */
@@ -106,6 +108,7 @@ export interface SharedConfig {
 
 export interface LocalConfig {
   version: number;
+  sharedConfigPath: string;
   scanRoots: ScanRoot[];
   bindings: ProjectBinding[];
   ui: UiPreferences;
@@ -122,6 +125,8 @@ export interface LocalConfig {
 
 export interface AppConfig {
   version: number;
+  name: string;
+  description?: string;
   scanRoots: ScanRoot[];
   ignore: IgnoreRules;
   projects: Project[];
@@ -170,6 +175,7 @@ export interface ProjectMetaPatch {
   name?: string;
   description?: string;
   tags?: string[];
+  fingerprint?: ProjectFingerprint;
 }
 
 export interface ScanReport {
@@ -191,6 +197,16 @@ export interface ConfigPaths {
 export interface ConfigSnapshot {
   paths: ConfigPaths;
   data: AppConfig;
+}
+
+export type ConfigSelectionKind = 'shared' | 'local';
+
+export interface ConfigOpenInspection {
+  selectedPath: string;
+  selectedKind: ConfigSelectionKind;
+  sharedPath: string;
+  localPath: string;
+  localExists: boolean;
 }
 
 export interface ScanProgressEvent {

@@ -56,6 +56,8 @@ const INITIAL_STATE: AppState = {
   configPaths: { sharedPath: '', localPath: '' },
   config: {
     version: 2,
+    name: 'fm',
+    description: '',
     scanRoots: [],
     ignore: { respectGitignore: true, globs: [] },
     projects: [],
@@ -162,10 +164,11 @@ interface AppActions {
   addProject(input: ManualProjectInput): Promise<Project>;
   removeProject(id: string): Promise<void>;
   pickProjectDirectory(): Promise<string | null>;
-  addScanRoot(input: { path: string; label?: string; maxDepth?: number }): Promise<void>;
+  addScanRoot(input: { path: string; label?: string; maxDepth?: number }): Promise<ScanRoot>;
   updateScanRoot(id: string, patch: Partial<Omit<ScanRoot, 'id'>>): Promise<void>;
   removeScanRoot(id: string): Promise<void>;
   pickDirectory(): Promise<string | null>;
+  saveConfigMeta(name: string, description: string): Promise<void>;
   saveIgnore(patch: Partial<AppConfig['ignore']>): Promise<void>;
   saveTheme(theme: AppConfig['ui']['theme']): Promise<void>;
   upsertTag(tag: TagDefinition): Promise<void>;
@@ -206,45 +209,66 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
+  const applySnapshot = useCallback((snapshot: { paths: ConfigPaths; data: AppConfig }) => {
+    dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data });
+  }, []);
+
   const loadConfig = useCallback(
     async (filePath?: string) => {
       try {
         const snapshot = filePath
           ? await window.fm.config.load(filePath)
           : await window.fm.config.current();
-        dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data });
+        applySnapshot(snapshot);
       } catch (error) {
         handleError(error, '加载配置失败');
       }
     },
-    [handleError],
+    [applySnapshot, handleError],
   );
 
   const pickAndLoadConfig = useCallback(async () => {
     try {
       const filePath = await window.fm.config.pick('open');
       if (filePath) {
-        const snapshot = await window.fm.config.load(filePath);
-        dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data });
+        const inspection = await window.fm.config.inspectOpen(filePath);
+        let snapshot;
+
+        if (inspection.selectedKind === 'shared' && !inspection.localExists) {
+          const createNew = window.confirm(
+            `未找到对应的本地配置：\n${inspection.localPath}\n\n确定：创建新的本地配置\n取消：手动选择已有的 local 配置`,
+          );
+          if (createNew) {
+            snapshot = await window.fm.config.createLocalForShared(inspection.sharedPath);
+          } else {
+            const localPath = await window.fm.config.pick('open');
+            if (!localPath) return;
+            snapshot = await window.fm.config.load(localPath);
+          }
+        } else {
+          snapshot = await window.fm.config.load(filePath);
+        }
+
+        applySnapshot(snapshot);
         toast('success', '配置已加载');
       }
     } catch (error) {
       handleError(error, '加载配置失败');
     }
-  }, [handleError, toast]);
+  }, [applySnapshot, handleError, toast]);
 
   const pickAndCreateConfig = useCallback(async () => {
     try {
       const filePath = await window.fm.config.pick('save');
       if (filePath) {
         const snapshot = await window.fm.config.create(filePath);
-        dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data });
+        applySnapshot(snapshot);
         toast('success', '已创建新配置');
       }
     } catch (error) {
       handleError(error, '创建配置失败');
     }
-  }, [handleError, toast]);
+  }, [applySnapshot, handleError, toast]);
 
   const refreshProjects = useCallback(async () => {
     try {
@@ -257,8 +281,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const reloadCurrent = useCallback(async () => {
     const snap = await window.fm.config.current();
-    dispatch({ type: 'init', configPaths: snap.paths, config: snap.data });
-  }, []);
+    applySnapshot(snap);
+  }, [applySnapshot]);
 
   const runScanAll = useCallback(async () => {
     try {
@@ -314,11 +338,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const saveProject = useCallback(
     async (id: string, patch: ProjectMetaPatch, writeFile: boolean) => {
       try {
-        const project = writeFile
+        const shouldWriteFile = writeFile || patch.fingerprint?.kind === 'metadata';
+        const project = shouldWriteFile
           ? await window.fm.projects.writeMetaFile(id, patch)
           : await window.fm.projects.updateMeta(id, patch);
         dispatch({ type: 'updateProject', project });
-        toast('success', writeFile ? '已写入 .meta-data' : '已保存到数据库');
+        toast('success', shouldWriteFile ? '已写入 .meta-data' : '已保存到数据库');
       } catch (error) {
         handleError(error, '保存项目失败');
       }
@@ -382,6 +407,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     async (input: { path: string; label?: string; maxDepth?: number }) => {
       const root = await window.fm.scanRoots.add(input);
       dispatch({ type: 'scanRoot', root });
+      return root;
     },
     [],
   );
@@ -403,6 +429,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   );
 
   const pickDirectory = useCallback(() => window.fm.scanRoots.pickDirectory(), []);
+
+  const saveConfigMeta = useCallback(
+    async (name: string, description: string) => {
+      const next: AppConfig = {
+        ...stateRef.current.config,
+        name: name.trim() || stateRef.current.config.name,
+        description: description.trim(),
+      };
+      await window.fm.config.save(next);
+      dispatch({ type: 'config', config: next });
+    },
+    [],
+  );
 
   const saveIgnore = useCallback(
     async (patch: Partial<AppConfig['ignore']>) => {
@@ -497,6 +536,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       updateScanRoot: updateScanRootAction,
       removeScanRoot: removeScanRootAction,
       pickDirectory,
+      saveConfigMeta,
       saveIgnore,
       saveTheme,
       upsertTag,
@@ -524,6 +564,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       revealProject,
       runScanAll,
       runScanOne,
+      saveConfigMeta,
       saveIgnore,
       saveProject,
       saveTheme,
