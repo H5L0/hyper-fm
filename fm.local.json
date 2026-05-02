@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "scanRoots": [
+    {
+      "id": "root_13ffho",
+      "path": "C:/DATA/_legecy/Projects/Programs",
+      "maxDepth": 1,
+      "enabled": true
+    }
+  ],
+  "bindings": [
+    {
+      "projectId": "pj-ccw4pt",
+      "id": "pj-ccw4pt",
+      "path": "C:/DATA/_legecy/Projects/Programs/dear-mt",
+      "rootId": "root_13ffho",
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-05-02T09:56:16.400Z",
+      "lastModifiedAt": "2026-05-02T09:56:16.400Z"
+    }
+  ],
+  "ui": {
+    "theme": "system",
+    "view": "grid"
+  },
+  "warnings": [],
+  "ignoredPaths": [],
+  "devices": {
+    "selfId": "dev_zpanc4",
+    "selfName": "PC-ITX",
+    "known": []
+  }
+}

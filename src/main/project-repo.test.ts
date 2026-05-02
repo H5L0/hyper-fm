@@ -1,142 +1,225 @@
 import { describe, expect, test } from 'vitest';
 import {
-  addScanRoot,
-  applyProjectPatch,
-  mergeScanResult,
-  removeScanRoot,
-  updateScanRoot,
+    addIgnoredPath,
+    addProjectManual,
+    addScanRoot,
+    applyProjectPatch,
+    buildProjects,
+    mergeScanResult,
+    removeProject,
+    removeScanRoot,
+    updateScanRoot,
 } from './project-repo.js';
-import { createDefaultConfig } from '../shared/schema.js';
+import { createDefaultLocalConfig, createDefaultSharedConfig } from '../shared/schema.js';
 import type { ScanCandidate } from './scanner.js';
 
-describe('project-repo / scan roots', () => {
-  test('[addScanRoot] 重复路径应抛错', () => {
-    const base = createDefaultConfig();
-    const { config } = addScanRoot(base, { path: 'D:/p' });
-    expect(() => addScanRoot(config, { path: 'd:/p' })).toThrow();
-  });
-
-  test('[updateScanRoot] 应能修改 maxDepth 与 enabled', () => {
-    const { config } = addScanRoot(createDefaultConfig(), { path: 'D:/p' });
-    const id = config.scanRoots[0]!.id;
-    const { config: next } = updateScanRoot(config, id, { maxDepth: 5, enabled: false });
-    expect(next.scanRoots[0]?.maxDepth).toBe(5);
-    expect(next.scanRoots[0]?.enabled).toBe(false);
-  });
-
-  test('[removeScanRoot] 应级联删除 root 下项目', () => {
-    const { config: c1 } = addScanRoot(createDefaultConfig(), { path: 'D:/p' });
-    const id = c1.scanRoots[0]!.id;
-    const c2 = {
-      ...c1,
-      projects: [
-        {
-          id: 'prj_1',
-          path: 'D:/p/x',
-          rootId: id,
-          name: 'X',
-          tags: [],
-          hasMetaFile: false,
-          lastScannedAt: '2026-01-01T00:00:00Z',
-        },
-      ],
+function createBase() {
+    return {
+        shared: createDefaultSharedConfig(),
+        local: createDefaultLocalConfig(),
     };
-    const next = removeScanRoot(c2, id);
-    expect(next.projects).toHaveLength(0);
-    expect(next.scanRoots).toHaveLength(0);
-  });
+}
+
+describe('project-repo / scan roots', () => {
+    test('[addScanRoot] 重复路径应抛错', () => {
+        const { local } = createBase();
+        const { nextLocal } = addScanRoot(local, { path: 'D:/p' });
+        expect(() => addScanRoot(nextLocal, { path: 'd:/p' })).toThrow();
+    });
+
+    test('[updateScanRoot] 应能修改 maxDepth 与 enabled', () => {
+        const { local } = createBase();
+        const { nextLocal } = addScanRoot(local, { path: 'D:/p' });
+        const id = nextLocal.scanRoots[0]!.id;
+        const out = updateScanRoot(nextLocal, id, { maxDepth: 5, enabled: false });
+        expect(out.root.maxDepth).toBe(5);
+        expect(out.root.enabled).toBe(false);
+    });
+
+    test('[removeScanRoot] 应级联删除 root 下本地绑定与告警', () => {
+        const { local } = createBase();
+        const { nextLocal } = addScanRoot(local, { path: 'D:/p' });
+        const id = nextLocal.scanRoots[0]!.id;
+        const updated = {
+            ...nextLocal,
+            bindings: [
+                {
+                    projectId: 'pj-aaaaaa',
+                    id: 'pj-aaaaaa',
+                    path: 'D:/p/x',
+                    rootId: id,
+                    hasMetaFile: false,
+                    lastScannedAt: '2026-01-01T00:00:00Z',
+                },
+            ],
+            warnings: [
+                {
+                    id: 'warn_1',
+                    kind: 'fingerprint-conflict' as const,
+                    scanRootId: id,
+                    projectId: 'pj-aaaaaa',
+                    projectName: 'X',
+                    fingerprint: { kind: 'folder-name' as const, folderName: 'X' },
+                    candidatePaths: ['D:/p/x', 'D:/p/y'],
+                    message: '冲突',
+                    createdAt: '2026-01-01T00:00:00Z',
+                },
+            ],
+        };
+        const result = removeScanRoot(updated, id);
+        expect(result.bindings).toHaveLength(0);
+        expect(result.scanRoots).toHaveLength(0);
+        expect(result.warnings).toHaveLength(0);
+    });
+});
+
+describe('project-repo / manual add', () => {
+    test('[addProjectManual] 应创建共享项目与本地绑定', () => {
+        const { shared, local } = createBase();
+        const result = addProjectManual(
+            shared,
+            local,
+            {
+                path: 'D:/p/demo',
+                name: 'Demo',
+                tags: ['ts'],
+                fingerprint: { kind: 'folder-name', folderName: 'demo' },
+            },
+            'win32',
+        );
+        expect(result.nextShared.projects).toHaveLength(1);
+        expect(result.nextLocal.bindings).toHaveLength(1);
+        expect(result.project.id).toMatch(/^pj-[a-z0-9]{6}$/);
+        expect(result.project.fingerprint.kind).toBe('folder-name');
+    });
+
+    test('[applyProjectPatch] 应更新共享项目元数据', () => {
+        const { shared, local } = createBase();
+        const added = addProjectManual(
+            shared,
+            local,
+            {
+                path: 'D:/p/demo',
+                name: 'Demo',
+                tags: [],
+                fingerprint: { kind: 'metadata' },
+            },
+            'win32',
+        );
+        const patched = applyProjectPatch(added.nextShared, added.nextLocal, added.project.id, {
+            tags: [' a ', '', 'b'],
+        });
+        expect(patched.project.tags).toEqual(['a', 'b']);
+    });
+
+    test('[removeProject] 应删除共享项目、本地绑定与相关告警', () => {
+        const { shared, local } = createBase();
+        const added = addProjectManual(
+            shared,
+            local,
+            {
+                path: 'D:/p/demo',
+                name: 'Demo',
+                tags: [],
+                fingerprint: { kind: 'metadata' },
+            },
+            'win32',
+        );
+        const withWarning = {
+            ...added.nextLocal,
+            warnings: [
+                {
+                    id: 'warn_1',
+                    kind: 'fingerprint-conflict' as const,
+                    scanRootId: 'root_1',
+                    projectId: added.project.id,
+                    projectName: added.project.name,
+                    fingerprint: { kind: 'metadata' as const },
+                    candidatePaths: ['D:/p/demo', 'D:/p/demo-copy'],
+                    message: '冲突',
+                    createdAt: '2026-01-01T00:00:00Z',
+                },
+            ],
+        };
+        const removed = removeProject(added.nextShared, withWarning, added.project.id);
+        expect(removed.nextShared.projects).toHaveLength(0);
+        expect(removed.nextLocal.bindings).toHaveLength(0);
+        expect(removed.nextLocal.warnings).toHaveLength(0);
+    });
 });
 
 describe('project-repo / mergeScanResult', () => {
-  test('[mergeScanResult] 新增 + 移除 + 更新计数应正确', async () => {
-    const { config: c1 } = addScanRoot(createDefaultConfig(), { path: 'D:/p' });
-    const rootId = c1.scanRoots[0]!.id;
+    test('[mergeScanResult] 扫描只匹配既有项目，不新增共享项目', async () => {
+        const { shared, local } = createBase();
+        const withProject = addProjectManual(
+            shared,
+            local,
+            {
+                path: 'D:/seed/game',
+                name: 'Game',
+                tags: [],
+                fingerprint: { kind: 'folder-name', folderName: 'game' },
+            },
+            'win32',
+        );
+        const { nextLocal: withRoot, root } = addScanRoot(withProject.nextLocal, { path: 'D:/scan' });
+        const candidates: ScanCandidate[] = [
+            {
+                path: 'D:/scan/game',
+                name: 'game',
+                mtime: '2026-01-01T00:00:00Z',
+                hasMetaFile: false,
+            },
+            {
+                path: 'D:/scan/new-project',
+                name: 'new-project',
+                mtime: '2026-01-01T00:00:00Z',
+                hasMetaFile: false,
+            },
+        ];
+        const out = await mergeScanResult(
+            { shared: withProject.nextShared, local: withRoot, rootId: root.id },
+            candidates,
+        );
+        const projects = buildProjects(withProject.nextShared, out.nextLocal);
+        expect(projects).toHaveLength(1);
+        expect(projects[0]?.path).toBe('D:/scan/game');
+        expect(out.report.added).toBe(0);
+        expect(out.report.matched).toBe(1);
+    });
 
-    const candA: ScanCandidate = {
-      path: 'D:/p/a',
-      name: 'a',
-      mtime: '2026-01-01T00:00:00Z',
-      hasMetaFile: false,
-    };
-    const candB: ScanCandidate = {
-      path: 'D:/p/b',
-      name: 'b',
-      mtime: '2026-01-02T00:00:00Z',
-      hasMetaFile: false,
-    };
-    const first = await mergeScanResult(
-      { config: c1, rootId, platform: 'linux' },
-      [candA, candB],
-    );
-    expect(first.report.added).toBe(2);
-    expect(first.config.projects).toHaveLength(2);
-
-    // 第二次扫描：a 仍在，c 新增，b 消失
-    const candC: ScanCandidate = {
-      path: 'D:/p/c',
-      name: 'c',
-      mtime: '2026-01-03T00:00:00Z',
-      hasMetaFile: false,
-    };
-    const second = await mergeScanResult(
-      { config: first.config, rootId, platform: 'linux' },
-      [candA, candC],
-    );
-    expect(second.report.added).toBe(1);
-    expect(second.report.updated).toBe(1);
-    expect(second.report.removed).toBe(1);
-    expect(second.config.projects.map(p => p.name).sort()).toEqual(['a', 'c']);
-  });
-
-  test('[mergeScanResult] metaResolver 应覆盖 name/description/tags', async () => {
-    const { config: c1 } = addScanRoot(createDefaultConfig(), { path: 'D:/p' });
-    const rootId = c1.scanRoots[0]!.id;
-    const cand: ScanCandidate = {
-      path: 'D:/p/g',
-      name: 'g',
-      mtime: '2026-01-01T00:00:00Z',
-      hasMetaFile: true,
-    };
-    const out = await mergeScanResult(
-      {
-        config: c1,
-        rootId,
-        platform: 'linux',
-        metaResolver: async () => ({
-          schema: 'fm.meta/v1',
-          name: 'GameX',
-          description: 'desc',
-          tags: ['unity', 'game'],
-        }),
-      },
-      [cand],
-    );
-    const project = out.config.projects[0]!;
-    expect(project.name).toBe('GameX');
-    expect(project.tags).toEqual(['unity', 'game']);
-    expect(project.description).toBe('desc');
-  });
+    test('[mergeScanResult] 多目录命中同一指纹应生成告警且不绑定', async () => {
+        const { shared, local } = createBase();
+        const added = addProjectManual(
+            shared,
+            local,
+            {
+                path: 'D:/seed/game',
+                name: 'Game',
+                tags: [],
+                fingerprint: { kind: 'folder-name', folderName: 'game' },
+            },
+            'win32',
+        );
+        const { nextLocal: withRoot, root } = addScanRoot(added.nextLocal, { path: 'D:/scan' });
+        const out = await mergeScanResult(
+            { shared: added.nextShared, local: withRoot, rootId: root.id },
+            [
+                { path: 'D:/scan/game', name: 'game', mtime: '2026-01-01T00:00:00Z', hasMetaFile: false },
+                { path: 'D:/scan/another/game', name: 'game', mtime: '2026-01-01T00:00:00Z', hasMetaFile: false },
+            ],
+        );
+        expect(out.nextLocal.bindings.filter(binding => binding.rootId === root.id)).toHaveLength(0);
+        expect(out.nextLocal.warnings).toHaveLength(1);
+        expect(out.report.warnings).toBe(1);
+    });
 });
 
-describe('project-repo / applyProjectPatch', () => {
-  test('[applyProjectPatch] 应裁剪 tags 中的空白项', () => {
-    const config = {
-      ...createDefaultConfig(),
-      projects: [
-        {
-          id: 'prj_1',
-          path: 'D:/x',
-          rootId: 'root_1',
-          name: 'X',
-          tags: [],
-          hasMetaFile: false,
-          lastScannedAt: '2026-01-01T00:00:00Z',
-        },
-      ],
-    };
-    const { project } = applyProjectPatch(config, 'prj_1', {
-      tags: [' a ', '', 'b'],
+describe('project-repo / local ignore paths', () => {
+    test('[addIgnoredPath] 重复添加应保持唯一', () => {
+        const { local } = createBase();
+        const once = addIgnoredPath(local, 'D:/projects/demo');
+        const twice = addIgnoredPath(once, 'd:/projects/demo');
+        expect(twice.ignoredPaths).toEqual(['D:/projects/demo']);
     });
-    expect(project.tags).toEqual(['a', 'b']);
-  });
 });

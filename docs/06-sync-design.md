@@ -1,186 +1,213 @@
 # M2 同步设计
 
-M2 在 M1 基础上引入跨机同步。同步范围 = 一个或多个项目目录 + 它们对应的 fm 元数据（DB 中的 `Project` 记录与可选 `.meta-data` 内容）。
+M2 在 M1 基础上引入跨机同步。当前数据模型已经为同步做了关键铺垫：
+
+- `shared` 保存稳定的项目身份（`projectId` + 指纹 + 标签/描述）
+- `local` 保存每台机器自己的路径绑定与同步状态
+
+这意味着：**同步的逻辑主键是 `projectId`，不是路径。** 路径只在本地机器上有意义。
 
 ## 设计原则
 
-- **零服务器**：核心传输是设备直连或经用户自管的「中转设备」，不依赖 fm 项目维护任何在线服务。
-- **手动触发**：M2 不做实时同步与定时同步；用户在 UI 中显式点击「推送」/「拉取」/「导出」/「导入」。
-- **冲突让用户判断**：传输前先比对元数据差异并展示，用户决定哪些项目推/拉。不做静默合并。
-- **可携带**：导入/导出 zip 必须自描述，可在没有 fm 的机器上检查内容；网络协议消息也使用 JSON 头。
+- **零服务器**：核心传输是设备直连或经用户自管中转目录/设备，不依赖 fm 官方服务。
+- **手动触发**：不做自动同步与后台守护。
+- **冲突显式展示**：传输前先比对差异，用户决定推送或拉取。
+- **可携带**：zip 与 bundle 都是自描述格式。
+- **路径本地化**：同步协议永远不假设两台机器上有相同目录结构。
 
-## 同步载体
+## 为什么 shared/local 拆分对同步重要
 
-提供两条互补路径，复用同一份「打包/解包」核心：
+旧模型把路径直接塞进项目主记录里，会让以下场景很别扭：
 
-| 载体 | 适用场景 | 特点 |
-|------|---------|------|
-| **zip 包** | 偶尔搬运、U 盘、邮件 | 一次性，单文件；包内含 manifest |
-| **共享目录** | OneDrive / Dropbox / 中转设备 | 持续同步源；按设备分文件夹，记录每个项目的最新版本 |
-| **TCP P2P** | 局域网两台设备直连 | 同款消息协议；可选 |
-| **中转设备** | 非局域网跨机 | 等同于「TCP P2P + 共享目录」组合：所有设备都向同一台中转设备推/拉 |
+- 台式机路径是 `D:/projects/fm`
+- 笔记本路径是 `E:/code/fm`
+- 两边其实是同一个项目，但路径不同
+
+现在通过：
+
+- `SharedProject.id = pj-xxxxxx`
+- `LocalConfig.bindings[].path = 当前机器路径`
+
+可以稳定地表达“同一个项目，在不同机器上有不同落点”。
+
+## 同步范围
+
+同步范围包括：
+
+1. shared 项目元数据
+   - `projectId`
+   - `name`
+   - `description`
+   - `tags`
+   - `fingerprint`
+2. 项目目录内容
+3. 可选 `.meta-data`
+4. 设备级状态（只保留在本地，不跨设备覆盖）
+
+不跨设备共享的内容：
+
+- `scanRoots`
+- 本机 `bindings[].path`
+- `warnings`
+- `ignoredPaths`
+- `ui`
+- 本机监听端口、bundleDir 等本地偏好
 
 ## 数据模型扩展
 
-### `AppConfig.devices`
+### `LocalConfig.devices`
 
 ```ts
 {
-  selfId: 'dev_xxxxxx',        // 当前设备 ID
+  selfId: 'dev_xxxxxx',
   selfName: 'My Laptop',
-  known: [                      // 已知的对端设备（自动添加）
-    { id: 'dev_yyyyyy', name: 'Desktop', lastSeenAt: '2026-04-27T...' }
+  known: [
+    { id: 'dev_yyyyyy', name: 'Desktop', lastSeenAt: '2026-04-27T12:34:56Z' }
   ]
 }
 ```
 
-### `AppConfig.sync`
+### `LocalConfig.sync`
 
 ```ts
 {
-  bundleDir?: string,           // 共享目录路径（OneDrive/Dropbox/中转设备的挂载点）
+  bundleDir?: string,
   network?: {
-    listenPort: number,         // TCP 监听端口（默认 41555）
-    autoStart: boolean,         // 启动时自动监听
-    relayMode: boolean,         // 当前设备作为中转：接收并默认推到 bundleDir
+    listenPort: number,
+    autoStart: boolean,
+    relayMode: boolean
   }
 }
 ```
 
-### 项目内的同步元数据
-
-DB 中的 `Project` 增加：
+### `LocalConfig.bindings[]` 中的同步状态
 
 ```ts
 {
-  syncedAt?: string,           // 上一次成功推送/拉取的时间
-  syncedHash?: string,         // 上一次同步时的内容指纹（sha1，详见下文）
-  syncedFrom?: string,         // 上一次拉取来源（设备 ID）
+  projectId: 'pj-abc123',
+  path: 'D:/projects/fm',
+  syncedAt?: '2026-04-27T12:34:56Z',
+  syncedHash?: 'sha1:...',
+  syncedFrom?: 'dev_xxxxxx'
 }
 ```
 
-## SyncManifest（同步清单）
+这些字段是**本机观察结果**，不应回写到 shared。
 
-每次「打包」生成一个 manifest，是同步交互的统一交换格式：
+## SyncManifest
+
+每次推送、拉取、导出、导入都围绕统一 manifest 运作：
 
 ```ts
 interface SyncManifest {
   schema: 'fm.sync/v1';
-  generatedAt: string;        // ISO
+  generatedAt: string;
   device: { id: string; name: string };
   projects: SyncProjectEntry[];
 }
 
 interface SyncProjectEntry {
-  /** 项目逻辑 ID（DB 中的 Project.id），跨设备稳定 */
-  id: string;
-  /** 项目相对路径名（取自 path 的 basename + 短哈希，避免重名冲突） */
-  slug: string;
+  id: string;              // shared projectId（pj-xxxxxx）
+  slug: string;            // 传输层目录/zip 名，避免重名
   meta: {
     name: string;
-    category?: string;          // 用 name，不传 ID
     description?: string;
     tags: string[];
+    fingerprint: ProjectFingerprint;
   };
-  /** 文件清单（用于 diff、不传输内容） */
   files: SyncFileEntry[];
-  /** 整个项目的内容指纹（基于 files 的 sha1 之和） */
   hash: string;
-  /** 项目根目录的 mtime（加入打包时即时取） */
   modifiedAt: string;
 }
-
-interface SyncFileEntry {
-  /** 项目内相对路径（正斜杠） */
-  path: string;
-  size: number;
-  mtime: string;
-  sha1: string;
-}
 ```
 
-## 流程
+## 指纹与同步的关系
 
-### 推送（push to bundleDir 或对端 device）
+同步时 projectId 是第一主键，但指纹仍然重要：
 
-1. 用户在 UI 选择源项目集合（默认全部）。
-2. fm 生成本地 SyncManifest。
-3. 询问对端 manifest（zip 模式无对端，跳过此步）。
-4. 在 UI 中展示 diff：
-   - 新增（仅本地有）
-   - 更新（hash 不同）
-   - 一致（隐藏）
-   - 反向更新（仅对端较新，提示「忽略 / 改为拉取」）
-5. 用户确认后开始打包：每个被选中的项目生成一个 `<slug>.zip` + 写入索引。
-6. 写到 bundleDir / 通过 TCP 传给对端。
-7. 成功后更新本地 `Project.syncedAt / syncedHash`。
+- `metadata`：导入到新机器后最容易自动重新识别
+- `folder-name`：适合简单项目，但易发生重名冲突
+- `file-paths`：适合无 metadata 项目，可作为补充识别锚点
 
-### 拉取（pull from bundleDir 或对端 device）
+当用户把 zip 导入到一台新机器时：
 
-镜像流程：从 bundleDir 读取索引 / 向对端请求 manifest，比对差异，用户挑选要落地的项目，解包到本地 fm 中相同路径或新建路径。
+1. 若目标目录已有同 `projectId` 绑定，可视为同项目更新。
+2. 若没有绑定，但目录匹配某项目指纹，可提示建立绑定。
+3. 若出现指纹冲突，则应阻止静默绑定，由用户手动选择。
 
-### zip 导入/导出
+## 推送流程
 
-- **导出**：选定项目 → 生成单个 `.fm-bundle.zip`，根含 `manifest.json`，每个项目占一个目录。
-- **导入**：选择 `.fm-bundle.zip` → 展示 manifest → 用户为每个项目选择「跳过 / 新建（指定根目录） / 覆盖到已有项目」。
+1. 用户选择要推送的项目（按 `projectId`）。
+2. 系统读取本机 `bindings`，找到真实路径。
+3. 生成本地 `SyncManifest`。
+4. 与对端 manifest 或 bundleDir 索引比较差异。
+5. UI 展示：
+   - 仅本地有
+   - hash 不同
+   - 对端较新
+6. 用户确认后打包并推送。
+7. 成功后更新本机 binding 中的 `syncedAt / syncedHash`。
 
-### 中转设备
+## 拉取流程
 
-把任意一台经常在线的机器设为中转：
+1. 从 bundleDir、zip 或 TCP 对端读取 manifest。
+2. 用户为每个项目选择：
+   - 跳过
+   - 新建到某路径
+   - 覆盖已有本地绑定路径
+3. 解包到目标目录的临时路径。
+4. 校验 hash。
+5. 成功后建立或更新本机 binding。
 
-- 启用 `network.relayMode = true` 后，TCP 服务器允许任何认证设备推送 zip 到本机的 `bundleDir`，并在收到时把它合并到本地 manifest 索引中。
-- 其他设备启动后从 `bundleDir`（如挂载到本地）或直接通过 TCP 拉取最新。
-- 不做认证 token，仅基于「连接对端必须在本机已知设备列表中」的简单白名单（首次握手时显示「接受新设备」对话框）。
+注意：拉取流程里“目标路径”是用户在本机决定的，而不是从远端硬搬路径。
 
-## 文件布局
+## bundleDir 布局
 
-`bundleDir/`：
-
-```
+```text
 bundleDir/
-  index.json                    # 顶级索引：{ schema, devices, latest: { [projectId]: { device, slug, hash, mtime } } }
+  index.json
   devices/
     dev_xxxxxx/
-      manifest.json             # 该设备最新一次推送的 manifest
+      manifest.json
       projects/
-        <slug>.zip              # 单项目 zip：内含 .fm-meta.json + 项目原始文件
+        <slug>.zip
 ```
 
-zip 包结构 `<slug>.zip`：
+## zip 包结构
 
-```
-.fm-meta.json                   # 单项目 manifest entry（含 hash、files）
-files/
-  <项目原始内容>
+```text
+manifest.json                  # 整包 manifest（导出多个项目时）
+projects/
+  <slug>/
+    .fm-meta.json              # 单项目 manifest entry
+    files/
+      <项目原始内容>
 ```
 
 ## TCP 协议（P2P / 中转）
 
-行分隔 JSON 帧：每帧 = 一行 JSON，二进制载荷紧随其后并以 `Content-Length` 字段约定字节数。
+仍采用行分隔 JSON 帧 + 二进制载荷：
 
-```
+```text
 HELLO    { device: { id, name }, version: 'fm.sync/v1' }
-LIST     -> 服务端返回当前 manifest（同 SyncManifest）
-GET id   -> 服务端按项目 ID 返回 BUNDLE { len } + zip bytes
-PUT id   { len, manifestEntry } + zip bytes -> 服务端写入 bundleDir 并更新 index
+LIST     -> 返回 SyncManifest
+GET id   -> 返回 BUNDLE { len } + zip bytes
+PUT id   { len, manifestEntry } + zip bytes
 BYE
 ```
 
-第一次握手收到未知设备时，UI 弹窗确认是否加入白名单，加入后写入 `devices.known`。
+首次连接未知设备时，应让用户决定是否加入 `devices.known`。
 
 ## 失败与回滚
 
-- zip 写入：先写 `.zip.tmp` 再 rename。
-- index.json：原子写入；同时写一份 `.bak`。
-- 拉取：解包到 `.tmp/` 子目录，确认 hash 后再 rename 替换；失败保留 `.tmp/` 不污染主目录。
-- 上述任一步失败均向 UI 抛 `FmError`，不做静默重试。
-
-## 安全限度
-
-M2 不实现端到端加密。文档中明确：网络传输基于本地局域网或用户信任的中转设备；如经公网请使用 VPN。
+- zip：先写 `.tmp` 再 rename。
+- `index.json`：原子写入，并保留 `.bak`。
+- 拉取解包：先落到临时目录，hash 校验通过后再替换。
+- 建立本地 binding 前若发现指纹冲突，应停止自动落地。
 
 ## 不实现（留 M3+）
 
-- 增量补丁（rsync 风格）：当前每个项目变化即整包传输。
-- 实时观察文件变更：手动触发即可满足个人开发场景。
-- 多人协作合并：fm 是单人工具。
+- 增量补丁（rsync 风格）
+- 实时监听文件系统变化
+- 多人协作合并
+- 自动同步冲突裁决

@@ -90,4 +90,36 @@ describe('scanner', () => {
     });
     expect(calls).toBeGreaterThan(0);
   });
+
+  test('[scanRoot] 应支持精确忽略特定目录路径', async () => {
+    const root = await makeTree({
+      'projects/a/package.json': '{}',
+      'projects/b/package.json': '{}',
+    });
+    const candidates = await scanRoot({
+      rootPath: root,
+      maxDepth: 3,
+      ignoreGlobs: [],
+      exactIgnorePaths: [path.join(root, 'projects/b')],
+      respectGitignore: false,
+    });
+    expect(candidates.some(c => c.path.endsWith('/projects/b'))).toBe(false);
+    expect(candidates.some(c => c.path.endsWith('/projects/a'))).toBe(true);
+  });
+
+  test('[scanRoot] 应支持精确忽略特定目录路径', async () => {
+    const root = await makeTree({
+      'projects/a/package.json': '{}',
+      'projects/b/package.json': '{}',
+    });
+    const candidates = await scanRoot({
+      rootPath: root,
+      maxDepth: 3,
+      ignoreGlobs: [],
+      exactIgnorePaths: [path.join(root, 'projects/b')],
+      respectGitignore: false,
+    });
+    expect(candidates.some(c => c.path.endsWith('/projects/b'))).toBe(false);
+    expect(candidates.some(c => c.path.endsWith('/projects/a'))).toBe(true);
+  });
 });

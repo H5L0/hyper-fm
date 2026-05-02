@@ -22,7 +22,7 @@ async function writeTree(root: string, tree: Record<string, string>): Promise<vo
 
 describe('snapshot', () => {
   test('[buildProjectSlug] 应包含 basename 与短哈希', () => {
-    const slug = buildProjectSlug('prj_abc123', '/tmp/My Project');
+    const slug = buildProjectSlug('pj-abc123', '/tmp/My Project');
     expect(slug.startsWith('My_Project-')).toBe(true);
     expect(slug.length).toBeGreaterThan('My_Project-'.length);
   });
@@ -48,7 +48,7 @@ describe('snapshot', () => {
       'README.md': '# hi',
     });
     const entry = await buildProjectSnapshot({
-      projectId: 'prj_xyz',
+      projectId: 'pj-xyz123',
       projectPath: dir,
       meta: { name: 'demo', tags: ['t'] },
       ignorePatterns: ['node_modules'],
@@ -56,7 +56,7 @@ describe('snapshot', () => {
     const paths = entry.files.map(f => f.path).sort();
     expect(paths).toEqual(['README.md', 'src/lib.ts', 'src/main.ts']);
     expect(entry.hash).toMatch(/^[0-9a-f]{40}$/);
-    expect(entry.id).toBe('prj_xyz');
+    expect(entry.id).toBe('pj-xyz123');
     expect(entry.meta.name).toBe('demo');
   });
 });

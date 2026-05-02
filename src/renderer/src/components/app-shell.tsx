@@ -11,6 +11,7 @@ import { ProjectDrawer } from './project-drawer.js';
 import { SettingsPanel } from './settings-panel.js';
 import { Toaster } from './toaster.js';
 import { ThemeEffect } from './theme-effect.js';
+import { WarningsPanel } from './warnings-panel.js';
 import { useAppActions, useAppState } from '../store/app-store.js';
 
 export function AppShell() {
@@ -46,6 +47,8 @@ export function AppShell() {
             <div className="flex flex-1 items-center justify-center text-muted-foreground">
               加载中…
             </div>
+          ) : route === 'warnings' ? (
+            <WarningsPanel />
           ) : route === 'settings' ? (
             <SettingsPanel />
           ) : (

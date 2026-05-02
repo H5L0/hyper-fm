@@ -15,6 +15,7 @@ import {
 } from 'react';
 import type {
   AppConfig,
+  ConfigPaths,
   ManualProjectInput,
   Project,
   ProjectMetaPatch,
@@ -29,7 +30,7 @@ import type {
 
 export type TagFilter = 'ALL' | { tag: string };
 export type View = 'grid' | 'list';
-export type Route = 'browse' | 'settings';
+export type Route = 'browse' | 'settings' | 'warnings';
 
 export interface ToastMessage {
   id: string;
@@ -39,7 +40,7 @@ export interface ToastMessage {
 
 export interface AppState {
   ready: boolean;
-  configPath: string;
+  configPaths: ConfigPaths;
   config: AppConfig;
   tagFilter: TagFilter;
   search: string;
@@ -52,13 +53,15 @@ export interface AppState {
 
 const INITIAL_STATE: AppState = {
   ready: false,
-  configPath: '',
+  configPaths: { sharedPath: '', localPath: '' },
   config: {
-    version: 1,
+    version: 2,
     scanRoots: [],
     ignore: { respectGitignore: true, globs: [] },
     projects: [],
     ui: { theme: 'system', view: 'grid' },
+    warnings: [],
+    ignoredPaths: [],
   },
   tagFilter: 'ALL',
   search: '',
@@ -72,9 +75,9 @@ const INITIAL_STATE: AppState = {
 // ---------------------------------------------------------------------------
 
 type Action =
-  | { type: 'init'; configPath: string; config: AppConfig }
+  | { type: 'init'; configPaths: ConfigPaths; config: AppConfig }
   | { type: 'config'; config: AppConfig }
-  | { type: 'configPath'; configPath: string }
+  | { type: 'configPaths'; configPaths: ConfigPaths }
   | { type: 'projects'; projects: Project[] }
   | { type: 'updateProject'; project: Project }
   | { type: 'scanRoot'; root: ScanRoot }
@@ -93,14 +96,14 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         ready: true,
-        configPath: action.configPath,
+        configPaths: action.configPaths,
         config: action.config,
         view: action.config.ui.view,
       };
     case 'config':
       return { ...state, config: action.config };
-    case 'configPath':
-      return { ...state, configPath: action.configPath };
+    case 'configPaths':
+      return { ...state, configPaths: action.configPaths };
     case 'projects':
       return { ...state, config: { ...state.config, projects: action.projects } };
     case 'updateProject': {
@@ -147,6 +150,7 @@ interface AppActions {
   refreshProjects(): Promise<void>;
   runScanAll(): Promise<void>;
   runScanOne(rootId: string): Promise<void>;
+  ignorePath(path: string): Promise<void>;
   setTagFilter(value: TagFilter): void;
   setSearch(value: string): void;
   setView(value: View): void;
@@ -208,7 +212,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         const snapshot = filePath
           ? await window.fm.config.load(filePath)
           : await window.fm.config.current();
-        dispatch({ type: 'init', configPath: snapshot.path, config: snapshot.data });
+        dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data });
       } catch (error) {
         handleError(error, '加载配置失败');
       }
@@ -221,7 +225,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       const filePath = await window.fm.config.pick('open');
       if (filePath) {
         const snapshot = await window.fm.config.load(filePath);
-        dispatch({ type: 'init', configPath: snapshot.path, config: snapshot.data });
+        dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data });
         toast('success', '配置已加载');
       }
     } catch (error) {
@@ -234,7 +238,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       const filePath = await window.fm.config.pick('save');
       if (filePath) {
         const snapshot = await window.fm.config.create(filePath);
-        dispatch({ type: 'init', configPath: snapshot.path, config: snapshot.data });
+        dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data });
         toast('success', '已创建新配置');
       }
     } catch (error) {
@@ -253,7 +257,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const reloadCurrent = useCallback(async () => {
     const snap = await window.fm.config.current();
-    dispatch({ type: 'init', configPath: snap.path, config: snap.data });
+    dispatch({ type: 'init', configPaths: snap.paths, config: snap.data });
   }, []);
 
   const runScanAll = useCallback(async () => {
@@ -264,11 +268,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       });
       const reports = await window.fm.scan.runAll();
       const total = reports.reduce(
-        (acc, r) => ({ added: acc.added + r.added, updated: acc.updated + r.updated }),
-        { added: 0, updated: 0 },
+        (acc, r) => ({ matched: acc.matched + r.matched, updated: acc.updated + r.updated, warnings: acc.warnings + r.warnings }),
+        { matched: 0, updated: 0, warnings: 0 },
       );
       await reloadCurrent();
-      toast('success', `扫描完成：新增 ${total.added}，更新 ${total.updated}`);
+      toast('success', `扫描完成：匹配 ${total.matched}，更新 ${total.updated}${total.warnings > 0 ? `，告警 ${total.warnings}` : ''}`);
     } catch (error) {
       handleError(error, '扫描失败');
     } finally {
@@ -285,7 +289,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         });
         const report = await window.fm.scan.runOne(rootId);
         await reloadCurrent();
-        toast('success', `扫描完成：新增 ${report.added}，更新 ${report.updated}`);
+        toast('success', `扫描完成：匹配 ${report.matched}，更新 ${report.updated}${report.warnings > 0 ? `，告警 ${report.warnings}` : ''}`);
       } catch (error) {
         handleError(error, '扫描失败');
       } finally {
@@ -293,6 +297,18 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       }
     },
     [handleError, reloadCurrent, toast],
+  );
+
+  const ignorePathAction = useCallback(
+    async (path: string) => {
+      try {
+        await window.fm.scan.ignorePath(path);
+        await reloadCurrent();
+      } catch (error) {
+        handleError(error, '忽略路径失败');
+      }
+    },
+    [handleError, reloadCurrent],
   );
 
   const saveProject = useCallback(
@@ -465,6 +481,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       refreshProjects,
       runScanAll,
       runScanOne,
+      ignorePath: ignorePathAction,
       setTagFilter: value => dispatch({ type: 'tagFilter', value }),
       setSearch: value => dispatch({ type: 'search', value }),
       setView: value => dispatch({ type: 'view', value }),
@@ -498,6 +515,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       pickDirectory,
       pickProjectDirectoryAction,
       refreshProjects,
+      ignorePathAction,
       removeMetaFile,
       removeProjectAction,
       removeScanRootAction,

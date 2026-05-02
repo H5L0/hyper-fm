@@ -4,7 +4,7 @@ import { app, BrowserWindow } from 'electron';
 import { createLogger } from '../shared/logger.js';
 import { registerIpcHandlers } from './ipc.js';
 import { initSession } from './session.js';
-import { resolveDefaultConfigPath } from './config-store.js';
+import { resolveDefaultConfigPaths } from './config-store.js';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -60,9 +60,9 @@ async function bootstrap(): Promise<void> {
   logger.info('Electron 主进程启动');
   await app.whenReady();
 
-  const defaultPath = resolveDefaultConfigPath(defaultConfigDir());
+  const defaultPaths = resolveDefaultConfigPaths(defaultConfigDir());
   try {
-    await initSession(defaultPath);
+    await initSession(defaultPaths.sharedPath);
   } catch (error) {
     logger.error('初始化配置失败', error);
   }

@@ -19,12 +19,14 @@ describe('meta-file', () => {
   test('[writeMetaFile + readMetaFile] 应能写回并读取', async () => {
     const dir = await tmpDir();
     await writeMetaFile(dir, {
+      projectId: 'pj-aaaaaa',
       name: 'MyGame',
       description: 'Unity 原型',
       tags: ['unity'],
     });
     expect(await metaFileExists(dir)).toBe(true);
     const meta = await readMetaFile(dir);
+    expect(meta?.projectId).toBe('pj-aaaaaa');
     expect(meta?.name).toBe('MyGame');
     expect(meta?.tags).toEqual(['unity']);
   });

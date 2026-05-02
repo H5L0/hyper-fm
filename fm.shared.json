@@ -1,0 +1,40 @@
+{
+  "version": 2,
+  "ignore": {
+    "respectGitignore": true,
+    "globs": [
+      "node_modules",
+      ".git",
+      "dist",
+      "build",
+      ".cache",
+      ".venv",
+      "__pycache__"
+    ]
+  },
+  "projects": [
+    {
+      "id": "pj-ccw4pt",
+      "name": "dear-mt",
+      "description": "",
+      "tags": [
+        "AI",
+        "Typescript"
+      ],
+      "fingerprint": {
+        "kind": "folder-name",
+        "folderName": "dear-mt"
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "AI",
+      "color": "#6366f1"
+    },
+    {
+      "name": "Typescript",
+      "color": "#10b981"
+    }
+  ]
+}

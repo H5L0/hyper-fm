@@ -16,10 +16,11 @@
 ### 主要模块
 
 - 主进程：`src/main/`
-  - `config-store.ts`：JSON 配置原子读写
+  - `config-store.ts`：shared/local 双配置原子读写
   - `meta-file.ts`：项目根 `.meta-data` 读写
   - `scanner.ts` + `ignore-matcher.ts`：递归扫描与忽略规则
-  - `project-repo.ts`：DB 与扫描结果合并、标签/扫描根操作
+  - `project-matcher.ts`：项目目录检查、指纹匹配、冲突检测
+  - `project-repo.ts`：共享项目与本地 binding 合并、标签/扫描根操作
   - `session.ts`：当前已加载配置 + 串行写盘
   - `ipc.ts`：`fm:*` IPC 通道
   - `fm-error.ts`：跨进程错误结构
@@ -33,8 +34,10 @@
 
 ### 数据模型要点
 
-- **配置文件**：默认 `fm.config.json` 与可执行文件同级；用户可在「设置」中切换。
-- **优先级**：项目根 `.meta-data` 优先，DB 兜底。
+- **配置文件**：默认拆为 `fm.shared.json` 与 `fm.local.json`；用户在「设置」中切换 shared 配置，local 路径自动推导到同目录。
+- **优先级**：项目根 `.meta-data` 优先，shared 项目元数据兜底，本地配置只保存路径与设备相关信息。
+- **项目身份**：项目 ID 使用 `pj-xxxxxx`；项目通过 `metadata` / `folder-name` / `file-paths` 三种指纹之一识别。
+- **扫描规则**：扫描只做匹配，不新增项目；冲突写入 local warnings，并允许用户忽略具体目录后重扫。
 - **标签**：标签为轻量字符串，颜色与显示在 `AppConfig.tags` 注册表（`TagDefinition: name + color`）中维护。
 - **路径**：内部统一存为正斜杠绝对路径。
 

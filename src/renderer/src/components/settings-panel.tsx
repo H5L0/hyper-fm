@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { useAppActions, useAppState } from '../store/app-store.js';
 
 export function SettingsPanel() {
-  const { config, configPath } = useAppState();
+  const { config, configPaths } = useAppState();
   const actions = useAppActions();
   const [globsDraft, setGlobsDraft] = useState(config.ignore.globs.join('\n'));
 
@@ -22,7 +22,7 @@ export function SettingsPanel() {
     if (!dir) return;
     try {
       await actions.addScanRoot({ path: dir, maxDepth: 3 });
-      actions.toast('success', '已添加扫描根');
+      actions.toast('success', '已添加扫描根目录');
     } catch (error) {
       actions.toast('error', error instanceof Error ? error.message : '添加失败');
     }
@@ -48,7 +48,10 @@ export function SettingsPanel() {
 
         <Section title="配置文件" hint="加载或新建一份 fm 配置 JSON。">
           <div className="rounded-md border border-border bg-card px-3 py-3">
-            <p className="text-note break-all text-muted-foreground">{configPath}</p>
+            <div className="space-y-1 text-note text-muted-foreground">
+              <p className="break-all"><span className="text-foreground">共享：</span>{configPaths.sharedPath || '未加载'}</p>
+              <p className="break-all"><span className="text-foreground">本地：</span>{configPaths.localPath || '未加载'}</p>
+            </div>
             <div className="mt-2.5 flex items-center gap-2">
               <Button size="sm" variant="outline" onClick={() => void actions.pickAndLoadConfig()}>
                 打开…
@@ -60,10 +63,10 @@ export function SettingsPanel() {
           </div>
         </Section>
 
-        <Section title="扫描根" hint="预指定可包含项目的目录；扫描时按 maxDepth 递归。">
+        <Section title="扫描根目录" hint="指定包含项目的目录。">
           <div className="space-y-2">
             {config.scanRoots.length === 0 ? (
-              <p className="text-note text-muted-foreground">尚未添加扫描根。</p>
+              <p className="text-note text-muted-foreground">尚未添加扫描根目录。</p>
             ) : (
               config.scanRoots.map(root => (
                 <div

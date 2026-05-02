@@ -3,8 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { Inbox, Pencil, Plus, Settings, Tag } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { AlertTriangle, Inbox, Pencil, Plus, Settings, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   useAppActions,
@@ -26,6 +25,7 @@ export function Sidebar() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTag, setEditTag] = useState<{ name: string; color: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; tag: string; color: string } | null>(null);
+  const warningCount = config.warnings.length;
 
   const { allCount, tagCounts } = useMemo(() => {
     let all = 0;
@@ -108,15 +108,31 @@ export function Sidebar() {
         )}
       </div>
 
-      <div className="border-t border-border p-2">
-        <Button
-          size="sm"
-          variant={route === 'settings' ? 'secondary' : 'ghost'}
-          className="w-full justify-start"
+      <div className="flex flex-col gap-1.5 border-t border-border p-2">
+        {warningCount > 0 || route === 'warnings' ? (
+          <SidebarFooterItem
+            icon={<AlertTriangle className="size-4" />}
+            label="警告"
+            active={route === 'warnings'}
+            badge={
+              <span
+                className={cn(
+                  'ml-auto inline-flex items-center justify-center rounded-full bg-amber-500/15 text-caption tabular-nums text-amber-700 dark:text-amber-300',
+                  warningCount < 10 ? 'size-5' : 'h-5 min-w-5 px-1.5',
+                )}
+              >
+                {warningCount}
+              </span>
+            }
+            onClick={() => actions.setRoute('warnings')}
+          />
+        ) : null}
+        <SidebarFooterItem
+          icon={<Settings className="size-4" />}
+          label="设置"
+          active={route === 'settings'}
           onClick={() => actions.setRoute('settings')}
-        >
-          <Settings className="size-4" /> 设置
-        </Button>
+        />
       </div>
 
       {dialogOpen ? <NewTagDialog onClose={() => setDialogOpen(false)} /> : null}
@@ -163,6 +179,37 @@ function SidebarItem({ icon, label, count, active, onClick, onContextMenu }: Ite
       <span className="flex size-4 items-center justify-center">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       <span className="text-caption text-muted-foreground/80 tabular-nums">{count}</span>
+    </button>
+  );
+}
+
+function SidebarFooterItem({
+  icon,
+  label,
+  active,
+  onClick,
+  badge,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'group flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-colors',
+        active
+          ? 'bg-secondary text-foreground'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
+    >
+      <span className="flex size-4 items-center justify-center">{icon}</span>
+      <span className="flex-1 truncate">{label}</span>
+      {badge}
     </button>
   );
 }

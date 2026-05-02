@@ -35,6 +35,7 @@ function parseMeta(raw: string, source: string): MetaFile {
   }
   return {
     schema: META_SCHEMA,
+    projectId: typeof value.projectId === 'string' ? value.projectId : undefined,
     name: typeof value.name === 'string' ? value.name : undefined,
     description: typeof value.description === 'string' ? value.description : undefined,
     tags: isStringArray(value.tags) ? value.tags : undefined,

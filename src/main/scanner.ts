@@ -52,6 +52,7 @@ export interface ScanOptions {
   rootPath: string;
   maxDepth: number;
   ignoreGlobs: readonly string[];
+  exactIgnorePaths?: readonly string[];
   respectGitignore: boolean;
   /** 进度回调：每发现一个目录或项目时调用 */
   onProgress?: (info: { scanned: number; found: number }) => void;
@@ -62,6 +63,7 @@ interface WalkContext {
   rootAbs: string;
   maxDepth: number;
   candidates: ScanCandidate[];
+  exactIgnorePaths: Set<string>;
   scanned: number;
   onProgress?: ScanOptions['onProgress'];
 }
@@ -111,6 +113,10 @@ async function walk(
   depth: number,
   extraIgnores: readonly string[],
 ): Promise<void> {
+  if (ctx.exactIgnorePaths.has(normalizePath(absDir).toLowerCase())) {
+    return;
+  }
+
   ctx.scanned++;
   ctx.onProgress?.({ scanned: ctx.scanned, found: ctx.candidates.length });
 
@@ -138,6 +144,7 @@ async function walk(
 
   for (const dirName of entries.dirs) {
     const childAbs = path.join(absDir, dirName);
+    if (ctx.exactIgnorePaths.has(normalizePath(childAbs).toLowerCase())) continue;
     const rel = normalizePath(path.relative(ctx.rootAbs, childAbs));
     if (matcher.isIgnored(rel, true)) continue;
     await walk({ ...ctx, matcher }, childAbs, depth + 1, merged);
@@ -163,6 +170,7 @@ export async function scanRoot(options: ScanOptions): Promise<ScanCandidate[]> {
     rootAbs,
     maxDepth: Math.max(1, options.maxDepth),
     candidates: [],
+    exactIgnorePaths: new Set((options.exactIgnorePaths ?? []).map(p => normalizePath(p).toLowerCase())),
     scanned: 0,
     onProgress: options.onProgress,
   };

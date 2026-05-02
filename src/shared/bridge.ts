@@ -4,12 +4,15 @@
 
 import type {
   AppConfig,
+  ConfigPaths,
   ConfigSnapshot,
+  ProjectFingerprint,
   Project,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanReport,
   ScanRoot,
+  ScanWarning,
   TagDefinition,
 } from './types.js';
 import type {
@@ -26,12 +29,15 @@ import type {
 
 export type {
   AppConfig,
+  ConfigPaths,
   ConfigSnapshot,
+  ProjectFingerprint,
   Project,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanReport,
   ScanRoot,
+  ScanWarning,
   TagDefinition,
 };
 
@@ -81,6 +87,8 @@ export interface FmScanRootsBridge {
 export interface FmScanBridge {
   runAll(): Promise<ScanReport[]>;
   runOne(rootId: string): Promise<ScanReport>;
+  ignorePath(path: string): Promise<void>;
+  revealPath(path: string): Promise<void>;
   /** 订阅扫描进度，返回取消订阅的函数 */
   onProgress(handler: (event: ScanProgressEvent) => void): () => void;
 }
@@ -92,6 +100,8 @@ export interface FmProjectsBridge {
   writeMetaFile(id: string, patch: ProjectMetaPatch): Promise<Project>;
   removeMetaFile(id: string): Promise<Project>;
   revealInOs(id: string): Promise<void>;
+  inspectDirectory(path: string): Promise<ProjectDirectoryInspection>;
+  validateNew(input: ManualProjectInput): Promise<ManualProjectValidationResult>;
   add(input: ManualProjectInput): Promise<Project>;
   remove(id: string): Promise<void>;
   pickDirectory(): Promise<string | null>;
@@ -109,6 +119,26 @@ export interface ManualProjectInput {
   name?: string;
   description?: string;
   tags?: string[];
+  fingerprint: ProjectFingerprint;
+}
+
+export interface ProjectDirectoryInspection {
+  path: string;
+  suggestedName: string;
+  hasMetaFile: boolean;
+  metaProjectId?: string;
+  files: string[];
+}
+
+export interface ManualProjectValidationConflict {
+  projectId: string;
+  projectName: string;
+  reason: string;
+}
+
+export interface ManualProjectValidationResult {
+  valid: boolean;
+  conflicts: ManualProjectValidationConflict[];
 }
 
 export interface FmBridge {

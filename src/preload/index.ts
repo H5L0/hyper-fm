@@ -1,13 +1,15 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
   AppBridge,
-  AppConfig,
   CommandRunResult,
   ConfigSnapshot,
   CustomCommand,
   DeviceRegistry,
   FmBridge,
+  ManualProjectInput,
+  ManualProjectValidationResult,
   PresetCommandDescriptor,
+  ProjectDirectoryInspection,
   Project,
   ProjectMetaPatch,
   ScanProgressEvent,
@@ -44,7 +46,7 @@ const fmApi: FmBridge = {
     current: () => ipcRenderer.invoke('fm:config:current') as Promise<ConfigSnapshot>,
     load: filePath => ipcRenderer.invoke('fm:config:load', filePath) as Promise<ConfigSnapshot>,
     create: filePath => ipcRenderer.invoke('fm:config:create', filePath) as Promise<ConfigSnapshot>,
-    save: (data: AppConfig) => ipcRenderer.invoke('fm:config:save', data) as Promise<void>,
+    save: data => ipcRenderer.invoke('fm:config:save', data) as Promise<void>,
     pick: mode => ipcRenderer.invoke('fm:config:pick', mode) as Promise<string | null>,
   },
   scanRoots: {
@@ -57,6 +59,8 @@ const fmApi: FmBridge = {
   scan: {
     runAll: () => ipcRenderer.invoke('fm:scan:runAll') as Promise<ScanReport[]>,
     runOne: rootId => ipcRenderer.invoke('fm:scan:runOne', rootId) as Promise<ScanReport>,
+    ignorePath: path => ipcRenderer.invoke('fm:scan:ignorePath', path) as Promise<void>,
+    revealPath: path => ipcRenderer.invoke('fm:scan:revealPath', path) as Promise<void>,
     onProgress: handler => {
       const listener = (_event: IpcRendererEvent, data: ScanProgressEvent) => handler(data);
       ipcRenderer.on('fm:scan:progress', listener);
@@ -75,7 +79,11 @@ const fmApi: FmBridge = {
     removeMetaFile: id =>
       ipcRenderer.invoke('fm:projects:removeMetaFile', id) as Promise<Project>,
     revealInOs: id => ipcRenderer.invoke('fm:projects:revealInOs', id) as Promise<void>,
-    add: input => ipcRenderer.invoke('fm:projects:add', input) as Promise<Project>,
+    inspectDirectory: path =>
+      ipcRenderer.invoke('fm:projects:inspectDirectory', path) as Promise<ProjectDirectoryInspection>,
+    validateNew: input =>
+      ipcRenderer.invoke('fm:projects:validateNew', input as ManualProjectInput) as Promise<ManualProjectValidationResult>,
+    add: input => ipcRenderer.invoke('fm:projects:add', input as ManualProjectInput) as Promise<Project>,
     remove: id => ipcRenderer.invoke('fm:projects:remove', id) as Promise<void>,
     pickDirectory: () =>
       ipcRenderer.invoke('fm:projects:pickDirectory') as Promise<string | null>,

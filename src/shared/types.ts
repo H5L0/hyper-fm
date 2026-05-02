@@ -3,10 +3,11 @@
 // 跨进程使用：main / preload / renderer 均直接 import 本文件
 // ---------------------------------------------------------------------------
 
-export const CONFIG_SCHEMA_VERSION = 1;
+export const CONFIG_SCHEMA_VERSION = 2;
 export const META_FILE_NAME = '.meta-data';
 export const META_SCHEMA = 'fm.meta/v1';
-export const DEFAULT_CONFIG_FILENAME = 'fm.config.json';
+export const DEFAULT_SHARED_CONFIG_FILENAME = 'fm.shared.json';
+export const DEFAULT_LOCAL_CONFIG_FILENAME = 'fm.local.json';
 
 // ---------------------------------------------------------------------------
 // 配置实体
@@ -25,13 +26,11 @@ export interface IgnoreRules {
   globs: string[];
 }
 
-export interface Project {
+export interface ProjectBinding {
+  projectId: string;
   id: string;
   path: string;
   rootId: string;
-  name: string;
-  description?: string;
-  tags: string[];
   hasMetaFile: boolean;
   lastScannedAt: string;
   lastModifiedAt?: string;
@@ -43,6 +42,52 @@ export interface Project {
   syncedFrom?: string;
 }
 
+export interface MetadataFingerprint {
+  kind: 'metadata';
+}
+
+export interface FolderNameFingerprint {
+  kind: 'folder-name';
+  folderName: string;
+}
+
+export interface FilePathsFingerprint {
+  kind: 'file-paths';
+  paths: string[];
+}
+
+export type ProjectFingerprint =
+  | MetadataFingerprint
+  | FolderNameFingerprint
+  | FilePathsFingerprint;
+
+export interface SharedProject {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  fingerprint: ProjectFingerprint;
+}
+
+export interface Project extends ProjectBinding {
+  name: string;
+  description?: string;
+  tags: string[];
+  fingerprint: ProjectFingerprint;
+}
+
+export interface ScanWarning {
+  id: string;
+  kind: 'fingerprint-conflict';
+  scanRootId: string;
+  projectId: string;
+  projectName: string;
+  fingerprint: ProjectFingerprint;
+  candidatePaths: string[];
+  message: string;
+  createdAt: string;
+}
+
 export type ThemePreference = 'light' | 'dark' | 'system';
 export type ViewMode = 'grid' | 'list';
 
@@ -51,12 +96,38 @@ export interface UiPreferences {
   view: ViewMode;
 }
 
+export interface SharedConfig {
+  version: number;
+  ignore: IgnoreRules;
+  projects: SharedProject[];
+  /** 标签注册表：可在项目详情和侧边栏中显示颜色，未在此处注册的标签按默认色渲染 */
+  tags?: TagDefinition[];
+}
+
+export interface LocalConfig {
+  version: number;
+  scanRoots: ScanRoot[];
+  bindings: ProjectBinding[];
+  ui: UiPreferences;
+  warnings?: ScanWarning[];
+  /** 本机忽略的具体目录路径（优先于扫描发现） */
+  ignoredPaths?: string[];
+  /** M2：设备身份与已知对端 */
+  devices?: import('./sync-types.js').DeviceRegistry;
+  /** M2：同步设置 */
+  sync?: import('./sync-types.js').SyncSettings;
+  /** M3：自定义命令列表 */
+  commands?: import('./sync-types.js').CustomCommand[];
+}
+
 export interface AppConfig {
   version: number;
   scanRoots: ScanRoot[];
   ignore: IgnoreRules;
   projects: Project[];
   ui: UiPreferences;
+  warnings: ScanWarning[];
+  ignoredPaths: string[];
   /** 标签注册表：可在项目详情和侧边栏中显示颜色，未在此处注册的标签按默认色渲染 */
   tags?: TagDefinition[];
   /** M2：设备身份与已知对端 */
@@ -84,6 +155,7 @@ export interface TagDefinition {
 
 export interface MetaFile {
   schema: typeof META_SCHEMA;
+  projectId?: string;
   name?: string;
   description?: string;
   tags?: string[];
@@ -103,14 +175,21 @@ export interface ProjectMetaPatch {
 export interface ScanReport {
   rootId: string;
   scanned: number;
+  matched: number;
   added: number;
   updated: number;
   removed: number;
+  warnings: number;
   durationMs: number;
 }
 
+export interface ConfigPaths {
+  sharedPath: string;
+  localPath: string;
+}
+
 export interface ConfigSnapshot {
-  path: string;
+  paths: ConfigPaths;
   data: AppConfig;
 }
 
@@ -131,7 +210,9 @@ export type FmErrorCode =
   | 'PATH_NOT_FOUND'
   | 'PATH_NOT_DIRECTORY'
   | 'PROJECT_NOT_FOUND'
+  | 'PROJECT_NOT_BOUND'
   | 'DUPLICATE_PATH'
+  | 'FINGERPRINT_CONFLICT'
   | 'WRITE_FAILED'
   | 'SYNC_BUNDLE_INVALID'
   | 'SYNC_BUNDLE_DIR_MISSING'

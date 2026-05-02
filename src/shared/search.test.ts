@@ -3,12 +3,14 @@ import { explainMatch, highlight, matchProject, parseSearchQuery } from './searc
 import type { Project } from './types.js';
 
 const baseProject: Project = {
-  id: 'prj_1',
+  projectId: 'pj-aaaaaa',
+  id: 'pj-aaaaaa',
   path: 'D:/projects/game-zero',
   rootId: 'root_1',
   name: 'Game Zero',
   description: 'Unity 小游戏原型',
   tags: ['unity', 'prototype'],
+  fingerprint: { kind: 'metadata' },
   hasMetaFile: false,
   lastScannedAt: '2026-01-01T00:00:00Z',
 };
