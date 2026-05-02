@@ -10,6 +10,7 @@ const baseProject: Project = {
   name: 'Game Zero',
   description: 'Unity 小游戏原型',
   tags: ['unity', 'prototype'],
+  ignore: [],
   fingerprint: { kind: 'metadata' },
   hasMetaFile: false,
   lastScannedAt: '2026-01-01T00:00:00Z',

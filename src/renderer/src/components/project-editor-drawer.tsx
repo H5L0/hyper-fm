@@ -1,7 +1,8 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
     ChevronDown,
     FileCode2,
+    FileMinus,
     Files,
     Folder,
     FolderOpen,
@@ -9,19 +10,24 @@ import {
     X,
 } from 'lucide-react';
 import type {
+    ProjectDirectoryEntry,
     ProjectDirectoryInspection,
     ProjectFingerprint,
     TagDefinition,
 } from '@shared/bridge.js';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { IgnoreRulesEditor } from './ignore-rules-editor';
 import { TagSelector } from './tag-selector.js';
+import { META_FILE_NAME } from '@shared/types';
+import { useAppActions } from '@/store/app-store';
 
 export interface ProjectEditorFormValue {
     path: string;
     name: string;
     description: string;
     tags: string[];
+    ignore: string[];
     fingerprint: ProjectFingerprint;
 }
 
@@ -41,10 +47,14 @@ export function ProjectEditorDrawer({
     onAddTag,
     onRemoveTag,
     headerActions,
+    headerTabs,
+    activeTabId,
+    onTabChange,
+    body,
     footer,
     onClose,
 }: {
-    title: string;
+    title?: string;
     form: ProjectEditorFormValue;
     onFormChange: (next: ProjectEditorFormValue) => void;
     tagDefs: readonly TagDefinition[] | undefined;
@@ -59,6 +69,10 @@ export function ProjectEditorDrawer({
     onAddTag: (tag: string) => void;
     onRemoveTag: (tag: string) => void;
     headerActions?: ReactNode;
+    headerTabs?: ReadonlyArray<{ id: string; label: string }>;
+    activeTabId?: string;
+    onTabChange?: (tabId: string) => void;
+    body?: ReactNode;
     footer: ReactNode;
     onClose: () => void;
 }) {
@@ -76,9 +90,56 @@ export function ProjectEditorDrawer({
                     'animate-in slide-in-from-right duration-150',
                 )}
             >
-                <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
-                    <h2 className="truncate text-heading text-foreground">{title}</h2>
-                    <div className="flex items-center gap-1">{headerActions}</div>
+                <div className="shrink-0 border-b border-border px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                        {headerTabs && headerTabs.length > 0 && !title ? (
+                            <div className="flex items-center gap-1">
+                                {headerTabs.map(tab => {
+                                    const active = tab.id === activeTabId;
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            type="button"
+                                            onClick={() => onTabChange?.(tab.id)}
+                                            className={cn(
+                                                'rounded-lg px-3 py-1.5 text-note font-semibold transition-colors',
+                                                active
+                                                    ? 'bg-secondary text-foreground'
+                                                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                                            )}
+                                        >
+                                            {tab.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ) : title ? (
+                            <h2 className="truncate text-heading text-foreground">{title}</h2>
+                        ) : <div />}
+                        <div className="flex items-center gap-1">{headerActions}</div>
+                    </div>
+                    {headerTabs && headerTabs.length > 0 && title ? (
+                        <div className="mt-3 flex items-center gap-1">
+                            {headerTabs.map(tab => {
+                                const active = tab.id === activeTabId;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => onTabChange?.(tab.id)}
+                                        className={cn(
+                                            'rounded-lg px-3 py-1.5 text-note font-semibold transition-colors',
+                                            active
+                                                ? 'bg-secondary text-foreground'
+                                                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                                        )}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ) : null}
                 </div>
 
                 {banner ? (
@@ -87,74 +148,125 @@ export function ProjectEditorDrawer({
                     </div>
                 ) : null}
 
-                <div className="flex-1 overflow-y-auto px-5 py-5">
-                    <div className="space-y-5">
-                        <DrawerField label="路径">
-                            <div className="flex items-center gap-2">
-                                <input
-                                    value={form.path}
-                                    disabled={!pathEditable}
-                                    onChange={event => onFormChange({ ...form, path: event.target.value })}
-                                    onBlur={() => onPathCommit?.()}
-                                    placeholder="选择或粘贴项目目录"
-                                    className={cn(
-                                        'h-9 flex-1 rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
-                                        !pathEditable && 'cursor-default bg-muted/40 text-muted-foreground',
-                                    )}
-                                />
-                                {pathEditable && onPickPath ? (
-                                    <Button size="default" variant="outline" onClick={onPickPath}>
-                                        浏览…
-                                    </Button>
-                                ) : null}
+                <div className="flex-1 overflow-y-auto">
+                    {body ?? (
+                        <div className="px-5 py-5">
+                            <div className="space-y-5">
+                                <DrawerField label="路径">
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            value={form.path}
+                                            disabled={!pathEditable}
+                                            onChange={event => onFormChange({ ...form, path: event.target.value })}
+                                            onBlur={() => onPathCommit?.()}
+                                            placeholder="选择或粘贴项目目录"
+                                            className={cn(
+                                                'h-9 flex-1 rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
+                                                !pathEditable && 'cursor-default bg-muted/40 text-muted-foreground',
+                                            )}
+                                        />
+                                        {pathEditable && onPickPath ? (
+                                            <Button size="default" variant="outline" onClick={onPickPath}>
+                                                浏览…
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                    {pathHint ? <div className="mt-2">{pathHint}</div> : null}
+                                </DrawerField>
+
+                                <DrawerField label="名称">
+                                    <input
+                                        value={form.name}
+                                        onChange={event => onFormChange({ ...form, name: event.target.value })}
+                                        className="h-9 w-full rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                                    />
+                                </DrawerField>
+
+                                <DrawerField label="描述">
+                                    <textarea
+                                        rows={2}
+                                        value={form.description}
+                                        onChange={event => onFormChange({ ...form, description: event.target.value })}
+                                        className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                                    />
+                                </DrawerField>
+
+                                <DrawerField label="标签">
+                                    <TagSelector
+                                        selectedTags={form.tags}
+                                        tagDefs={tagDefs}
+                                        onAdd={onAddTag}
+                                        onRemove={onRemoveTag}
+                                        selectedContainerClassName="flex min-h-[2rem] flex-wrap items-center gap-1.5 border-0 bg-transparent px-0 py-0"
+                                    />
+                                </DrawerField>
+
+                                <DrawerField label="项目指纹">
+                                    <FingerprintEditor
+                                        inspection={inspection}
+                                        fingerprint={form.fingerprint}
+                                        editable={fingerprintEditable}
+                                        path={form.path}
+                                        onChange={fingerprint => onFormChange({ ...form, fingerprint })}
+                                    />
+                                </DrawerField>
+
+                                {validation ? <div>{validation}</div> : null}
                             </div>
-                            {pathHint ? <div className="mt-2">{pathHint}</div> : null}
-                        </DrawerField>
-
-                        <DrawerField label="名称">
-                            <input
-                                value={form.name}
-                                onChange={event => onFormChange({ ...form, name: event.target.value })}
-                                className="h-9 w-full rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                            />
-                        </DrawerField>
-
-                        <DrawerField label="描述">
-                            <textarea
-                                rows={2}
-                                value={form.description}
-                                onChange={event => onFormChange({ ...form, description: event.target.value })}
-                                className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                            />
-                        </DrawerField>
-
-                        <DrawerField label="标签">
-                            <TagSelector
-                                selectedTags={form.tags}
-                                tagDefs={tagDefs}
-                                onAdd={onAddTag}
-                                onRemove={onRemoveTag}
-                                selectedContainerClassName="flex min-h-[2rem] flex-wrap items-center gap-1.5 border-0 bg-transparent px-0 py-0"
-                            />
-                        </DrawerField>
-
-                        <DrawerField label="项目指纹">
-                            <FingerprintEditor
-                                inspection={inspection}
-                                fingerprint={form.fingerprint}
-                                editable={fingerprintEditable}
-                                path={form.path}
-                                onChange={fingerprint => onFormChange({ ...form, fingerprint })}
-                            />
-                        </DrawerField>
-
-                        {validation ? <div>{validation}</div> : null}
-                    </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="shrink-0 border-t border-border bg-card/90 px-5 py-3">{footer}</div>
             </aside>
         </>
+    );
+}
+
+export function ProjectFileTreePanel({
+    tree,
+    ignoreText,
+    onIgnoreTextChange,
+}: {
+    tree: ProjectDirectoryEntry[];
+    ignoreText: string;
+    onIgnoreTextChange: (value: string) => void;
+}) {
+    const [query, setQuery] = useState('');
+    const visibleTree = useMemo(() => filterTree(tree, query), [tree, query]);
+
+    return (
+        <div className="flex h-full min-h-0 flex-col px-5 py-5">
+            <div className="relative">
+                <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                    value={query}
+                    onChange={event => setQuery(event.target.value)}
+                    placeholder="搜索文件或目录"
+                    className="h-9 w-full rounded-lg border border-border bg-background pr-3 pl-9 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                />
+            </div>
+
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-background px-2 py-2">
+                {visibleTree.length > 0 ? (
+                    <DirectoryTreeContent tree={visibleTree} expandAll={query.trim().length > 0} />
+                ) : (
+                    <div className="px-2 py-6 text-note text-muted-foreground">没有匹配的文件。</div>
+                )}
+            </div>
+
+            <div className="mt-4 space-y-2">
+                <div>
+                    <p className="text-subheading text-foreground">忽略规则</p>
+                    <p className="mt-1 text-note text-muted-foreground">忽略同步的文件列表，格式与 .gitignore 相同。</p>
+                </div>
+                <IgnoreRulesEditor
+                    value={ignoreText}
+                    onChange={onIgnoreTextChange}
+                    rows={3}
+                />
+            </div>
+        </div>
     );
 }
 
@@ -180,9 +292,12 @@ function FingerprintEditor({
     path: string;
     onChange: (fingerprint: ProjectFingerprint) => void;
 }) {
+    const actions = useAppActions();
     const [dialogOpen, setDialogOpen] = useState(false);
     const folderName = inspection?.suggestedName ?? inferFolderName(path);
+    const projectId = inspection?.metaProjectId ?? '';
     const selectedPaths = fingerprint.kind === 'file-paths' ? fingerprint.paths : [];
+    const hasMetaFile = inspection?.hasMetaFile ?? false;
 
     const setKind = (kind: ProjectFingerprint['kind']) => {
         if (!editable) return;
@@ -194,7 +309,7 @@ function FingerprintEditor({
             onChange({ kind: 'folder-name', folderName });
             return;
         }
-        onChange({ kind: 'file-paths', paths: selectedPaths });
+        onChange({ kind: 'file-paths', paths: selectedPaths.filter(file => inspection?.files.includes(file)) });
     };
 
     return (
@@ -203,7 +318,16 @@ function FingerprintEditor({
                 <FingerprintKindButton
                     active={fingerprint.kind === 'metadata'}
                     icon={<FileCode2 className="size-4" />}
-                    title="metadata"
+                    title={
+                        <span className="inline-flex items-center gap-1.5">
+                            <span>metadata</span>
+                            {inspection?.hasMetaFile ? (
+                                <span className="inline-flex rounded-full bg-emerald-500/15 px-2 py-0.5 text-caption text-emerald-700 dark:text-emerald-300">
+                                    已有
+                                </span>
+                            ) : null}
+                        </span>
+                    }
                     disabled={!editable}
                     onClick={() => setKind('metadata')}
                 />
@@ -224,10 +348,19 @@ function FingerprintEditor({
             </div>
 
             {fingerprint.kind === 'metadata' ? (
-                <div className="rounded-xl border border-border bg-muted/35 px-3 py-3 text-note text-muted-foreground">
-                    {inspection?.hasMetaFile
-                        ? '当前目录已存在 .meta-data，保存时会继续使用 metadata 指纹。'
-                        : '保存为 metadata 指纹时会写入 .meta-data 并记录稳定的 projectId。'}
+                <div className="flex-col items-start gap-2 rounded-xl border border-border bg-muted/35 px-3 py-3 text-note text-muted-foreground">
+                    {hasMetaFile
+                        ? <div className="flex items-center justify-between">
+                            {`当前目录已有 ${META_FILE_NAME} 文件。`}
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => void actions.removeMetaFile(projectId)}
+                            >
+                                <FileMinus className="size-3.5" /> 删除
+                            </Button>
+                        </div>
+                        : `当前目录不存在 ${META_FILE_NAME} 文件，将在保存时创建。`}
                 </div>
             ) : null}
 
@@ -243,12 +376,12 @@ function FingerprintEditor({
                     <div className="flex items-center justify-between gap-2">
                         <div>
                             <p className="text-subheading text-foreground">选中文件路径</p>
-                            <p className="mt-1 text-note text-muted-foreground">仅显示已选文件，通过弹框统一修改。</p>
+                            <p className="mt-1 text-note text-muted-foreground">灰色条目已被忽略，无法作为文件列表指纹。</p>
                         </div>
                         <Button
                             size="default"
                             variant="outline"
-                            disabled={!editable || !inspection?.files.length}
+                            disabled={!editable || !inspection?.tree.length}
                             onClick={() => setDialogOpen(true)}
                         >
                             修改文件列表
@@ -267,7 +400,7 @@ function FingerprintEditor({
                         <p className="text-note text-muted-foreground">尚未选择任何文件。</p>
                     )}
 
-                    {!inspection?.files.length ? (
+                    {!inspection?.tree.length ? (
                         <p className="text-note text-muted-foreground">请先选择有效项目目录后再配置文件列表。</p>
                     ) : null}
                 </div>
@@ -275,6 +408,7 @@ function FingerprintEditor({
 
             {dialogOpen && inspection ? (
                 <FingerprintFileDialog
+                    tree={inspection.tree}
                     files={inspection.files}
                     selectedPaths={selectedPaths}
                     onClose={() => setDialogOpen(false)}
@@ -297,7 +431,7 @@ function FingerprintKindButton({
 }: {
     active: boolean;
     icon: ReactNode;
-    title: string;
+    title: ReactNode;
     disabled?: boolean;
     onClick: () => void;
 }) {
@@ -320,32 +454,22 @@ function FingerprintKindButton({
     );
 }
 
-type TreeNode = {
-    name: string;
-    path: string;
-    type: 'folder' | 'file';
-    children?: TreeNode[];
-};
-
 function FingerprintFileDialog({
+    tree,
     files,
     selectedPaths,
     onClose,
     onConfirm,
 }: {
+    tree: ProjectDirectoryEntry[];
     files: string[];
     selectedPaths: string[];
     onClose: () => void;
     onConfirm: (paths: string[]) => void;
 }) {
     const [query, setQuery] = useState('');
-    const [draft, setDraft] = useState<string[]>(selectedPaths);
-    const visibleFiles = useMemo(() => {
-        const keyword = query.trim().toLowerCase();
-        if (!keyword) return files;
-        return files.filter(file => file.toLowerCase().includes(keyword));
-    }, [files, query]);
-    const tree = useMemo(() => buildTree(visibleFiles), [visibleFiles]);
+    const [draft, setDraft] = useState<string[]>(selectedPaths.filter(file => files.includes(file)));
+    const visibleTree = useMemo(() => filterTree(tree, query), [tree, query]);
 
     const toggleFile = (file: string, checked: boolean) => {
         setDraft(current => {
@@ -388,17 +512,17 @@ function FingerprintFileDialog({
                                 className="h-9 w-full rounded-lg border border-border bg-background pr-3 pl-9 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
                             />
                         </div>
+                        <div className="mt-3 rounded-lg bg-muted/30 px-3 py-2 text-note text-muted-foreground">
+                            灰色条目已被忽略，不可勾选。
+                        </div>
                         <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-background px-2 py-2">
-                            {tree.length > 0 ? (
-                                tree.map(node => (
-                                    <TreeNodeRow
-                                        key={node.path}
-                                        node={node}
-                                        selected={new Set(draft)}
-                                        onToggleFile={toggleFile}
-                                        level={0}
-                                    />
-                                ))
+                            {visibleTree.length > 0 ? (
+                                <DirectoryTreeContent
+                                    tree={visibleTree}
+                                    selected={new Set(draft)}
+                                    onToggleFile={toggleFile}
+                                    expandAll={query.trim().length > 0}
+                                />
                             ) : (
                                 <div className="px-2 py-6 text-note text-muted-foreground">没有匹配的文件。</div>
                             )}
@@ -444,51 +568,123 @@ function FingerprintFileDialog({
     );
 }
 
+function DirectoryTreeContent({
+    tree,
+    selected,
+    onToggleFile,
+    expandAll = false,
+}: {
+    tree: ProjectDirectoryEntry[];
+    selected?: Set<string>;
+    onToggleFile?: (file: string, checked: boolean) => void;
+    expandAll?: boolean;
+}) {
+    const [collapsedPaths, setCollapsedPaths] = useState<string[]>(() => collectFolderPaths(tree));
+
+    useEffect(() => {
+        setCollapsedPaths(collectFolderPaths(tree));
+    }, [tree]);
+
+    const toggleFolder = (path: string) => {
+        setCollapsedPaths(current => current.includes(path)
+            ? current.filter(item => item !== path)
+            : [...current, path]);
+    };
+
+    return (
+        <>
+            {tree.map(node => (
+                <TreeNodeRow
+                    key={node.path}
+                    node={node}
+                    selected={selected}
+                    onToggleFile={onToggleFile}
+                    collapsedPaths={expandAll ? [] : collapsedPaths}
+                    onToggleFolder={toggleFolder}
+                    level={0}
+                />
+            ))}
+        </>
+    );
+}
+
 function TreeNodeRow({
     node,
     selected,
     onToggleFile,
+    collapsedPaths,
+    onToggleFolder,
     level,
 }: {
-    node: TreeNode;
-    selected: Set<string>;
-    onToggleFile: (file: string, checked: boolean) => void;
+    node: ProjectDirectoryEntry;
+    selected?: Set<string>;
+    onToggleFile?: (file: string, checked: boolean) => void;
+    collapsedPaths: readonly string[];
+    onToggleFolder: (path: string) => void;
     level: number;
 }) {
-    if (node.type === 'file') {
-        const checked = selected.has(node.path);
+    const ignored = !!node.ignoredBy;
+    const hasChildren = !!node.children && node.children.length > 0;
+    const collapsed = hasChildren && collapsedPaths.includes(node.path);
+    const rowClassName = cn(
+        'flex items-center gap-2 rounded-lg px-2 py-1.5 text-note',
+        ignored ? 'text-muted-foreground' : 'text-foreground/90',
+        node.kind === 'file' && !ignored && onToggleFile ? 'hover:bg-muted/60' : 'hover:bg-muted/40',
+    );
+
+    if (node.kind === 'file') {
+        const checked = selected?.has(node.path) ?? false;
         return (
-            <label
-                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-note hover:bg-muted/60"
-                style={{ paddingLeft: `${level * 14 + 8}px` }}
-            >
-                <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={event => onToggleFile(node.path, event.target.checked)}
-                />
-                <FileCode2 className="size-3.5 text-muted-foreground" />
-                <span className="break-all text-foreground/90">{node.name}</span>
-            </label>
+            <div className={rowClassName} style={{ paddingLeft: `${level * 14 + 8}px` }}>
+                {onToggleFile ? (
+                    ignored ? (
+                        <span className="inline-block size-4 shrink-0" />
+                    ) : (
+                        <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={event => onToggleFile(node.path, event.target.checked)}
+                            className="shrink-0"
+                        />
+                    )
+                ) : <span className="inline-block size-3.5 shrink-0" />}
+                <FileCode2 className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 break-all">{node.name}</span>
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {node.ignoredBy ? <IgnoreBadge ignoredBy={node.ignoredBy} /> : null}
+                </div>
+            </div>
         );
     }
 
     return (
         <div>
-            <div
-                className="flex items-center gap-2 px-2 py-1.5 text-note text-muted-foreground"
+            <button
+                type="button"
+                onClick={() => {
+                    if (!hasChildren || ignored) return;
+                    onToggleFolder(node.path);
+                }}
+                className={cn(rowClassName, 'w-full')}
                 style={{ paddingLeft: `${level * 14 + 8}px` }}
             >
-                <ChevronDown className="size-3.5" />
-                <Folder className="size-3.5" />
-                <span>{node.name}</span>
-            </div>
-            {node.children?.map(child => (
+                {hasChildren && !ignored ? (
+                    <ChevronDown className={cn('size-3.5 shrink-0 transition-transform', collapsed && '-rotate-90')} />
+                ) : (
+                    <span className="inline-block size-3.5 shrink-0" />
+                )}
+                <Folder className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-left">{node.name}</span>
+                {node.ignoredBy ? <IgnoreBadge ignoredBy={node.ignoredBy} /> : null}
+            </button>
+            {!collapsed && node.children?.map(child => (
                 <TreeNodeRow
                     key={child.path}
                     node={child}
                     selected={selected}
                     onToggleFile={onToggleFile}
+                    collapsedPaths={collapsedPaths}
+                    onToggleFolder={onToggleFolder}
                     level={level + 1}
                 />
             ))}
@@ -496,49 +692,50 @@ function TreeNodeRow({
     );
 }
 
-function buildTree(files: string[]): TreeNode[] {
-    const root: TreeNode[] = [];
-    for (const file of files) {
-        const segments = file.split('/').filter(Boolean);
-        let currentChildren = root;
-        let currentPath = '';
-
-        segments.forEach((segment, index) => {
-            currentPath = currentPath ? `${currentPath}/${segment}` : segment;
-            const isLeaf = index === segments.length - 1;
-            const existing = currentChildren.find(child => child.name === segment);
-            if (existing) {
-                if (!isLeaf && existing.children) {
-                    currentChildren = existing.children;
-                }
-                return;
-            }
-            const node: TreeNode = isLeaf
-                ? { name: segment, path: currentPath, type: 'file' }
-                : { name: segment, path: currentPath, type: 'folder', children: [] };
-            currentChildren.push(node);
-            if (!isLeaf) {
-                currentChildren = node.children ?? [];
-            }
-        });
-    }
-
-    return sortTree(root);
+function IgnoreBadge({ ignoredBy }: { ignoredBy: NonNullable<ProjectDirectoryEntry['ignoredBy']> }) {
+    return (
+        <span
+            className={cn(
+                'inline-flex rounded-full px-2 py-0.5 text-caption',
+                ignoredBy === 'global'
+                    ? 'bg-slate-500/15 text-slate-600 dark:text-slate-300'
+                    : 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+            )}
+        >
+            {ignoredBy === 'global' ? '全局忽略' : '项目忽略'}
+        </span>
+    );
 }
 
-function compareNodes(a: TreeNode, b: TreeNode): number {
-    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-    return a.name.localeCompare(b.name, 'zh-CN');
+function filterTree(nodes: ProjectDirectoryEntry[], query: string): ProjectDirectoryEntry[] {
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return nodes;
+    return nodes.flatMap(node => {
+        const selfMatched = node.path.toLowerCase().includes(keyword) || node.name.toLowerCase().includes(keyword);
+        const filteredChildren = node.children ? filterTree(node.children, query) : undefined;
+        if (selfMatched) {
+            return [{ ...node, ...(filteredChildren ? { children: filteredChildren } : {}) }];
+        }
+        if (filteredChildren && filteredChildren.length > 0) {
+            return [{ ...node, children: filteredChildren }];
+        }
+        return [];
+    });
 }
 
-function sortTree(nodes: TreeNode[]): TreeNode[] {
-    return [...nodes]
-        .sort(compareNodes)
-        .map(node =>
-            node.children
-                ? { ...node, children: sortTree(node.children) }
-                : node,
-        );
+function collectFolderPaths(nodes: readonly ProjectDirectoryEntry[]): string[] {
+    const out: string[] = [];
+    const visit = (entries: readonly ProjectDirectoryEntry[]) => {
+        for (const entry of entries) {
+            if (entry.kind !== 'folder') continue;
+            out.push(entry.path);
+            if (entry.children && entry.children.length > 0) {
+                visit(entry.children);
+            }
+        }
+    };
+    visit(nodes);
+    return out;
 }
 
 function inferFolderName(path: string): string {

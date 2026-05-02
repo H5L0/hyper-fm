@@ -170,7 +170,7 @@ function SidebarItem({ icon, label, count, active, onClick, onContextMenu }: Ite
       onClick={onClick}
       onContextMenu={onContextMenu}
       className={cn(
-        'group flex h-9 items-center gap-2 rounded-md px-2 text-left transition-colors',
+        'group flex h-8 items-center gap-2 rounded-md px-2 text-left transition-colors',
         active
           ? 'bg-secondary text-foreground'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground',

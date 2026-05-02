@@ -7,6 +7,8 @@ import type {
     ManualProjectInput,
     ManualProjectValidationResult,
     Project,
+    ProjectDirectoryEntry,
+    ProjectDirectoryInspection,
     ProjectFingerprint,
     ProjectMetaPatch,
     ScanReport,
@@ -91,6 +93,7 @@ function createSampleConfig(): AppConfig {
             name: 'fm',
             description: '浏览器模式下的示例项目，用来检查前端布局与交互。',
             tags: ['electron', 'tooling'],
+            ignore: ['README.md'],
             fingerprint: { kind: 'metadata' },
             hasMetaFile: true,
             lastScannedAt: nowIso(),
@@ -104,6 +107,7 @@ function createSampleConfig(): AppConfig {
             name: 'fm-sync-playground',
             description: '用于展示标签、搜索和命令入口的第二个示例项目。',
             tags: ['sync'],
+            ignore: [],
             fingerprint: { kind: 'folder-name', folderName: 'fm-sync-playground' },
             hasMetaFile: false,
             lastScannedAt: nowIso(),
@@ -232,10 +236,72 @@ function createProjectFromInput(input: ManualProjectInput): Project {
         name: input.name?.trim() || lastSegment(input.path),
         description: input.description?.trim() || undefined,
         tags: input.tags?.map(tag => tag.trim()).filter(Boolean) ?? [],
+        ignore: [],
         fingerprint: normalizeFingerprint(input.fingerprint),
         hasMetaFile: input.fingerprint.kind === 'metadata',
         lastScannedAt: nowIso(),
         lastModifiedAt: nowIso(),
+    };
+}
+
+function buildMockInspection(path: string, projectIgnore: readonly string[] = []): ProjectDirectoryInspection {
+    const normalizedPath = normalizePath(path);
+    const existingProject = browserState.snapshot.data.projects.find(project => normalizePath(project.path) === normalizedPath);
+    const projectIgnored = new Set(projectIgnore.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean));
+    const tree: ProjectDirectoryEntry[] = [
+        {
+            path: 'node_modules',
+            name: 'node_modules',
+            kind: 'folder',
+            ignoredBy: 'global',
+        },
+        {
+            path: 'src',
+            name: 'src',
+            kind: 'folder',
+            ...(projectIgnored.has('src') || projectIgnored.has('src/')
+                ? { ignoredBy: 'project' as const }
+                : {
+                    children: [
+                        { path: 'src/App.tsx', name: 'App.tsx', kind: 'file' as const },
+                        { path: 'src/main.ts', name: 'main.ts', kind: 'file' as const },
+                    ],
+                }),
+        },
+        {
+            path: 'README.md',
+            name: 'README.md',
+            kind: 'file',
+            ...(projectIgnored.has('README.md') ? { ignoredBy: 'project' as const } : {}),
+        },
+        {
+            path: 'package.json',
+            name: 'package.json',
+            kind: 'file',
+        },
+        {
+            path: 'dist',
+            name: 'dist',
+            kind: 'folder',
+            ignoredBy: 'global',
+        },
+    ];
+
+    const files = ['package.json'];
+    if (!(projectIgnored.has('src') || projectIgnored.has('src/'))) {
+        files.push('src/App.tsx', 'src/main.ts');
+    }
+    if (!projectIgnored.has('README.md')) {
+        files.push('README.md');
+    }
+
+    return {
+        path: normalizedPath,
+        suggestedName: lastSegment(path),
+        hasMetaFile: existingProject?.hasMetaFile ?? false,
+        metaProjectId: existingProject?.hasMetaFile ? existingProject.id : undefined,
+        tree,
+        files: files.sort(),
     };
 }
 
@@ -393,6 +459,7 @@ export function ensureBrowserBridge(): void {
                     name: patch.name?.trim() || browserState.snapshot.data.projects.find(item => item.id === id)?.name,
                     description: patch.description,
                     tags: patch.tags?.map(tag => tag.trim()).filter(Boolean),
+                    ignore: patch.ignore?.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean),
                     fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : undefined,
                     hasMetaFile: patch.fingerprint?.kind === 'metadata'
                         ? true
@@ -403,17 +470,13 @@ export function ensureBrowserBridge(): void {
                     name: patch.name?.trim() || browserState.snapshot.data.projects.find(item => item.id === id)?.name,
                     description: patch.description,
                     tags: patch.tags?.map(tag => tag.trim()).filter(Boolean),
+                    ignore: patch.ignore?.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean),
                     fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : undefined,
                     hasMetaFile: true,
                 }),
             removeMetaFile: async (id: string) => updateProject(id, { hasMetaFile: false }),
             revealInOs: async () => undefined,
-            inspectDirectory: async (path: string) => ({
-                path: normalizePath(path),
-                suggestedName: lastSegment(path),
-                hasMetaFile: false,
-                files: ['package.json', 'src/main.ts', 'src/App.tsx', 'README.md'],
-            }),
+            inspectDirectory: async (path: string, projectIgnore?: string[]) => buildMockInspection(path, projectIgnore),
             validateNew: async (input: ManualProjectInput) => validateNewProject(input),
             add: async (input: ManualProjectInput) => {
                 const validation = validateNewProject(input);

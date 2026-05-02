@@ -35,6 +35,7 @@ export function buildProjects(shared: SharedConfig, local: LocalConfig): Project
             name: sharedProject.name,
             description: sharedProject.description,
             tags: [...sharedProject.tags],
+            ignore: [...sharedProject.ignore],
             fingerprint: sharedProject.fingerprint,
         });
     }
@@ -127,6 +128,9 @@ export function applyProjectPatch(
         name: patch.name?.trim() || existing.name,
         description: patch.description !== undefined ? patch.description : existing.description,
         tags: patch.tags ? patch.tags.map(t => t.trim()).filter(Boolean) : existing.tags,
+        ignore: patch.ignore
+            ? [...new Set(patch.ignore.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean))].sort()
+            : existing.ignore,
         fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : existing.fingerprint,
     };
 
@@ -141,6 +145,7 @@ export function applyProjectPatch(
             name: nextProject.name,
             description: nextProject.description,
             tags: nextProject.tags,
+            ignore: nextProject.ignore,
             fingerprint: nextProject.fingerprint,
         },
     };
@@ -166,6 +171,7 @@ export interface AddProjectInput {
     name?: string;
     description?: string;
     tags?: string[];
+    ignore?: string[];
     fingerprint: ProjectFingerprint;
     hasMetaFile?: boolean;
     mtime?: string;
@@ -197,6 +203,7 @@ export function addProjectManual(
         name,
         description: input.description,
         tags: input.tags?.map(tag => tag.trim()).filter(Boolean) ?? [],
+        ignore: [...new Set((input.ignore ?? []).map(item => item.replace(/\\/g, '/').trim()).filter(Boolean))].sort(),
         fingerprint: normalizeFingerprint(input.fingerprint),
     };
     const binding = {
@@ -219,6 +226,7 @@ export function addProjectManual(
             name: sharedProject.name,
             description: sharedProject.description,
             tags: sharedProject.tags,
+            ignore: sharedProject.ignore,
             fingerprint: sharedProject.fingerprint,
         },
     };

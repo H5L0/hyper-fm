@@ -27,6 +27,7 @@ export function Toolbar() {
         name: '',
         description: '',
         tags: [],
+        ignore: [],
         fingerprint: { kind: 'folder-name', folderName: '' },
     });
     const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
@@ -62,14 +63,27 @@ export function Toolbar() {
             path: next.path,
             name: forceName || !prev.name.trim() ? next.suggestedName : prev.name,
             fingerprint:
-                prev.fingerprint.kind === 'file-paths'
-                    ? prev.fingerprint
-                    : next.hasMetaFile
-                        ? { kind: 'metadata' }
+                next.hasMetaFile
+                    ? { kind: 'metadata' }
+                    : prev.fingerprint.kind === 'file-paths'
+                        ? prev.fingerprint
                         : { kind: 'folder-name', folderName: next.suggestedName },
         }));
         return next;
     };
+
+    useEffect(() => {
+        if (!inspection) return;
+        setForm(current => {
+            if (current.fingerprint.kind !== 'file-paths') return current;
+            const nextPaths = current.fingerprint.paths.filter(item => inspection.files.includes(item));
+            if (nextPaths.length === current.fingerprint.paths.length) return current;
+            return {
+                ...current,
+                fingerprint: { kind: 'file-paths', paths: nextPaths },
+            };
+        });
+    }, [inspection]);
 
     const openAddProject = async () => {
         const dir = await actions.pickProjectDirectory();

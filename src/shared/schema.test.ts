@@ -56,12 +56,14 @@ describe('schema', () => {
                 id: 'pj-aaaaaa',
                 name: 'Game A',
                 tags: ['unity'],
+                ignore: [],
                 fingerprint: { kind: 'metadata' },
             },
             {
                 id: 'pj-bbbbbb',
                 name: 'Game B',
                 tags: ['rust'],
+                ignore: ['dist/'],
                 fingerprint: { kind: 'folder-name', folderName: 'game-b' },
             },
         );
@@ -79,6 +81,7 @@ describe('schema', () => {
         expect(config.projects).toHaveLength(1);
         expect(config.projects[0]?.id).toBe('pj-aaaaaa');
         expect(config.projects[0]?.fingerprint.kind).toBe('metadata');
+        expect(config.projects[0]?.ignore).toEqual([]);
         expect(config.name).toBe('fm');
     });
 
@@ -93,6 +96,7 @@ describe('schema', () => {
                     id: 'pj-aaaaaa',
                     name: 'Game',
                     tags: ['unity'],
+                    ignore: ['dist/'],
                     fingerprint: { kind: 'file-paths', paths: ['package.json', 'src/main.ts'] },
                 },
             ],
@@ -103,6 +107,7 @@ describe('schema', () => {
         expect(config.name).toBe('workspace');
         expect(config.description).toBe('shared config');
         expect(config.projects[0]?.fingerprint.kind).toBe('file-paths');
+        expect(config.projects[0]?.ignore).toEqual(['dist/']);
         expect(config.tags?.[0]?.name).toBe('unity');
     });
 });

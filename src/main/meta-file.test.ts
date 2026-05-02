@@ -23,12 +23,14 @@ describe('meta-file', () => {
       name: 'MyGame',
       description: 'Unity 原型',
       tags: ['unity'],
+      ignore: ['dist/', 'README.md'],
     });
     expect(await metaFileExists(dir)).toBe(true);
     const meta = await readMetaFile(dir);
     expect(meta?.projectId).toBe('pj-aaaaaa');
     expect(meta?.name).toBe('MyGame');
     expect(meta?.tags).toEqual(['unity']);
+    expect(meta?.ignore).toEqual(['dist/', 'README.md']);
   });
 
   test('[readMetaFile] 非法 JSON 应抛错', async () => {

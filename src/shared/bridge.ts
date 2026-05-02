@@ -104,7 +104,7 @@ export interface FmProjectsBridge {
   writeMetaFile(id: string, patch: ProjectMetaPatch): Promise<Project>;
   removeMetaFile(id: string): Promise<Project>;
   revealInOs(id: string): Promise<void>;
-  inspectDirectory(path: string): Promise<ProjectDirectoryInspection>;
+  inspectDirectory(path: string, projectIgnore?: string[]): Promise<ProjectDirectoryInspection>;
   validateNew(input: ManualProjectInput): Promise<ManualProjectValidationResult>;
   add(input: ManualProjectInput): Promise<Project>;
   remove(id: string): Promise<void>;
@@ -126,11 +126,22 @@ export interface ManualProjectInput {
   fingerprint: ProjectFingerprint;
 }
 
+export type ProjectDirectoryIgnoreSource = 'global' | 'project';
+
+export interface ProjectDirectoryEntry {
+  path: string;
+  name: string;
+  kind: 'file' | 'folder';
+  ignoredBy?: ProjectDirectoryIgnoreSource;
+  children?: ProjectDirectoryEntry[];
+}
+
 export interface ProjectDirectoryInspection {
   path: string;
   suggestedName: string;
   hasMetaFile: boolean;
   metaProjectId?: string;
+  tree: ProjectDirectoryEntry[];
   files: string[];
 }
 

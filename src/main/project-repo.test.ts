@@ -90,6 +90,7 @@ describe('project-repo / manual add', () => {
         expect(result.nextShared.projects).toHaveLength(1);
         expect(result.nextLocal.bindings).toHaveLength(1);
         expect(result.project.id).toMatch(/^pj-[a-z0-9]{6}$/);
+        expect(result.project.ignore).toEqual([]);
         expect(result.project.fingerprint.kind).toBe('folder-name');
     });
 
@@ -108,8 +109,10 @@ describe('project-repo / manual add', () => {
         );
         const patched = applyProjectPatch(added.nextShared, added.nextLocal, added.project.id, {
             tags: [' a ', '', 'b'],
+            ignore: ['dist/', ' README.md ', ''],
         });
         expect(patched.project.tags).toEqual(['a', 'b']);
+        expect(patched.project.ignore).toEqual(['README.md', 'dist/']);
     });
 
     test('[removeProject] 应删除共享项目、本地绑定与相关告警', () => {

@@ -11,6 +11,7 @@ import type {
 } from '@shared/bridge.js';
 import { Button } from '@/components/ui/button';
 import { useAppActions, useAppState } from '../store/app-store.js';
+import { IgnoreRulesEditor } from './ignore-rules-editor';
 import { AddScanRootDialog } from './scan-root-dialog.js';
 
 export function SettingsPanel() {
@@ -158,7 +159,7 @@ export function SettingsPanel() {
           />
         ) : null}
 
-        <Section title="忽略规则" hint="支持精确名称、目录后缀 / 等极简 glob；建议保留 node_modules、.git 等。">
+        <Section title="全局忽略规则" hint="支持精确名称、目录后缀 / 等极简 glob；建议保留 node_modules、.git 等。">
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -167,12 +168,14 @@ export function SettingsPanel() {
             />
             扫描时遵守 .gitignore
           </label>
-          <textarea
-            value={globsDraft}
-            onChange={e => setGlobsDraft(e.target.value)}
-            rows={6}
-            className="mt-2 w-full resize-y rounded-md border border-border bg-background p-2 text-note outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-          />
+          <div className="mt-2">
+            <IgnoreRulesEditor
+              value={globsDraft}
+              onChange={setGlobsDraft}
+              rows={8}
+              placeholder="# 全局忽略规则\nnode_modules\n.git\ndist/"
+            />
+          </div>
           <Button size="sm" variant="outline" className="mt-2" onClick={() => void handleSaveIgnore()}>
             保存忽略规则
           </Button>

@@ -66,6 +66,7 @@ export interface SharedProject {
   name: string;
   description?: string;
   tags: string[];
+  ignore: string[];
   fingerprint: ProjectFingerprint;
 }
 
@@ -73,6 +74,7 @@ export interface Project extends ProjectBinding {
   name: string;
   description?: string;
   tags: string[];
+  ignore: string[];
   fingerprint: ProjectFingerprint;
 }
 
@@ -175,6 +177,7 @@ export interface ProjectMetaPatch {
   name?: string;
   description?: string;
   tags?: string[];
+  ignore?: string[];
   fingerprint?: ProjectFingerprint;
 }
 

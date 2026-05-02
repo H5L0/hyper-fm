@@ -38,13 +38,14 @@ import { FmError } from '../fm-error.js';
 
 async function ignorePatternsFor(config: AppConfig, project: Project): Promise<string[]> {
   const base = config.ignore?.globs ?? [];
-  if (!project.hasMetaFile) return base;
+  const local = project.ignore ?? [];
+  if (!project.hasMetaFile) return [...base, ...local];
   try {
     const meta = await readMetaFile(project.path);
     const extra = meta?.ignore ?? [];
-    return [...base, ...extra];
+    return [...base, ...local, ...extra];
   } catch {
-    return base;
+    return [...base, ...local];
   }
 }
 

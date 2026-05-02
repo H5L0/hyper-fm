@@ -6,12 +6,13 @@
 
 本项目（fm）是一个面向个人开发者的 **项目文件夹管理器**：扫描散落硬盘的项目目录，按标签整理；支持项目根 `.meta-data` 自描述与 JSON 配置文件双轨持久化。基于 Electron + React + Vite + TypeScript。
 
+如有必要可阅读 `README.md` 获取更多信息。
+
 ### 环境约束
 
 - 运行时：Node.js >= 22，ESM（package.json: type=module）。
 - 语言：TypeScript 严格模式（strict 与 noUnused 系列规则开启）。
 - UI：Electron + React + Vite + Tailwind v4 + shadcn（base-ui）。
-- 调用指令前使用 `eval "$(fnm env --shell bash)" && fnm use 22` 确保 Node 版本正确。
 
 ### 主要模块
 
@@ -40,14 +41,6 @@
 - **扫描规则**：扫描只做匹配，不新增项目；冲突写入 local warnings，并允许用户忽略具体目录后重扫。
 - **标签**：标签为轻量字符串，颜色与显示在 `AppConfig.tags` 注册表（`TagDefinition: name + color`）中维护。
 - **路径**：内部统一存为正斜杠绝对路径。
-
-### 更多信息
-
-- 编译命令：`npm run build`
-- 类型检查：`npm run typecheck`
-- 测试命令：`npm run test`
-
-如有必要可阅读 `README.md` 获取更多信息。
 
 ## 工作原则
 
@@ -86,7 +79,7 @@
 - 不吞异常，要么抛出可定位错误，要么返回结构化错误对象。
 - 可恢复错误优先展示到界面，不静默失败。
 
-### 字体与排版规范
+### UI 规范
 
 - 全站统一 Geist 字体（含 `font-mono`），不再引入额外等宽字体。
 - 在 `src/renderer/index.css` 通过 `@layer components` 暴露语义化字号 token，UI 中**禁止使用 `text-xs`/`text-sm` 或 `text-[13px]` 之类的硬编码**：
@@ -99,6 +92,7 @@
   - `text-caption`：12px / 400，徽标、计数等紧凑信息
 - 基础字号通过 `body` 上的 `text-sm`（14px）控制，`html` 不动以保持 `1rem = 16px`。
 - 按钮在 `default/xs/sm/lg` 尺寸下使用 `pt-0.5` 矫正 Geist 视觉居中。
+- 不使用不必要的外框线和分割线，优先使用间距划分，其次可使用背景色区分层级。
 
 ### 日志
 
@@ -112,3 +106,9 @@
   - `describe` 格式：类名（如果没有则用功能简称）
   - `test` 格式：[函数名（或功能描述）] 什么情况应该如何。
 - 单元测试与源码同级放置，例如：`src/shared/logger.ts => src/shared/logger.test.ts`。
+
+## 自测命令
+
+- 编译命令：`npm run build`
+- 类型检查：`npm run typecheck`
+- 测试命令：`npm run test`

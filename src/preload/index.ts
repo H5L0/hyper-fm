@@ -82,8 +82,8 @@ const fmApi: FmBridge = {
     removeMetaFile: id =>
       ipcRenderer.invoke('fm:projects:removeMetaFile', id) as Promise<Project>,
     revealInOs: id => ipcRenderer.invoke('fm:projects:revealInOs', id) as Promise<void>,
-    inspectDirectory: path =>
-      ipcRenderer.invoke('fm:projects:inspectDirectory', path) as Promise<ProjectDirectoryInspection>,
+    inspectDirectory: (path, projectIgnore) =>
+      ipcRenderer.invoke('fm:projects:inspectDirectory', path, projectIgnore) as Promise<ProjectDirectoryInspection>,
     validateNew: input =>
       ipcRenderer.invoke('fm:projects:validateNew', input as ManualProjectInput) as Promise<ManualProjectValidationResult>,
     add: input => ipcRenderer.invoke('fm:projects:add', input as ManualProjectInput) as Promise<Project>,

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { generateId } from '../shared/id.js';
 import { createLogger } from '../shared/logger.js';
 import { normalizePath, basename } from '../shared/path-utils.js';
+import type { ProjectDirectoryEntry, ProjectDirectoryIgnoreSource } from '../shared/bridge.js';
 import type {
     FilePathsFingerprint,
     ProjectBinding,
@@ -14,6 +15,7 @@ import type {
     ScanWarning,
     SharedProject,
 } from '../shared/types.js';
+import { createIgnoreMatcher } from './ignore-matcher.js';
 import { readMetaFile } from './meta-file.js';
 
 const logger = createLogger('main:project-matcher');
@@ -23,14 +25,34 @@ export interface DirectoryInspection {
     name: string;
     hasMetaFile: boolean;
     metaProjectId?: string;
+    tree: ProjectDirectoryEntry[];
     files: string[];
+}
+
+export interface InspectProjectDirectoryOptions {
+    globalIgnore?: readonly string[];
+    projectIgnore?: readonly string[];
 }
 
 function normalizeFolderName(name: string): string {
     return name.trim().toLowerCase();
 }
 
-async function walkFiles(rootPath: string, relDir: string, out: string[]): Promise<void> {
+function compareEntries(a: import('node:fs').Dirent, b: import('node:fs').Dirent): number {
+    if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+    return a.name.localeCompare(b.name, 'zh-CN');
+}
+
+async function walkFiles(
+    rootPath: string,
+    relDir: string,
+    files: string[],
+    tree: ProjectDirectoryEntry[],
+    options: {
+        globalIgnore: ReturnType<typeof createIgnoreMatcher>;
+        projectIgnore: ReturnType<typeof createIgnoreMatcher>;
+    },
+): Promise<void> {
     const abs = relDir ? path.join(rootPath, relDir) : rootPath;
     let entries: import('node:fs').Dirent[];
     try {
@@ -38,21 +60,62 @@ async function walkFiles(rootPath: string, relDir: string, out: string[]): Promi
     } catch {
         return;
     }
+    entries.sort(compareEntries);
     for (const entry of entries) {
         if (entry.isSymbolicLink()) continue;
         const childRel = relDir ? `${relDir}/${entry.name}` : entry.name;
+        const normalizedRel = childRel.replace(/\\/g, '/');
+        const ignoredBy = resolveIgnoredBy(normalizedRel, entry.isDirectory(), options);
         if (entry.isDirectory()) {
-            await walkFiles(rootPath, childRel, out);
+            const node: ProjectDirectoryEntry = {
+                path: normalizedRel,
+                name: entry.name,
+                kind: 'folder',
+                ...(ignoredBy ? { ignoredBy } : {}),
+            };
+            tree.push(node);
+            if (!ignoredBy) {
+                node.children = [];
+                await walkFiles(rootPath, childRel, files, node.children, options);
+            }
             continue;
         }
-        if (entry.isFile()) out.push(childRel.replace(/\\/g, '/'));
+        if (entry.isFile()) {
+            tree.push({
+                path: normalizedRel,
+                name: entry.name,
+                kind: 'file',
+                ...(ignoredBy ? { ignoredBy } : {}),
+            });
+            if (!ignoredBy) files.push(normalizedRel);
+        }
     }
 }
 
-export async function inspectProjectDirectory(projectPath: string): Promise<DirectoryInspection> {
+function resolveIgnoredBy(
+    relativePath: string,
+    isDir: boolean,
+    options: {
+        globalIgnore: ReturnType<typeof createIgnoreMatcher>;
+        projectIgnore: ReturnType<typeof createIgnoreMatcher>;
+    },
+): ProjectDirectoryIgnoreSource | undefined {
+    if (options.globalIgnore.isIgnored(relativePath, isDir)) return 'global';
+    if (options.projectIgnore.isIgnored(relativePath, isDir)) return 'project';
+    return undefined;
+}
+
+export async function inspectProjectDirectory(
+    projectPath: string,
+    options: InspectProjectDirectoryOptions = {},
+): Promise<DirectoryInspection> {
     const normalized = normalizePath(projectPath);
     const files: string[] = [];
-    await walkFiles(normalized, '', files);
+    const tree: ProjectDirectoryEntry[] = [];
+    await walkFiles(normalized, '', files, tree, {
+        globalIgnore: createIgnoreMatcher(options.globalIgnore ?? []),
+        projectIgnore: createIgnoreMatcher(options.projectIgnore ?? []),
+    });
     files.sort();
     const meta = await readMetaFile(normalized);
     return {
@@ -60,6 +123,7 @@ export async function inspectProjectDirectory(projectPath: string): Promise<Dire
         name: basename(normalized),
         hasMetaFile: meta !== null,
         metaProjectId: meta?.projectId,
+        tree,
         files,
     };
 }

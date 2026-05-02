@@ -5,8 +5,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
-  FileMinus,
-  FileText,
   FolderOpen,
   Save,
   Terminal,
@@ -16,7 +14,7 @@ import type { CustomCommand, PresetCommandDescriptor, Project, ProjectDirectoryI
 import { explainMatch, matchProject, parseSearchQuery } from '@shared/search.js';
 import { Button } from '@/components/ui/button';
 import { useAppActions, useAppState } from '../store/app-store.js';
-import { ProjectEditorDrawer, type ProjectEditorFormValue } from './project-editor-drawer.js';
+import { ProjectEditorDrawer, ProjectFileTreePanel, type ProjectEditorFormValue } from './project-editor-drawer.js';
 
 type FormState = ProjectEditorFormValue;
 
@@ -26,6 +24,7 @@ function projectToForm(project: Project): FormState {
     name: project.name,
     description: project.description ?? '',
     tags: [...project.tags],
+    ignore: [...project.ignore],
     fingerprint: project.fingerprint,
   };
 }
@@ -34,6 +33,10 @@ function formsEqual(a: FormState, b: FormState): boolean {
   if (a.path !== b.path) return false;
   if (a.name !== b.name) return false;
   if (a.description !== b.description) return false;
+  if (a.ignore.length !== b.ignore.length) return false;
+  for (let i = 0; i < a.ignore.length; i++) {
+    if (a.ignore[i] !== b.ignore[i]) return false;
+  }
   if (!sameFingerprint(a.fingerprint, b.fingerprint)) return false;
   if (a.tags.length !== b.tags.length) return false;
   for (let i = 0; i < a.tags.length; i++) {
@@ -59,6 +62,8 @@ export function ProjectDrawer() {
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
+  const [activeTab, setActiveTab] = useState<'details' | 'files'>('details');
+  const [ignoreText, setIgnoreText] = useState(project ? project.ignore.join('\n') : '');
 
   useEffect(() => {
     const next = project ? projectToForm(project) : null;
@@ -66,15 +71,30 @@ export function ProjectDrawer() {
     setInitial(next);
     setCommandsOpen(false);
     setConfirmClose(false);
+    setActiveTab('details');
+    setIgnoreText(next?.ignore.join('\n') ?? '');
   }, [project]);
 
   useEffect(() => {
-    if (!project) {
+    if (!form?.path) {
       setInspection(null);
       return;
     }
-    void window.fm.projects.inspectDirectory(project.path).then(setInspection).catch(() => setInspection(null));
-  }, [project]);
+    void window.fm.projects.inspectDirectory(form.path, form.ignore).then(setInspection).catch(() => setInspection(null));
+  }, [form?.ignore, form?.path]);
+
+  useEffect(() => {
+    if (!inspection) return;
+    setForm(current => {
+      if (!current || current.fingerprint.kind !== 'file-paths') return current;
+      const nextPaths = current.fingerprint.paths.filter(item => inspection.files.includes(item));
+      if (nextPaths.length === current.fingerprint.paths.length) return current;
+      return {
+        ...current,
+        fingerprint: { kind: 'file-paths', paths: nextPaths },
+      };
+    });
+  }, [inspection]);
 
   const isDirty = useMemo(() => {
     if (!form || !initial) return false;
@@ -135,6 +155,7 @@ export function ProjectDrawer() {
     name: form.name,
     description: form.description,
     tags: form.tags,
+    ignore: form.ignore,
     fingerprint: form.fingerprint,
   });
 
@@ -156,12 +177,19 @@ export function ProjectDrawer() {
     setForm({ ...form, tags: [...form.tags, t] });
   };
 
+  const updateIgnoreText = (value: string) => {
+    setIgnoreText(value);
+    setForm(current => current ? {
+      ...current,
+      ignore: parseIgnoreRules(value),
+    } : current);
+  };
+
   const saveDisabled = form.fingerprint.kind === 'file-paths' && form.fingerprint.paths.length === 0;
 
   return (
     <>
       <ProjectEditorDrawer
-        title="文件夹详情"
         form={form}
         onFormChange={setForm}
         tagDefs={config.tags}
@@ -170,16 +198,32 @@ export function ProjectDrawer() {
           suggestedName: project.path.split(/[/\\]/).filter(Boolean).pop() ?? project.name,
           hasMetaFile: project.hasMetaFile,
           metaProjectId: project.id,
+          tree: [],
           files: project.fingerprint.kind === 'file-paths' ? project.fingerprint.paths : [],
         }}
+        headerTabs={[
+          { id: 'details', label: '项目详情' },
+          { id: 'files', label: '文件列表' },
+        ]}
+        activeTabId={activeTab}
+        onTabChange={tabId => setActiveTab(tabId as 'details' | 'files')}
+        body={activeTab === 'files' ? (
+          <ProjectFileTreePanel
+            tree={inspection?.tree ?? []}
+            ignoreText={ignoreText}
+            onIgnoreTextChange={updateIgnoreText}
+          />
+        ) : undefined}
         pathEditable={false}
         banner={matchExplanation || undefined}
         validation={
-          saveDisabled ? (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-note text-amber-700 dark:text-amber-300">
-              文件列表指纹至少需要选择一个文件。
-            </div>
-          ) : null
+          <div className="space-y-3">
+            {saveDisabled ? (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-note text-amber-700 dark:text-amber-300">
+                文件列表指纹至少需要选择一个文件。
+              </div>
+            ) : null}
+          </div>
         }
         onAddTag={addTag}
         onRemoveTag={removeTag}
@@ -241,31 +285,10 @@ export function ProjectDrawer() {
           </>
         }
         footer={
-          <div className="flex items-center justify-between gap-3">
-            {project.hasMetaFile ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => void actions.removeMetaFile(project.id)}
-              >
-                <FileMinus className="size-3.5" /> 删除 .meta-data
-              </Button>
-            ) : (
-              <span className="text-note text-muted-foreground">未写入 .meta-data</span>
-            )}
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={saveDisabled}
-                onClick={() => void doSave(true, 'close')}
-              >
-                <FileText className="size-3.5" /> 写入 .meta-data
-              </Button>
-              <Button size="sm" disabled={saveDisabled} onClick={() => void doSave(false, 'close')}>
-                <Save className="size-3.5" /> 保存
-              </Button>
-            </div>
+          <div className="flex items-center justify-end gap-3">
+            <Button size="sm" disabled={saveDisabled} onClick={() => void doSave(false, 'close')}>
+              <Save className="size-3.5" /> 保存
+            </Button>
           </div>
         }
       />
@@ -282,6 +305,10 @@ export function ProjectDrawer() {
       ) : null}
     </>
   );
+}
+
+function parseIgnoreRules(value: string): string[] {
+  return [...new Set(value.split(/\r?\n/).map(item => item.trim()).filter(Boolean))];
 }
 
 // ---------------------------------------------------------------------------

@@ -68,6 +68,7 @@ describe('config-store', () => {
             id: 'pj-aaaaaa',
             name: 'demo',
             tags: [],
+            ignore: [],
             fingerprint: { kind: 'folder-name', folderName: 'demo' },
         });
         local.scanRoots.push({ id: 'root_x', path: 'D:/p', maxDepth: 2, enabled: true });

@@ -179,6 +179,7 @@ function validateSharedProject(value: unknown, idx: number, errors: ValidationEr
         name: value.name,
         description: isString(value.description) ? value.description : undefined,
         tags: isStringArray(value.tags) ? normalizeStringList(value.tags) : [],
+        ignore: isStringArray(value.ignore) ? normalizeStringList(value.ignore).map(v => v.replace(/\\/g, '/')) : [],
         fingerprint,
     };
 }
@@ -496,6 +497,7 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
                 name: isObject(project) && isString(project.name) ? project.name : '',
                 description: isObject(project) && isString(project.description) ? project.description : undefined,
                 tags: isObject(project) && isStringArray(project.tags) ? project.tags : [],
+                ignore: isObject(project) && isStringArray(project.ignore) ? project.ignore : [],
                 fingerprint:
                     isObject(project) && isObject(project.fingerprint)
                         ? project.fingerprint
@@ -556,6 +558,7 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
             name: sharedProject.name,
             description: sharedProject.description,
             tags: [...sharedProject.tags],
+            ignore: [...sharedProject.ignore],
             fingerprint: sharedProject.fingerprint,
         });
     }
@@ -582,6 +585,7 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
         updatedProjects.set(project.id, {
             ...project,
             tags: [...project.tags],
+            ignore: [...project.ignore],
             fingerprint: cloneFingerprint(project.fingerprint),
         });
     }
@@ -593,6 +597,7 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
             name: project.name,
             description: project.description,
             tags: [...project.tags],
+            ignore: [...project.ignore],
             fingerprint: cloneFingerprint(project.fingerprint),
         });
     }
@@ -655,6 +660,6 @@ export function buildMetaFile(project: SharedProject, patch?: Partial<MetaFile>)
         name: patch?.name ?? project.name,
         description: patch?.description ?? project.description,
         tags: patch?.tags ?? project.tags,
-        ignore: patch?.ignore,
+        ignore: patch?.ignore ?? project.ignore,
     };
 }

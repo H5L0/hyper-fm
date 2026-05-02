@@ -1,5 +1,7 @@
 {
   "version": 2,
+  "name": "默认配置",
+  "description": "描述",
   "ignore": {
     "respectGitignore": true,
     "globs": [
@@ -21,9 +23,36 @@
         "AI",
         "Typescript"
       ],
+      "ignore": [],
       "fingerprint": {
         "kind": "folder-name",
         "folderName": "dear-mt"
+      }
+    },
+    {
+      "id": "pj-p2m2gq",
+      "name": "electron-template",
+      "tags": [
+        "Typescript"
+      ],
+      "ignore": [],
+      "fingerprint": {
+        "kind": "folder-name",
+        "folderName": "electron-template"
+      }
+    },
+    {
+      "id": "pj-vuqf8f",
+      "name": "fm-test",
+      "description": "",
+      "tags": [
+        "C#"
+      ],
+      "ignore": [
+        "新建文件夹"
+      ],
+      "fingerprint": {
+        "kind": "metadata"
       }
     }
   ],
