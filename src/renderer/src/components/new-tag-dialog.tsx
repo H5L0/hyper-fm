@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '../store/app-store.js';
 import { DEFAULT_TAG_COLOR, TagPill } from './tag-pill.js';
@@ -69,88 +69,72 @@ export function NewTagDialog({
   };
 
   return (
-    <>
-      <button
-        type="button"
-        aria-label="关闭"
-        onClick={onClose}
-        className="fixed inset-0 z-40 cursor-default bg-black/30 backdrop-blur-[1px]"
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="fixed top-1/2 left-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-border bg-card shadow-xl"
-      >
-        <div className="flex h-11 items-center justify-between border-b border-border px-3">
-          <h2 className="text-heading">{editing ? '修改标签' : '新建标签'}</h2>
-          <Button size="icon-xs" variant="ghost" onClick={onClose}>
-            <X className="size-3.5" />
-          </Button>
-        </div>
-        <div className="space-y-4 px-4 py-4">
-          <div>
-            <label className="text-subheading mb-1.5 block text-muted-foreground">
-              名称
-            </label>
-            <input
-              autoFocus
-              value={name}
-              onChange={e => setName(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') void submit();
-              }}
-              placeholder="如：unity"
-              className="h-9 w-full rounded-md border border-border bg-background px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-            />
-          </div>
-          <div>
-            <label className="text-subheading mb-1.5 block text-muted-foreground">
-              颜色
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {TAG_COLOR_PRESETS.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={`选择颜色 ${c}`}
-                  onClick={() => setColor(c)}
-                  className={cn(
-                    'size-6 rounded-full border transition-transform',
-                    color === c
-                      ? 'border-foreground/60 ring-2 ring-ring/50'
-                      : 'border-border hover:scale-110',
-                  )}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-              <label
-                className="relative inline-flex size-6 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border text-caption text-muted-foreground hover:text-foreground"
-                title="自定义颜色"
-              >
-                #
-                <input
-                  type="color"
-                  value={color}
-                  onChange={e => setColor(e.target.value)}
-                  className="absolute inset-0 size-full cursor-pointer opacity-0"
-                />
-              </label>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
-            <span className="text-caption text-muted-foreground">预览：</span>
-            <TagPill name={name.trim() || '示例'} color={color} />
-          </div>
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-border bg-card/80 px-4 py-3">
+    <EditDialogShell
+      title={editing ? '修改标签' : '新建标签'}
+      note="名称和颜色会同时应用到标签注册表与当前界面预览。"
+      onClose={onClose}
+      panelClassName="w-[min(420px,calc(100vw-2rem))]"
+      bodyClassName="space-y-4"
+      footerEnd={(
+        <>
           <Button size="sm" variant="outline" onClick={onClose}>
             取消
           </Button>
           <Button size="sm" disabled={!dirty || busy} onClick={() => void submit()}>
             {editing ? '保存' : '添加'}
           </Button>
+        </>
+      )}
+    >
+      <EditDialogField label="名称">
+        <input
+          autoFocus
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') void submit();
+          }}
+          placeholder="如：unity"
+          className="h-9 w-full rounded-md border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+        />
+      </EditDialogField>
+
+      <EditDialogField label="颜色">
+        <div className="flex flex-wrap gap-1.5">
+          {TAG_COLOR_PRESETS.map(c => (
+            <button
+              key={c}
+              type="button"
+              aria-label={`选择颜色 ${c}`}
+              onClick={() => setColor(c)}
+              className={cn(
+                'size-6 rounded-full border transition-transform',
+                color === c
+                  ? 'border-foreground/60 ring-2 ring-ring/50'
+                  : 'border-border hover:scale-110',
+              )}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+          <label
+            className="relative inline-flex size-6 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border text-caption text-muted-foreground hover:text-foreground"
+            title="自定义颜色"
+          >
+            #
+            <input
+              type="color"
+              value={color}
+              onChange={e => setColor(e.target.value)}
+              className="absolute inset-0 size-full cursor-pointer opacity-0"
+            />
+          </label>
         </div>
+      </EditDialogField>
+
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+        <span className="text-caption text-muted-foreground">预览：</span>
+        <TagPill name={name.trim() || '示例'} color={color} />
       </div>
-    </>
+    </EditDialogShell>
   );
 }

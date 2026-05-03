@@ -25,11 +25,18 @@ import {
     type CustomCommand,
     type DeviceRegistry,
     type KnownDevice,
-    type SyncSettings,
+    type LegacySyncSettings,
+    type SyncConfig,
+    type SyncConfigScope,
     type SyncNetworkSettings,
     createDefaultSyncNetwork,
     DEFAULT_SYNC_LISTEN_PORT,
+    createDefaultFolderSyncSettings,
+    createDefaultSharedDirSyncSettings,
+    createDefaultSyncConfig,
+    createDefaultZipSyncSettings,
 } from './sync-types.js';
+import { normalizeSyncConfig, normalizeSyncTargeting } from './sync-config.js';
 
 // ---------------------------------------------------------------------------
 // 默认值
@@ -321,7 +328,7 @@ function validateDevices(value: unknown, errors: ValidationError[]): DeviceRegis
 
 function validateNetworkSettings(value: unknown): SyncNetworkSettings {
     if (!isObject(value)) return createDefaultSyncNetwork();
-    const { listenPort, autoStart, relayMode } = value;
+    const { listenPort, autoStart, relayMode, ownerDeviceId, accessKey } = value;
     return {
         listenPort:
             typeof listenPort === 'number' && Number.isFinite(listenPort) && listenPort > 0 && listenPort < 65536
@@ -329,19 +336,146 @@ function validateNetworkSettings(value: unknown): SyncNetworkSettings {
                 : DEFAULT_SYNC_LISTEN_PORT,
         autoStart: typeof autoStart === 'boolean' ? autoStart : false,
         relayMode: typeof relayMode === 'boolean' ? relayMode : false,
+        ownerDeviceId: isString(ownerDeviceId) && ownerDeviceId.trim() ? ownerDeviceId.trim() : undefined,
+        accessKey: isString(accessKey) && accessKey.trim() ? accessKey.trim() : undefined,
     };
 }
 
-function validateSync(value: unknown, errors: ValidationError[]): SyncSettings | undefined {
-    if (value === undefined) return undefined;
+function validateSyncConfigType(value: unknown): SyncConfig['type'] | null {
+    return value === 'folder' || value === 'shared-dir' || value === 'zip' || value === 'p2p'
+        ? value
+        : null;
+}
+
+function validateSyncMode(value: unknown, fallback: SyncConfig['mode']): SyncConfig['mode'] {
+    return value === 'two-way' || value === 'mirror-local-to-target' || value === 'mirror-target-to-local'
+        ? value
+        : fallback;
+}
+
+function validateSyncConfigEntry(
+    value: unknown,
+    idx: number,
+    scope: SyncConfigScope,
+    errors: ValidationError[],
+): SyncConfig | null {
+    const base = `syncConfigs[${idx}]`;
     if (!isObject(value)) {
-        pushError(errors, 'sync', '必须为对象');
+        pushError(errors, base, '必须为对象');
+        return null;
+    }
+    const type = validateSyncConfigType(value.type);
+    if (!type) {
+        pushError(errors, `${base}.type`, '未知同步类型');
+        return null;
+    }
+
+    const fallback = createDefaultSyncConfig(type, scope);
+    const common = {
+        ...fallback,
+        id: isString(value.id) && value.id.trim() ? value.id : fallback.id,
+        name: isString(value.name) ? value.name : fallback.name,
+        scope,
+        mode: validateSyncMode(value.mode, fallback.mode),
+        targets: normalizeSyncTargeting(isObject(value.targets) ? value.targets : undefined),
+    };
+
+    switch (type) {
+        case 'folder': {
+            const folder = isObject(value.folder) ? value.folder : {};
+            const defaults = createDefaultFolderSyncSettings();
+            return normalizeSyncConfig({
+                ...common,
+                type,
+                folder: {
+                    targetDir: isString(folder.targetDir) && folder.targetDir.trim() ? folder.targetDir.trim() : undefined,
+                    compareBeforeSync:
+                        typeof folder.compareBeforeSync === 'boolean'
+                            ? folder.compareBeforeSync
+                            : defaults.compareBeforeSync,
+                    autoSync: typeof folder.autoSync === 'boolean' ? folder.autoSync : defaults.autoSync,
+                    intervalMinutes:
+                        typeof folder.intervalMinutes === 'number' && Number.isFinite(folder.intervalMinutes) && folder.intervalMinutes > 0
+                            ? Math.floor(folder.intervalMinutes)
+                            : undefined,
+                },
+            });
+        }
+        case 'shared-dir': {
+            const sharedDir = isObject(value.sharedDir) ? value.sharedDir : {};
+            const defaults = createDefaultSharedDirSyncSettings();
+            return normalizeSyncConfig({
+                ...common,
+                type,
+                sharedDir: {
+                    bundleDir:
+                        isString(sharedDir.bundleDir) && sharedDir.bundleDir.trim()
+                            ? sharedDir.bundleDir.trim()
+                            : defaults.bundleDir,
+                },
+            });
+        }
+        case 'zip': {
+            const zip = isObject(value.zip) ? value.zip : {};
+            const defaults = createDefaultZipSyncSettings();
+            return normalizeSyncConfig({
+                ...common,
+                type,
+                zip: {
+                    exportFile:
+                        isString(zip.exportFile) && zip.exportFile.trim()
+                            ? zip.exportFile.trim()
+                            : defaults.exportFile,
+                },
+            });
+        }
+        case 'p2p':
+            return normalizeSyncConfig({
+                ...common,
+                type,
+                network: validateNetworkSettings(value.network),
+            });
+    }
+}
+
+function validateSyncConfigs(
+    value: unknown,
+    scope: SyncConfigScope,
+    errors: ValidationError[],
+): SyncConfig[] | undefined {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) {
+        pushError(errors, 'syncConfigs', '必须为数组');
         return undefined;
     }
-    const out: SyncSettings = {};
-    if (isString(value.bundleDir) && value.bundleDir.length > 0) out.bundleDir = value.bundleDir;
-    if (value.network !== undefined) out.network = validateNetworkSettings(value.network);
-    return out;
+    return value
+        .map((entry, idx) => validateSyncConfigEntry(entry, idx, scope, errors))
+        .filter((entry): entry is SyncConfig => entry !== null);
+}
+
+function migrateLegacySyncSettings(value: unknown): SyncConfig[] | undefined {
+    if (!isObject(value)) return undefined;
+    const legacy = value as LegacySyncSettings;
+    const configs: SyncConfig[] = [];
+    if (isString(legacy.bundleDir) && legacy.bundleDir.trim()) {
+        configs.push(
+            normalizeSyncConfig({
+                ...createDefaultSyncConfig('shared-dir', 'local'),
+                name: '共享目录同步',
+                sharedDir: { bundleDir: legacy.bundleDir.trim() },
+            }),
+        );
+    }
+    if (legacy.network !== undefined) {
+        configs.push(
+            normalizeSyncConfig({
+                ...createDefaultSyncConfig('p2p', 'local'),
+                name: 'P2P 同步',
+                network: validateNetworkSettings(legacy.network),
+            }),
+        );
+    }
+    return configs.length > 0 ? configs : undefined;
 }
 
 function validateCommand(value: unknown, idx: number, errors: ValidationError[]): CustomCommand | null {
@@ -434,6 +568,7 @@ export function validateSharedConfig(input: unknown): ValidationResult<SharedCon
         .map((p, i) => validateSharedProject(p, i, errors))
         .filter((p): p is SharedProject => p !== null);
     const tags = validateTags(input.tags, errors);
+    const syncConfigs = validateSyncConfigs(input.syncConfigs, 'shared', errors);
     const config: SharedConfig = {
         version: CONFIG_SCHEMA_VERSION,
         name: isString(input.name) && input.name.trim() ? input.name.trim() : 'fm',
@@ -441,6 +576,7 @@ export function validateSharedConfig(input: unknown): ValidationResult<SharedCon
         ignore,
         projects,
         ...(tags ? { tags } : {}),
+        ...(syncConfigs ? { syncConfigs } : {}),
     };
     return { config, errors };
 }
@@ -461,7 +597,8 @@ export function validateLocalConfig(input: unknown): ValidationResult<LocalConfi
     const ignoredPaths = isStringArray(input.ignoredPaths) ? normalizeStringList(input.ignoredPaths) : [];
     const ui = validateUi(input.ui, errors);
     const devices = validateDevices(input.devices, errors);
-    const sync = validateSync(input.sync, errors);
+    const syncConfigs = validateSyncConfigs(input.syncConfigs, 'local', errors)
+        ?? migrateLegacySyncSettings(input.sync);
     const commands = validateCommands(input.commands, errors);
     const config: LocalConfig = {
         version: CONFIG_SCHEMA_VERSION,
@@ -472,7 +609,7 @@ export function validateLocalConfig(input: unknown): ValidationResult<LocalConfi
         warnings,
         ignoredPaths,
         ...(devices ? { devices } : {}),
-        ...(sync ? { sync } : {}),
+        ...(syncConfigs ? { syncConfigs } : {}),
         ...(commands ? { commands } : {}),
     };
     return { config, errors };
@@ -531,6 +668,7 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
         warnings: input.warnings,
         ignoredPaths: input.ignoredPaths,
         devices: input.devices,
+        syncConfigs: input.syncConfigs,
         sync: input.sync,
         commands: input.commands,
     };
@@ -574,7 +712,14 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
         ignoredPaths: [...(local.ignoredPaths ?? [])],
         ...(shared.tags ? { tags: [...shared.tags] } : {}),
         ...(local.devices ? { devices: local.devices } : {}),
-        ...(local.sync ? { sync: local.sync } : {}),
+        ...((shared.syncConfigs?.length || local.syncConfigs?.length)
+            ? {
+                syncConfigs: [
+                    ...(shared.syncConfigs ?? []).map(normalizeSyncConfig),
+                    ...(local.syncConfigs ?? []).map(normalizeSyncConfig),
+                ],
+            }
+            : {}),
         ...(local.commands ? { commands: local.commands } : {}),
     };
 }
@@ -612,6 +757,13 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
         },
         projects: [...updatedProjects.values()],
         ...(appConfig.tags ? { tags: [...appConfig.tags] } : {}),
+        ...(appConfig.syncConfigs
+            ? {
+                syncConfigs: appConfig.syncConfigs
+                    .filter(config => config.scope === 'shared')
+                    .map(normalizeSyncConfig),
+            }
+            : {}),
     };
 }
 
@@ -636,7 +788,13 @@ export function mergeAppConfigIntoLocal(appConfig: AppConfig, sharedConfigPath =
         warnings: [...appConfig.warnings],
         ignoredPaths: [...appConfig.ignoredPaths],
         ...(appConfig.devices ? { devices: appConfig.devices } : {}),
-        ...(appConfig.sync ? { sync: appConfig.sync } : {}),
+        ...(appConfig.syncConfigs
+            ? {
+                syncConfigs: appConfig.syncConfigs
+                    .filter(config => config.scope === 'local')
+                    .map(normalizeSyncConfig),
+            }
+            : {}),
         ...(appConfig.commands ? { commands: appConfig.commands } : {}),
     };
 }

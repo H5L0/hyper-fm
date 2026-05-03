@@ -22,11 +22,12 @@ import type {
   DeviceRegistry,
   KnownDevice,
   PresetCommandDescriptor,
+  SyncConfig,
   SyncDiff,
   SyncManifest,
-  SyncSettings,
   SyncProjectEntry,
 } from './sync-types.js';
+import type { SyncProjectRule } from './sync-config.js';
 
 export type {
   AppConfig,
@@ -49,11 +50,12 @@ export type {
   DeviceRegistry,
   KnownDevice,
   PresetCommandDescriptor,
+  SyncConfig,
   SyncDiff,
   SyncManifest,
-  SyncSettings,
   SyncProjectEntry,
 };
+export type { SyncProjectRule };
 
 export interface AppInfo {
   appName: string;
@@ -175,27 +177,29 @@ export interface FmSyncBridge {
   getDevice(): Promise<DeviceRegistry>;
   setSelfName(name: string): Promise<DeviceRegistry>;
 
-  /** 同步设置 */
-  getSettings(): Promise<SyncSettings>;
-  setSettings(settings: SyncSettings): Promise<SyncSettings>;
-  pickBundleDir(): Promise<string | null>;
+  /** 同步配置 */
+  listConfigs(): Promise<SyncConfig[]>;
+  upsertConfig(config: SyncConfig): Promise<SyncConfig>;
+  removeConfig(id: string): Promise<void>;
+  setProjectRule(configId: string, projectId: string, rule: SyncProjectRule): Promise<SyncConfig>;
+  pickDirectory(title?: string): Promise<string | null>;
 
   /** 共享目录：diff / push / pull */
-  diffBundleDir(projectIds?: string[]): Promise<SyncDiff>;
-  pushBundleDir(projectIds: string[]): Promise<{ pushed: string[] }>;
-  pullBundleDir(items: SyncPullItem[]): Promise<SyncPullResult[]>;
+  diffSharedDir(configId: string, projectIds?: string[]): Promise<SyncDiff>;
+  pushSharedDir(configId: string, projectIds?: string[]): Promise<{ pushed: string[] }>;
+  pullSharedDir(configId: string, items: SyncPullItem[]): Promise<SyncPullResult[]>;
 
   /** zip 导入/导出 */
-  exportZip(projectIds: string[], outputFile: string): Promise<{ outputFile: string; projects: number }>;
+  exportZip(configId: string, projectIds: string[], outputFile: string): Promise<{ outputFile: string; projects: number }>;
   pickExportFile(): Promise<string | null>;
   pickImportFile(): Promise<string | null>;
   previewZip(file: string): Promise<{ manifest: SyncManifest; entries: SyncProjectEntry[] }>;
-  applyZip(file: string, plan: SyncImportItem[]): Promise<SyncImportResult[]>;
+  applyZip(configId: string, file: string, plan: SyncImportItem[]): Promise<SyncImportResult[]>;
 
   /** TCP 服务端 */
-  startServer(): Promise<{ port: number }>;
-  stopServer(): Promise<void>;
-  isServerRunning(): Promise<boolean>;
+  startServer(configId: string): Promise<{ port: number }>;
+  stopServer(configId: string): Promise<void>;
+  isServerRunning(configId: string): Promise<boolean>;
 }
 
 export interface SyncPullItem {

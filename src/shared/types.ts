@@ -106,6 +106,8 @@ export interface SharedConfig {
   projects: SharedProject[];
   /** 标签注册表：可在项目详情和侧边栏中显示颜色，未在此处注册的标签按默认色渲染 */
   tags?: TagDefinition[];
+  /** 共享同步配置 */
+  syncConfigs?: import('./sync-types.js').SyncConfig[];
 }
 
 export interface LocalConfig {
@@ -119,8 +121,8 @@ export interface LocalConfig {
   ignoredPaths?: string[];
   /** M2：设备身份与已知对端 */
   devices?: import('./sync-types.js').DeviceRegistry;
-  /** M2：同步设置 */
-  sync?: import('./sync-types.js').SyncSettings;
+  /** 同步配置（仅本机生效） */
+  syncConfigs?: import('./sync-types.js').SyncConfig[];
   /** M3：自定义命令列表 */
   commands?: import('./sync-types.js').CustomCommand[];
 }
@@ -139,8 +141,8 @@ export interface AppConfig {
   tags?: TagDefinition[];
   /** M2：设备身份与已知对端 */
   devices?: import('./sync-types.js').DeviceRegistry;
-  /** M2：同步设置 */
-  sync?: import('./sync-types.js').SyncSettings;
+  /** 同步配置（shared + local 合并视图） */
+  syncConfigs?: import('./sync-types.js').SyncConfig[];
   /** M3：自定义命令列表 */
   commands?: import('./sync-types.js').CustomCommand[];
 }

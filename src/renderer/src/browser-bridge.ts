@@ -13,21 +13,23 @@ import type {
     ProjectMetaPatch,
     ScanReport,
     ScanRoot,
+    SyncConfig,
     SyncImportResult,
+    SyncProjectRule,
     SyncPullResult,
     TagDefinition,
 } from '@shared/bridge.js';
 import {
     PRESET_COMMANDS,
-    createDefaultSyncSettings,
+    createDefaultSyncConfig,
     type CommandRunResult,
     type CustomCommand,
     type DeviceRegistry,
     type SyncDiff,
     type SyncManifest,
     type SyncProjectEntry,
-    type SyncSettings,
 } from '@shared/sync-types.js';
+import { normalizeSyncConfig, setProjectSyncRule } from '@shared/sync-config.js';
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -154,7 +156,26 @@ function createSampleConfig(): AppConfig {
             selfName: 'Browser Preview',
             known: [{ id: 'dev-desktop', name: 'Desktop', lastSeenAt: nowIso() }],
         },
-        sync: createDefaultSyncSettings(),
+        syncConfigs: [
+            normalizeSyncConfig({
+                ...createDefaultSyncConfig('shared-dir', 'shared'),
+                name: '团队共享目录',
+                sharedDir: { bundleDir: 'D:/OneDrive/fm-sync' },
+            }),
+            normalizeSyncConfig({
+                ...createDefaultSyncConfig('zip', 'local'),
+                name: '离线 ZIP 备份',
+                zip: { exportFile: 'D:/exports/fm-backup.zip' },
+            }),
+            normalizeSyncConfig({
+                ...createDefaultSyncConfig('p2p', 'local'),
+                name: '局域网 P2P',
+                network: {
+                    ...createDefaultSyncConfig('p2p', 'local').network,
+                    listenPort: 41555,
+                },
+            }),
+        ],
         commands: [
             {
                 id: 'cmd-demo-01',
@@ -169,7 +190,7 @@ function createSampleConfig(): AppConfig {
 
 const browserState: {
     snapshot: ConfigSnapshot;
-    serverRunning: boolean;
+    runningServers: string[];
     nextProjectPick: number;
     nextScanRootPick: number;
 } = {
@@ -180,10 +201,20 @@ const browserState: {
         },
         data: createSampleConfig(),
     },
-    serverRunning: false,
+    runningServers: [],
     nextProjectPick: 1,
     nextScanRootPick: 1,
 };
+
+function upsertSyncConfig(syncConfig: SyncConfig): SyncConfig {
+    const current = browserState.snapshot.data.syncConfigs ?? [];
+    const exists = current.some(item => item.id === syncConfig.id);
+    const syncConfigs = exists
+        ? current.map(item => (item.id === syncConfig.id ? syncConfig : item))
+        : [...current, syncConfig];
+    updateConfig({ ...browserState.snapshot.data, syncConfigs });
+    return clone(syncConfig);
+}
 
 function getSnapshot(): ConfigSnapshot {
     return clone(browserState.snapshot);
@@ -536,21 +567,42 @@ export function ensureBrowserBridge(): void {
                 updateConfig({ ...browserState.snapshot.data, devices });
                 return clone(devices);
             },
-            getSettings: async (): Promise<SyncSettings> => clone(browserState.snapshot.data.sync ?? createDefaultSyncSettings()),
-            setSettings: async (settings: SyncSettings): Promise<SyncSettings> => {
-                updateConfig({ ...browserState.snapshot.data, sync: settings });
-                return clone(settings);
+            listConfigs: async (): Promise<SyncConfig[]> => clone(browserState.snapshot.data.syncConfigs ?? []),
+            upsertConfig: async (config: SyncConfig): Promise<SyncConfig> => upsertSyncConfig(clone(config)),
+            removeConfig: async (id: string): Promise<void> => {
+                updateConfig({
+                    ...browserState.snapshot.data,
+                    syncConfigs: (browserState.snapshot.data.syncConfigs ?? []).filter(item => item.id !== id),
+                });
+                browserState.runningServers = browserState.runningServers.filter(item => item !== id);
             },
-            pickBundleDir: async () => null,
-            diffBundleDir: async (): Promise<SyncDiff> => ({
+            setProjectRule: async (configId: string, projectId: string, rule: SyncProjectRule): Promise<SyncConfig> => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                const project = browserState.snapshot.data.projects.find(item => item.id === projectId);
+                if (!syncConfig) throw new Error(`同步配置不存在：${configId}`);
+                if (!project) throw new Error(`项目不存在：${projectId}`);
+                const next = setProjectSyncRule(syncConfig, project, rule);
+                return upsertSyncConfig(next);
+            },
+            pickDirectory: async () => `D:/sync-targets/browser-${Date.now()}`,
+            diffSharedDir: async (): Promise<SyncDiff> => ({
                 generatedAt: nowIso(),
                 local: { device: { id: 'dev-browser', name: 'Browser Preview' } },
                 remote: { device: { id: 'dev-remote', name: 'Remote Mock' } },
                 entries: [],
             }),
-            pushBundleDir: async projectIds => ({ pushed: projectIds }),
-            pullBundleDir: async (): Promise<SyncPullResult[]> => [],
-            exportZip: async (projectIds, outputFile) => ({ outputFile, projects: projectIds.length }),
+            pushSharedDir: async (_configId: string, projectIds?: string[]) => ({ pushed: projectIds ?? [] }),
+            pullSharedDir: async (): Promise<SyncPullResult[]> => [],
+            exportZip: async (configId: string, projectIds: string[], outputFile: string) => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                if (syncConfig?.type === 'zip') {
+                    void upsertSyncConfig(normalizeSyncConfig({
+                        ...syncConfig,
+                        zip: { ...syncConfig.zip, exportFile: outputFile },
+                    }));
+                }
+                return { outputFile, projects: projectIds.length };
+            },
             pickExportFile: async () => null,
             pickImportFile: async () => null,
             previewZip: async (): Promise<{ manifest: SyncManifest; entries: SyncProjectEntry[] }> => ({
@@ -563,14 +615,16 @@ export function ensureBrowserBridge(): void {
                 entries: [],
             }),
             applyZip: async (): Promise<SyncImportResult[]> => [],
-            startServer: async () => {
-                browserState.serverRunning = true;
+            startServer: async (configId: string) => {
+                if (!browserState.runningServers.includes(configId)) {
+                    browserState.runningServers = [...browserState.runningServers, configId];
+                }
                 return { port: 41555 };
             },
-            stopServer: async () => {
-                browserState.serverRunning = false;
+            stopServer: async (configId: string) => {
+                browserState.runningServers = browserState.runningServers.filter(item => item !== configId);
             },
-            isServerRunning: async () => browserState.serverRunning,
+            isServerRunning: async (configId: string) => browserState.runningServers.includes(configId),
         },
         commands: {
             presets: async () => clone(PRESET_COMMANDS),

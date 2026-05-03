@@ -15,13 +15,19 @@ import {
   type Project,
   type ProjectMetaPatch,
   type ScanReport,
+  type SyncConfig,
   type SyncImportItem,
   type SyncPullItem,
-  type SyncSettings,
 } from '../shared/bridge.js';
 import {
   type CustomCommand,
+  getSyncConfigTypeLabel,
 } from '../shared/sync-types.js';
+import {
+  normalizeSyncConfig,
+  resolveSyncProjectIds,
+  setProjectSyncRule,
+} from '../shared/sync-config.js';
 import {
   addIgnoredPath,
   addProjectManual,
@@ -92,7 +98,7 @@ const logger = createLogger('main:ipc');
 // 模块状态：TCP 服务端实例
 // ---------------------------------------------------------------------------
 
-let activeServer: SyncServer | null = null;
+const activeServers = new Map<string, SyncServer>();
 
 // ---------------------------------------------------------------------------
 // 包装：统一日志与错误归一化
@@ -656,29 +662,86 @@ function registerSyncHandlers(): void {
   );
 
   ipcMain.handle(
-    'fm:sync:getSettings',
-    wrap('fm:sync:getSettings', () => requireSession().config.sync ?? {}),
+    'fm:sync:listConfigs',
+    wrap('fm:sync:listConfigs', () => requireSession().config.syncConfigs ?? []),
   );
 
   ipcMain.handle(
-    'fm:sync:setSettings',
-    wrap('fm:sync:setSettings', async (_e, settings: unknown) => {
-      const s = settings as SyncSettings;
-      return mutate(({ config }) => ({ nextConfig: { ...config, sync: s }, result: s }));
+    'fm:sync:upsertConfig',
+    wrap('fm:sync:upsertConfig', async (_e, input: unknown) => {
+      if (!input || typeof input !== 'object') {
+        throw new FmError('CONFIG_INVALID', '同步配置必须为对象');
+      }
+      const nextSyncConfig = normalizeSyncConfig(input as SyncConfig);
+      return mutate(({ config }) => {
+        const current = config.syncConfigs ?? [];
+        const exists = current.some(item => item.id === nextSyncConfig.id);
+        const syncConfigs = exists
+          ? current.map(item => (item.id === nextSyncConfig.id ? nextSyncConfig : item))
+          : [...current, nextSyncConfig];
+        return {
+          nextConfig: { ...config, syncConfigs },
+          result: nextSyncConfig,
+        };
+      });
     }),
   );
 
   ipcMain.handle(
-    'fm:sync:pickBundleDir',
-    wrap('fm:sync:pickBundleDir', async event => {
+    'fm:sync:removeConfig',
+    wrap('fm:sync:removeConfig', async (_e, id: unknown) => {
+      assertString(id, 'id');
+      return mutate(async ({ config }) => {
+        const server = activeServers.get(id);
+        if (server) {
+          await server.close();
+          activeServers.delete(id);
+        }
+        return {
+          nextConfig: {
+            ...config,
+            syncConfigs: (config.syncConfigs ?? []).filter(item => item.id !== id),
+          },
+          result: undefined as void,
+        };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:setProjectRule',
+    wrap('fm:sync:setProjectRule', async (_e, configId: unknown, projectId: unknown, rule: unknown) => {
+      assertString(configId, 'configId');
+      assertString(projectId, 'projectId');
+      if (rule !== 'default' && rule !== 'selected' && rule !== 'ignored') {
+        throw new FmError('CONFIG_INVALID', '非法同步规则');
+      }
+      return mutate(({ config }) => {
+        const syncConfig = getSyncConfigOrThrow(config, configId);
+        const project = config.projects.find(item => item.id === projectId);
+        if (!project) throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${projectId}`);
+        const next = setProjectSyncRule(syncConfig, project, rule);
+        const syncConfigs = (config.syncConfigs ?? []).map(item => (item.id === configId ? next : item));
+        return {
+          nextConfig: { ...config, syncConfigs },
+          result: next,
+        };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:pickDirectory',
+    wrap('fm:sync:pickDirectory', async (event, title: unknown) => {
       const window = senderWindow(event);
+      const dialogTitle = typeof title === 'string' && title.trim() ? title : '选择目录';
       const res = window
         ? await dialog.showOpenDialog(window, {
-          title: '选择共享目录',
+          title: dialogTitle,
           properties: ['openDirectory', 'createDirectory'],
         })
         : await dialog.showOpenDialog({
-          title: '选择共享目录',
+          title: dialogTitle,
           properties: ['openDirectory', 'createDirectory'],
         });
       return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]!;
@@ -686,24 +749,28 @@ function registerSyncHandlers(): void {
   );
 
   ipcMain.handle(
-    'fm:sync:diffBundleDir',
-    wrap('fm:sync:diffBundleDir', async (_e, projectIds: unknown) => {
-      const ids = Array.isArray(projectIds) ? (projectIds as string[]) : undefined;
+    'fm:sync:diffSharedDir',
+    wrap('fm:sync:diffSharedDir', async (_e, configId: unknown, projectIds: unknown) => {
+      assertString(configId, 'configId');
       const session = requireSession();
-      const dir = session.config.sync?.bundleDir;
-      if (!dir) throw new FmError('SYNC_BUNDLE_DIR_MISSING', '未配置共享目录');
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'shared-dir');
+      const dir = syncConfig.sharedDir.bundleDir;
+      if (!dir) throw new FmError('SYNC_BUNDLE_DIR_MISSING', `${syncConfig.name} 未配置共享目录`);
+      const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
       const { diff } = await diffAgainstBundleDir(session.config, dir, { projectIds: ids });
       return diff;
     }),
   );
 
   ipcMain.handle(
-    'fm:sync:pushBundleDir',
-    wrap('fm:sync:pushBundleDir', async (_e, projectIds: unknown) => {
-      const ids = Array.isArray(projectIds) ? (projectIds as string[]) : [];
+    'fm:sync:pushSharedDir',
+    wrap('fm:sync:pushSharedDir', async (_e, configId: unknown, projectIds: unknown) => {
+      assertString(configId, 'configId');
       const session = requireSession();
-      const dir = session.config.sync?.bundleDir;
-      if (!dir) throw new FmError('SYNC_BUNDLE_DIR_MISSING', '未配置共享目录');
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'shared-dir');
+      const dir = syncConfig.sharedDir.bundleDir;
+      if (!dir) throw new FmError('SYNC_BUNDLE_DIR_MISSING', `${syncConfig.name} 未配置共享目录`);
+      const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
       const result = await pushToBundleDir(session.config, dir, ids);
       // 更新 syncedAt/syncedHash
       await mutate(async ({ config }) => {
@@ -721,23 +788,41 @@ function registerSyncHandlers(): void {
   );
 
   ipcMain.handle(
-    'fm:sync:pullBundleDir',
-    wrap('fm:sync:pullBundleDir', async (_e, items: unknown) => {
+    'fm:sync:pullSharedDir',
+    wrap('fm:sync:pullSharedDir', async (_e, configId: unknown, items: unknown) => {
+      assertString(configId, 'configId');
       const list = items as SyncPullItem[];
       const session = requireSession();
-      const dir = session.config.sync?.bundleDir;
-      if (!dir) throw new FmError('SYNC_BUNDLE_DIR_MISSING', '未配置共享目录');
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'shared-dir');
+      const dir = syncConfig.sharedDir.bundleDir;
+      if (!dir) throw new FmError('SYNC_BUNDLE_DIR_MISSING', `${syncConfig.name} 未配置共享目录`);
       return pullFromBundleDir(dir, list);
     }),
   );
 
   ipcMain.handle(
     'fm:sync:exportZip',
-    wrap('fm:sync:exportZip', async (_e, projectIds: unknown, outputFile: unknown) => {
-      const ids = Array.isArray(projectIds) ? (projectIds as string[]) : [];
+    wrap('fm:sync:exportZip', async (_e, configId: unknown, projectIds: unknown, outputFile: unknown) => {
+      assertString(configId, 'configId');
       assertString(outputFile, 'outputFile');
       const session = requireSession();
-      return exportBundleZip(session.config, ids, outputFile);
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'zip');
+      const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
+      const result = await exportBundleZip(session.config, ids, outputFile);
+      await mutate(({ config }) => {
+        const next = normalizeSyncConfig({
+          ...syncConfig,
+          zip: { ...syncConfig.zip, exportFile: result.outputFile },
+        });
+        return {
+          nextConfig: {
+            ...config,
+            syncConfigs: (config.syncConfigs ?? []).map(item => (item.id === next.id ? next : item)),
+          },
+          result: undefined as void,
+        };
+      });
+      return result;
     }),
   );
 
@@ -789,41 +874,53 @@ function registerSyncHandlers(): void {
 
   ipcMain.handle(
     'fm:sync:applyZip',
-    wrap('fm:sync:applyZip', async (_e, file: unknown, plan: unknown) => {
+    wrap('fm:sync:applyZip', async (_e, configId: unknown, file: unknown, plan: unknown) => {
+      assertString(configId, 'configId');
       assertString(file, 'file');
+      const session = requireSession();
+      getSyncConfigOrThrow(session.config, configId, 'zip');
       return applyBundleZip(file, plan as SyncImportItem[]);
     }),
   );
 
   ipcMain.handle(
     'fm:sync:isServerRunning',
-    wrap('fm:sync:isServerRunning', () => activeServer !== null),
+    wrap('fm:sync:isServerRunning', (_e, configId: unknown) => {
+      assertString(configId, 'configId');
+      return activeServers.has(configId);
+    }),
   );
 
   ipcMain.handle(
     'fm:sync:startServer',
-    wrap('fm:sync:startServer', async () => {
-      if (activeServer) return { port: activeServer.port };
+    wrap('fm:sync:startServer', async (_e, configId: unknown) => {
+      assertString(configId, 'configId');
+      const current = activeServers.get(configId);
+      if (current) return { port: current.port };
       const session = requireSession();
-      const port = session.config.sync?.network?.listenPort ?? 41555;
-      const handlers = buildServerHandlers();
-      activeServer = await startSyncServer({ port }, handlers);
-      return { port: activeServer.port };
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'p2p');
+      const port = syncConfig.network.listenPort;
+      const handlers = buildServerHandlers(configId);
+      const server = await startSyncServer({ port }, handlers);
+      activeServers.set(configId, server);
+      return { port: server.port };
     }),
   );
 
   ipcMain.handle(
     'fm:sync:stopServer',
-    wrap('fm:sync:stopServer', async () => {
-      if (!activeServer) return undefined as void;
-      await activeServer.close();
-      activeServer = null;
+    wrap('fm:sync:stopServer', async (_e, configId: unknown) => {
+      assertString(configId, 'configId');
+      const server = activeServers.get(configId);
+      if (!server) return undefined as void;
+      await server.close();
+      activeServers.delete(configId);
       return undefined as void;
     }),
   );
 }
 
-function buildServerHandlers(): ServerHandlers {
+function buildServerHandlers(configId: string): ServerHandlers {
   return {
     isAllowedDevice: device => {
       const session = requireSession();
@@ -848,7 +945,8 @@ function buildServerHandlers(): ServerHandlers {
     },
     acceptProjectBundle: async (fromDevice, entry, zip) => {
       const session = requireSession();
-      const relayMode = session.config.sync?.network?.relayMode ?? false;
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'p2p');
+      const relayMode = syncConfig.network.relayMode;
       // 自动登记发送方为已知设备
       await mutate(({ config }) => ({
         nextConfig: upsertKnownDevice(config, {
@@ -859,9 +957,9 @@ function buildServerHandlers(): ServerHandlers {
         result: undefined as void,
       }));
       if (relayMode) {
-        const dir = session.config.sync?.bundleDir;
+        const dir = resolveRelayBundleDir(session.config, syncConfig.scope);
         if (!dir) {
-          throw new FmError('SYNC_BUNDLE_DIR_MISSING', 'relay 模式需要配置 bundleDir');
+          throw new FmError('SYNC_BUNDLE_DIR_MISSING', 'relay 模式需要至少一条共享目录同步配置');
         }
         // 把单包合并写入：以发送方设备为目录
         const manifest = {
@@ -882,6 +980,45 @@ function buildServerHandlers(): ServerHandlers {
       void unpackProjectZip;
     },
   };
+}
+
+function getSyncConfigOrThrow<TType extends SyncConfig['type']>(
+  config: AppConfig,
+  configId: string,
+  type?: TType,
+): TType extends SyncConfig['type'] ? Extract<SyncConfig, { type: TType }> : SyncConfig {
+  const syncConfig = config.syncConfigs?.find(item => item.id === configId);
+  if (!syncConfig) {
+    throw new FmError('CONFIG_INVALID', `同步配置不存在：${configId}`);
+  }
+  if (type && syncConfig.type !== type) {
+    throw new FmError('CONFIG_INVALID', `${syncConfig.name} 不是 ${getSyncConfigTypeLabel(type)} 配置`);
+  }
+  return syncConfig as TType extends SyncConfig['type'] ? Extract<SyncConfig, { type: TType }> : SyncConfig;
+}
+
+function resolveConfigProjectIds(
+  config: AppConfig,
+  syncConfig: SyncConfig,
+  requestedProjectIds: unknown,
+): string[] {
+  const allowed = new Set(resolveSyncProjectIds(syncConfig, config.projects));
+  const requested = Array.isArray(requestedProjectIds)
+    ? requestedProjectIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  if (requested.length === 0) {
+    return [...allowed];
+  }
+  return requested.filter(id => allowed.has(id));
+}
+
+function resolveRelayBundleDir(config: AppConfig, preferredScope: SyncConfig['scope']): string | undefined {
+  const sharedDirConfig = (config.syncConfigs ?? []).find(
+    (item): item is Extract<SyncConfig, { type: 'shared-dir' }> => item.type === 'shared-dir' && item.scope === preferredScope,
+  ) ?? (config.syncConfigs ?? []).find(
+    (item): item is Extract<SyncConfig, { type: 'shared-dir' }> => item.type === 'shared-dir',
+  );
+  return sharedDirConfig?.sharedDir.bundleDir;
 }
 
 // ---------------------------------------------------------------------------

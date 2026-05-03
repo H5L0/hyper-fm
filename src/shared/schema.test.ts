@@ -4,10 +4,13 @@ import {
     createDefaultConfig,
     createDefaultLocalConfig,
     createDefaultSharedConfig,
+    mergeAppConfigIntoLocal,
+    mergeAppConfigIntoShared,
     validateLocalConfig,
     validateSharedConfig,
 } from './schema.js';
 import { CONFIG_SCHEMA_VERSION } from './types.js';
+import { createDefaultSyncConfig } from './sync-types.js';
 
 describe('schema', () => {
     test('[createDefaultConfig] 应返回带默认 shared/local 合并视图的空配置', () => {
@@ -109,5 +112,56 @@ describe('schema', () => {
         expect(config.projects[0]?.fingerprint.kind).toBe('file-paths');
         expect(config.projects[0]?.ignore).toEqual(['dist/']);
         expect(config.tags?.[0]?.name).toBe('unity');
+    });
+
+    test('[validateLocalConfig] 应兼容旧版 sync 并迁移为 syncConfigs', () => {
+        const { config, errors } = validateLocalConfig({
+            sync: {
+                bundleDir: 'D:/sync',
+                network: {
+                    listenPort: 42424,
+                    autoStart: true,
+                    relayMode: true,
+                },
+            },
+        });
+        expect(errors).toEqual([]);
+        expect(config.syncConfigs).toHaveLength(2);
+        expect(config.syncConfigs?.[0]?.type).toBe('shared-dir');
+        expect(config.syncConfigs?.[1]?.type).toBe('p2p');
+        expect(config.syncConfigs?.[1]?.scope).toBe('local');
+    });
+
+    test('[composeAppConfig + mergeAppConfigIntoShared/Local] 应按 scope 拆分并合并 syncConfigs', () => {
+        const shared = createDefaultSharedConfig();
+        const local = createDefaultLocalConfig();
+        shared.syncConfigs = [
+            {
+                ...createDefaultSyncConfig('shared-dir', 'shared'),
+                name: '团队共享',
+                sharedDir: { bundleDir: 'D:/team-sync' },
+            },
+        ];
+        local.syncConfigs = [
+            {
+                ...createDefaultSyncConfig('p2p', 'local'),
+                name: '本机 P2P',
+                network: {
+                    ...createDefaultSyncConfig('p2p', 'local').network,
+                    listenPort: 42555,
+                },
+            },
+        ];
+
+        const app = composeAppConfig(shared, local);
+        expect(app.syncConfigs).toHaveLength(2);
+        expect(app.syncConfigs?.map(item => item.scope)).toEqual(['shared', 'local']);
+
+        const nextShared = mergeAppConfigIntoShared(shared, app);
+        const nextLocal = mergeAppConfigIntoLocal(app, 'D:/cfg/fm.shared.json');
+        expect(nextShared.syncConfigs).toHaveLength(1);
+        expect(nextShared.syncConfigs?.[0]?.scope).toBe('shared');
+        expect(nextLocal.syncConfigs).toHaveLength(1);
+        expect(nextLocal.syncConfigs?.[0]?.scope).toBe('local');
     });
 });

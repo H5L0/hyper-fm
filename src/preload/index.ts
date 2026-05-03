@@ -16,14 +16,15 @@ import type {
   ScanProgressEvent,
   ScanReport,
   ScanRoot,
+  SyncConfig,
   SyncDiff,
   SyncImportItem,
   SyncImportResult,
   SyncManifest,
   SyncProjectEntry,
+  SyncProjectRule,
   SyncPullItem,
   SyncPullResult,
-  SyncSettings,
   TagDefinition,
 } from '../shared/bridge.js';
 
@@ -101,18 +102,21 @@ const fmApi: FmBridge = {
   sync: {
     getDevice: () => ipcRenderer.invoke('fm:sync:getDevice') as Promise<DeviceRegistry>,
     setSelfName: name => ipcRenderer.invoke('fm:sync:setSelfName', name) as Promise<DeviceRegistry>,
-    getSettings: () => ipcRenderer.invoke('fm:sync:getSettings') as Promise<SyncSettings>,
-    setSettings: settings =>
-      ipcRenderer.invoke('fm:sync:setSettings', settings) as Promise<SyncSettings>,
-    pickBundleDir: () => ipcRenderer.invoke('fm:sync:pickBundleDir') as Promise<string | null>,
-    diffBundleDir: projectIds =>
-      ipcRenderer.invoke('fm:sync:diffBundleDir', projectIds) as Promise<SyncDiff>,
-    pushBundleDir: projectIds =>
-      ipcRenderer.invoke('fm:sync:pushBundleDir', projectIds) as Promise<{ pushed: string[] }>,
-    pullBundleDir: items =>
-      ipcRenderer.invoke('fm:sync:pullBundleDir', items as SyncPullItem[]) as Promise<SyncPullResult[]>,
-    exportZip: (projectIds, outputFile) =>
-      ipcRenderer.invoke('fm:sync:exportZip', projectIds, outputFile) as Promise<{
+    listConfigs: () => ipcRenderer.invoke('fm:sync:listConfigs') as Promise<SyncConfig[]>,
+    upsertConfig: config =>
+      ipcRenderer.invoke('fm:sync:upsertConfig', config as SyncConfig) as Promise<SyncConfig>,
+    removeConfig: id => ipcRenderer.invoke('fm:sync:removeConfig', id) as Promise<void>,
+    setProjectRule: (configId, projectId, rule) =>
+      ipcRenderer.invoke('fm:sync:setProjectRule', configId, projectId, rule as SyncProjectRule) as Promise<SyncConfig>,
+    pickDirectory: title => ipcRenderer.invoke('fm:sync:pickDirectory', title) as Promise<string | null>,
+    diffSharedDir: (configId, projectIds) =>
+      ipcRenderer.invoke('fm:sync:diffSharedDir', configId, projectIds) as Promise<SyncDiff>,
+    pushSharedDir: (configId, projectIds) =>
+      ipcRenderer.invoke('fm:sync:pushSharedDir', configId, projectIds) as Promise<{ pushed: string[] }>,
+    pullSharedDir: (configId, items) =>
+      ipcRenderer.invoke('fm:sync:pullSharedDir', configId, items as SyncPullItem[]) as Promise<SyncPullResult[]>,
+    exportZip: (configId, projectIds, outputFile) =>
+      ipcRenderer.invoke('fm:sync:exportZip', configId, projectIds, outputFile) as Promise<{
         outputFile: string;
         projects: number;
       }>,
@@ -125,11 +129,11 @@ const fmApi: FmBridge = {
         manifest: SyncManifest;
         entries: SyncProjectEntry[];
       }>,
-    applyZip: (file, plan) =>
-      ipcRenderer.invoke('fm:sync:applyZip', file, plan as SyncImportItem[]) as Promise<SyncImportResult[]>,
-    startServer: () => ipcRenderer.invoke('fm:sync:startServer') as Promise<{ port: number }>,
-    stopServer: () => ipcRenderer.invoke('fm:sync:stopServer') as Promise<void>,
-    isServerRunning: () => ipcRenderer.invoke('fm:sync:isServerRunning') as Promise<boolean>,
+    applyZip: (configId, file, plan) =>
+      ipcRenderer.invoke('fm:sync:applyZip', configId, file, plan as SyncImportItem[]) as Promise<SyncImportResult[]>,
+    startServer: configId => ipcRenderer.invoke('fm:sync:startServer', configId) as Promise<{ port: number }>,
+    stopServer: configId => ipcRenderer.invoke('fm:sync:stopServer', configId) as Promise<void>,
+    isServerRunning: configId => ipcRenderer.invoke('fm:sync:isServerRunning', configId) as Promise<boolean>,
   },
   commands: {
     presets: () => ipcRenderer.invoke('fm:commands:presets') as Promise<PresetCommandDescriptor[]>,

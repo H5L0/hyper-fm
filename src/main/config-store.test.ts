@@ -14,6 +14,7 @@ import {
 } from './config-store.js';
 import { createDefaultLocalConfig, createDefaultSharedConfig } from '../shared/schema.js';
 import { isFmError } from './fm-error.js';
+import { createDefaultSyncConfig } from '../shared/sync-types.js';
 
 async function tmpDir(): Promise<string> {
     return fs.mkdtemp(path.join(os.tmpdir(), 'fm-config-'));
@@ -80,12 +81,27 @@ describe('config-store', () => {
             hasMetaFile: false,
             lastScannedAt: '2026-01-01T00:00:00Z',
         });
+        shared.syncConfigs = [
+            {
+                ...createDefaultSyncConfig('shared-dir', 'shared'),
+                name: '共享目录',
+                sharedDir: { bundleDir: 'D:/sync/team' },
+            },
+        ];
+        local.syncConfigs = [
+            {
+                ...createDefaultSyncConfig('zip', 'local'),
+                name: 'ZIP 备份',
+                zip: { exportFile: 'D:/exports/fm.zip' },
+            },
+        ];
         await saveConfig({ sharedPath, localPath }, shared, local);
 
         const reloaded = await loadConfig(sharedPath);
         expect(reloaded.data.scanRoots).toHaveLength(1);
         expect(reloaded.data.projects).toHaveLength(1);
         expect(reloaded.data.projects[0]?.path).toBe('D:/p/demo');
+        expect(reloaded.data.syncConfigs).toHaveLength(2);
         expect(reloaded.paths.localPath.replace(/\\/g, '/')).toBe(localPath.replace(/\\/g, '/'));
     });
 

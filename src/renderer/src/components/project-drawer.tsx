@@ -10,11 +10,22 @@ import {
   Terminal,
   X,
 } from 'lucide-react';
-import type { CustomCommand, PresetCommandDescriptor, Project, ProjectDirectoryInspection, ProjectMetaPatch } from '@shared/bridge.js';
+import type {
+  CustomCommand,
+  PresetCommandDescriptor,
+  Project,
+  ProjectDirectoryInspection,
+  ProjectMetaPatch,
+  SyncConfig,
+  SyncProjectRule,
+} from '@shared/bridge.js';
+import { getEffectiveSyncProjectState, resolveSyncProjectIds } from '@shared/sync-config.js';
 import { explainMatch, matchProject, parseSearchQuery } from '@shared/search.js';
 import { Button } from '@/components/ui/button';
+import { TriStateRuleButton, getNextTriStateRule } from '@/components/ui/tri-state-rule-button';
 import { useAppActions, useAppState } from '../store/app-store.js';
 import { ProjectEditorDrawer, ProjectFileTreePanel, type ProjectEditorFormValue } from './project-editor-drawer.js';
+import { SyncConfigSummaryCard, getProjectSyncStateDescription } from './sync-config-card.js';
 
 type FormState = ProjectEditorFormValue;
 
@@ -62,18 +73,22 @@ export function ProjectDrawer() {
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
-  const [activeTab, setActiveTab] = useState<'details' | 'files'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'files' | 'sync'>('details');
   const [ignoreText, setIgnoreText] = useState(project ? project.ignore.join('\n') : '');
+  const [syncBusyId, setSyncBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     const next = project ? projectToForm(project) : null;
     setForm(next);
     setInitial(next);
+    setIgnoreText(next?.ignore.join('\n') ?? '');
+  }, [project]);
+
+  useEffect(() => {
     setCommandsOpen(false);
     setConfirmClose(false);
     setActiveTab('details');
-    setIgnoreText(next?.ignore.join('\n') ?? '');
-  }, [project]);
+  }, [project?.id]);
 
   useEffect(() => {
     if (!form?.path) {
@@ -204,16 +219,40 @@ export function ProjectDrawer() {
         headerTabs={[
           { id: 'details', label: '项目详情' },
           { id: 'files', label: '文件列表' },
+          { id: 'sync', label: '同步' },
         ]}
         activeTabId={activeTab}
-        onTabChange={tabId => setActiveTab(tabId as 'details' | 'files')}
-        body={activeTab === 'files' ? (
-          <ProjectFileTreePanel
-            tree={inspection?.tree ?? []}
-            ignoreText={ignoreText}
-            onIgnoreTextChange={updateIgnoreText}
-          />
-        ) : undefined}
+        onTabChange={tabId => setActiveTab(tabId as 'details' | 'files' | 'sync')}
+        body={activeTab === 'files'
+          ? (
+            <ProjectFileTreePanel
+              tree={inspection?.tree ?? []}
+              ignoreText={ignoreText}
+              onIgnoreTextChange={updateIgnoreText}
+            />
+          )
+          : activeTab === 'sync'
+            ? (
+              <ProjectSyncPanel
+                project={project}
+                allProjects={config.projects}
+                syncConfigs={config.syncConfigs ?? []}
+                busyId={syncBusyId}
+                onChangeRule={async (configId, rule) => {
+                  try {
+                    setSyncBusyId(configId);
+                    await window.fm.sync.setProjectRule(configId, project.id, rule);
+                    await actions.loadConfig();
+                    actions.toast('success', '已更新项目同步规则');
+                  } catch (error) {
+                    actions.toast('error', error instanceof Error ? error.message : '更新失败');
+                  } finally {
+                    setSyncBusyId(null);
+                  }
+                }}
+              />
+            )
+            : undefined}
         pathEditable={false}
         banner={matchExplanation || undefined}
         validation={
@@ -305,6 +344,63 @@ export function ProjectDrawer() {
       ) : null}
     </>
   );
+}
+
+function ProjectSyncPanel({
+  project,
+  allProjects,
+  syncConfigs,
+  busyId,
+  onChangeRule,
+}: {
+  project: Project;
+  allProjects: Project[];
+  syncConfigs: SyncConfig[];
+  busyId: string | null;
+  onChangeRule: (configId: string, rule: SyncProjectRule) => Promise<void>;
+}) {
+  return (
+    <div className="h-full overflow-y-auto px-5 py-5">
+      <div className="space-y-3">
+        {syncConfigs.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-background px-4 py-6 text-center text-note text-muted-foreground">
+            当前还没有同步配置，可在设置页先添加。
+          </div>
+        ) : (
+          syncConfigs.map(syncConfig => {
+            const state = getEffectiveSyncProjectState(syncConfig, project);
+            const explicitRule = readProjectRule(syncConfig, project.id);
+            const busy = busyId === syncConfig.id;
+            const includedProjectCount = resolveSyncProjectIds(syncConfig, allProjects).length;
+
+            return (
+              <SyncConfigSummaryCard
+                key={syncConfig.id}
+                syncConfig={syncConfig}
+                includedProjectCount={includedProjectCount}
+                detailText={getProjectSyncStateDescription(state)}
+                leading={(
+                  <TriStateRuleButton
+                    state={explicitRule}
+                    label={`${syncConfig.name} 同步规则`}
+                    disabled={busy}
+                    onClick={() => void onChangeRule(syncConfig.id, getNextTriStateRule(explicitRule))}
+                  />
+                )}
+                className="bg-background"
+              />
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function readProjectRule(syncConfig: SyncConfig, projectId: string): SyncProjectRule {
+  if (syncConfig.targets.ignoredProjectIds.includes(projectId)) return 'ignored';
+  if (syncConfig.targets.projectIds.includes(projectId)) return 'selected';
+  return 'default';
 }
 
 function parseIgnoreRules(value: string): string[] {

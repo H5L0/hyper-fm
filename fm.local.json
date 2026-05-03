@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "sharedConfigPath": "C:/DATA/_legecy/Projects/Programs/electron-template/fm.shared.json",
   "scanRoots": [
     {
       "id": "root_13ffho",
@@ -35,5 +36,54 @@
     "selfId": "dev_zpanc4",
     "selfName": "PC-ITX",
     "known": []
-  }
+  },
+  "syncConfigs": [
+    {
+      "id": "sync_ekxrau",
+      "name": "共享目录同步",
+      "scope": "local",
+      "type": "p2p",
+      "mode": "two-way",
+      "targets": {
+        "projectIds": [],
+        "rootIds": [],
+        "ignoredProjectIds": [],
+        "ignoredRootIds": []
+      },
+      "network": {
+        "listenPort": 41555,
+        "autoStart": false,
+        "relayMode": false
+      }
+    },
+    {
+      "id": "sync_2hts6f",
+      "name": "文件夹同步",
+      "scope": "local",
+      "type": "folder",
+      "mode": "mirror-local-to-target",
+      "targets": {
+        "projectIds": [],
+        "rootIds": [],
+        "ignoredProjectIds": [],
+        "ignoredRootIds": []
+      },
+      "folder": {
+        "targetDir": "C:\\DATA\\_legecy\\Projects\\Programs\\fm-test\\新建文件夹",
+        "compareBeforeSync": true,
+        "autoSync": false
+      }
+    }
+  ],
+  "commands": [
+    {
+      "id": "cmd_44w2ci",
+      "label": "test",
+      "command": "test",
+      "args": [
+        "{{path}"
+      ],
+      "cwd": "project"
+    }
+  ]
 }

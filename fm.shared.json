@@ -1,7 +1,6 @@
 {
   "version": 2,
   "name": "默认配置",
-  "description": "描述",
   "ignore": {
     "respectGitignore": true,
     "globs": [
@@ -73,5 +72,6 @@
       "name": "C#",
       "color": "#14b8a6"
     }
-  ]
+  ],
+  "syncConfigs": []
 }

@@ -16,6 +16,9 @@ import type {
     TagDefinition,
 } from '@shared/bridge.js';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { EditDialogShell } from '@/components/ui/edit-dialog-shell';
+import { SegmentedToggleGroup } from '@/components/ui/segmented-toggle-group';
 import { cn } from '@/lib/utils';
 import { IgnoreRulesEditor } from './ignore-rules-editor';
 import { TagSelector } from './tag-selector.js';
@@ -314,38 +317,37 @@ function FingerprintEditor({
 
     return (
         <div className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-3">
-                <FingerprintKindButton
-                    active={fingerprint.kind === 'metadata'}
-                    icon={<FileCode2 className="size-4" />}
-                    title={
-                        <span className="inline-flex items-center gap-1.5">
-                            <span>metadata</span>
-                            {inspection?.hasMetaFile ? (
-                                <span className="inline-flex rounded-full bg-emerald-500/15 px-2 py-0.5 text-caption text-emerald-700 dark:text-emerald-300">
-                                    已有
-                                </span>
-                            ) : null}
-                        </span>
-                    }
-                    disabled={!editable}
-                    onClick={() => setKind('metadata')}
-                />
-                <FingerprintKindButton
-                    active={fingerprint.kind === 'folder-name'}
-                    icon={<FolderOpen className="size-4" />}
-                    title="文件夹名称"
-                    disabled={!editable}
-                    onClick={() => setKind('folder-name')}
-                />
-                <FingerprintKindButton
-                    active={fingerprint.kind === 'file-paths'}
-                    icon={<Files className="size-4" />}
-                    title="文件列表"
-                    disabled={!editable}
-                    onClick={() => setKind('file-paths')}
-                />
-            </div>
+            <SegmentedToggleGroup
+                ariaLabel="选择项目指纹类型"
+                value={fingerprint.kind}
+                onValueChange={nextValue => setKind(nextValue as ProjectFingerprint['kind'])}
+                optionMinWidth={170}
+                align="start"
+                options={[
+                    {
+                        value: 'metadata',
+                        label: 'metadata',
+                        description: '在原目录放置元数据文件识别项目',
+                        badge: <div className="rounded-full bg-green-500 w-2 h-2"></div>,
+                        icon: <FileCode2 className="size-4" />,
+                        disabled: !editable,
+                    },
+                    {
+                        value: 'folder-name',
+                        label: '文件夹名称',
+                        description: '使用目录名识别项目',
+                        icon: <FolderOpen className="size-4" />,
+                        disabled: !editable,
+                    },
+                    {
+                        value: 'file-paths',
+                        label: '文件列表',
+                        description: '使用相对文件路径集合识别项目',
+                        icon: <Files className="size-4" />,
+                        disabled: !editable,
+                    },
+                ]}
+            />
 
             {fingerprint.kind === 'metadata' ? (
                 <div className="flex-col items-start gap-2 rounded-xl border border-border bg-muted/35 px-3 py-3 text-note text-muted-foreground">
@@ -422,38 +424,6 @@ function FingerprintEditor({
     );
 }
 
-function FingerprintKindButton({
-    active,
-    icon,
-    title,
-    disabled,
-    onClick,
-}: {
-    active: boolean;
-    icon: ReactNode;
-    title: ReactNode;
-    disabled?: boolean;
-    onClick: () => void;
-}) {
-    return (
-        <button
-            type="button"
-            disabled={disabled}
-            onClick={onClick}
-            className={cn(
-                'flex h-11 items-center justify-center gap-2 rounded-xl border bg-background px-3 text-center transition-colors',
-                active
-                    ? 'border-2 border-primary/70 bg-primary/8 text-foreground'
-                    : 'border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground',
-                disabled && 'cursor-default opacity-100',
-            )}
-        >
-            <span className="text-foreground">{icon}</span>
-            <span className="text-subheading leading-none">{title}</span>
-        </button>
-    );
-}
-
 function FingerprintFileDialog({
     tree,
     files,
@@ -479,92 +449,76 @@ function FingerprintFileDialog({
     };
 
     return (
-        <>
-            <button
-                type="button"
-                aria-label="关闭文件列表选择"
-                onClick={onClose}
-                className="fixed inset-0 z-[60] cursor-default bg-black/36 backdrop-blur-[1px]"
-            />
-            <div
-                role="dialog"
-                aria-modal="true"
-                className="fixed top-1/2 left-1/2 z-[70] flex h-[min(76vh,720px)] w-[760px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
-            >
-                <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                    <div>
-                        <h3 className="text-heading text-foreground">选择指纹文件</h3>
-                        <p className="mt-1 text-note text-muted-foreground">按文件列表匹配项目时，仅使用已勾选的相对路径。</p>
-                    </div>
-                    <Button size="icon-xs" variant="ghost" onClick={onClose}>
-                        <X className="size-3.5" />
-                    </Button>
-                </div>
-
-                <div className="grid min-h-0 flex-1 gap-0 md:grid-cols-[minmax(0,1.2fr)_minmax(240px,0.8fr)]">
-                    <div className="flex min-h-0 flex-col border-r border-border px-4 py-4">
-                        <div className="relative">
-                            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                            <input
-                                value={query}
-                                onChange={event => setQuery(event.target.value)}
-                                placeholder="搜索文件路径"
-                                className="h-9 w-full rounded-lg border border-border bg-background pr-3 pl-9 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                            />
-                        </div>
-                        <div className="mt-3 rounded-lg bg-muted/30 px-3 py-2 text-note text-muted-foreground">
-                            灰色条目已被忽略，不可勾选。
-                        </div>
-                        <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-background px-2 py-2">
-                            {visibleTree.length > 0 ? (
-                                <DirectoryTreeContent
-                                    tree={visibleTree}
-                                    selected={new Set(draft)}
-                                    onToggleFile={toggleFile}
-                                    expandAll={query.trim().length > 0}
-                                />
-                            ) : (
-                                <div className="px-2 py-6 text-note text-muted-foreground">没有匹配的文件。</div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="flex min-h-0 flex-col px-4 py-4">
-                        <p className="text-subheading text-foreground">选中文件</p>
-                        <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-background px-3 py-3">
-                            {draft.length > 0 ? (
-                                <div className="space-y-1.5">
-                                    {draft.map(file => (
-                                        <div key={file} className="flex items-start justify-between gap-2 rounded-lg bg-muted/35 px-2.5 py-2">
-                                            <span className="break-all text-note text-foreground/90">{file}</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleFile(file, false)}
-                                                className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
-                                                aria-label={`移除 ${file}`}
-                                            >
-                                                <X className="size-3" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="text-note text-muted-foreground">尚未选择任何文件。</p>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 border-t border-border bg-card/90 px-4 py-3">
+        <EditDialogShell
+            title="选择指纹文件"
+            note="按文件列表匹配项目时，仅使用已勾选的相对路径。"
+            onClose={onClose}
+            panelClassName="h-[min(76vh,720px)] w-[min(760px,calc(100vw-2rem))]"
+            bodyPaddingClassName="p-0"
+            bodyClassName="grid min-h-0 flex-1 gap-0 md:grid-cols-[minmax(0,1.2fr)_minmax(240px,0.8fr)]"
+            footerEnd={(
+                <>
                     <Button size="default" variant="outline" onClick={onClose}>
                         取消
                     </Button>
                     <Button size="default" onClick={() => onConfirm(draft)}>
                         确认
                     </Button>
+                </>
+            )}
+        >
+            <div className="flex min-h-0 flex-col border-r border-border px-4 py-4">
+                <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                        value={query}
+                        onChange={event => setQuery(event.target.value)}
+                        placeholder="搜索文件路径"
+                        className="h-9 w-full rounded-lg border border-border bg-background pr-3 pl-9 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                    />
+                </div>
+                <div className="mt-3 rounded-lg bg-muted/30 px-3 py-2 text-note text-muted-foreground">
+                    灰色条目已被忽略，不可勾选。
+                </div>
+                <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-background px-2 py-2">
+                    {visibleTree.length > 0 ? (
+                        <DirectoryTreeContent
+                            tree={visibleTree}
+                            selected={new Set(draft)}
+                            onToggleFile={toggleFile}
+                            expandAll={query.trim().length > 0}
+                        />
+                    ) : (
+                        <div className="px-2 py-6 text-note text-muted-foreground">没有匹配的文件。</div>
+                    )}
                 </div>
             </div>
-        </>
+
+            <div className="flex min-h-0 flex-col px-4 py-4">
+                <p className="text-subheading text-foreground">选中文件</p>
+                <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-background px-3 py-3">
+                    {draft.length > 0 ? (
+                        <div className="space-y-1.5">
+                            {draft.map(file => (
+                                <div key={file} className="flex items-start justify-between gap-2 rounded-lg bg-muted/35 px-2.5 py-2">
+                                    <span className="break-all text-note text-foreground/90">{file}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleFile(file, false)}
+                                        className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                                        aria-label={`移除 ${file}`}
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-note text-muted-foreground">尚未选择任何文件。</p>
+                    )}
+                </div>
+            </div>
+        </EditDialogShell>
     );
 }
 
@@ -640,10 +594,9 @@ function TreeNodeRow({
                     ignored ? (
                         <span className="inline-block size-4 shrink-0" />
                     ) : (
-                        <input
-                            type="checkbox"
+                        <Checkbox
                             checked={checked}
-                            onChange={event => onToggleFile(node.path, event.target.checked)}
+                            onCheckedChange={nextChecked => onToggleFile(node.path, nextChecked === true)}
                             className="shrink-0"
                         />
                     )

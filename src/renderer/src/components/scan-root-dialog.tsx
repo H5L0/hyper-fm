@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Minus, Plus, X, FolderEdit, FolderRoot } from 'lucide-react';
+import { Minus, Plus, FolderEdit, FolderRoot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import { useAppActions } from '../store/app-store.js';
 
 export function DepthStepper({
@@ -98,51 +99,14 @@ export function AddScanRootDialog({
     };
 
     return (
-        <>
-            <button
-                type="button"
-                aria-label="关闭添加扫描目录对话框"
-                onClick={onClose}
-                className="fixed inset-0 z-40 cursor-default bg-black/30 backdrop-blur-[1px]"
-            />
-            <div
-                role="dialog"
-                aria-modal="true"
-                className="fixed top-1/2 left-1/2 z-50 w-[520px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-border bg-card shadow-xl"
-            >
-                <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                    <div>
-                        <h2 className="text-heading">{editing ? '扫描目录设置' : '添加扫描目录'}</h2>
-                    </div>
-                    <Button size="icon-xs" variant="ghost" onClick={onClose}>
-                        <X className="size-3.5" />
-                    </Button>
-                </div>
-
-                <div className="space-y-5 px-4 py-4">
-                    <DialogField
-                        label="已选择目录"
-                        description="此目录将作为扫描起点保存到配置中。"
-                    >
-                        <div className="flex min-h-9 items-center gap-2 rounded-lg border border-border bg-background pr-1.5 pl-3 text-note text-foreground">
-                            <FolderRoot className="size-4 shrink-0 text-muted-foreground" />
-                            <span className="min-w-0 flex-1 break-all py-2">{selectedPath}</span>
-                            <Button size="icon-xs" variant="ghost" onClick={() => void repickDirectory()} title="重新选择目录">
-                                <FolderEdit className="size-3.5" />
-                            </Button>
-                        </div>
-                    </DialogField>
-
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                            <p className="text-subheading text-foreground">扫描深度</p>
-                            <p className="mt-1 text-note text-muted-foreground">根目录记为 1；层级越深，扫描范围越大。</p>
-                        </div>
-                        <DepthStepper value={maxDepth} onChange={setMaxDepth} />
-                    </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 border-t border-border bg-card/90 px-4 py-3">
+        <EditDialogShell
+            title={editing ? '扫描目录设置' : '添加扫描目录'}
+            note="目录会作为扫描起点保存到配置中，后续也可以随时回来修改。"
+            onClose={onClose}
+            panelClassName="w-[min(520px,calc(100vw-2rem))]"
+            bodyClassName="space-y-5"
+            footerEnd={(
+                <>
                     <Button size="sm" variant="outline" onClick={onClose}>
                         取消
                     </Button>
@@ -152,28 +116,22 @@ export function AddScanRootDialog({
                     <Button size="sm" disabled={busy} onClick={() => void submit(true)}>
                         {editing ? '保存并扫描' : '添加并扫描'}
                     </Button>
+                </>
+            )}
+        >
+            <EditDialogField label="已选择目录" note="此目录将作为扫描起点保存到配置中。">
+                <div className="flex min-h-9 items-center gap-2 rounded-lg border border-border bg-background pr-1.5 pl-3 text-note text-foreground">
+                    <FolderRoot className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 break-all py-2">{selectedPath}</span>
+                    <Button size="icon-xs" variant="ghost" onClick={() => void repickDirectory()} title="重新选择目录">
+                        <FolderEdit className="size-3.5" />
+                    </Button>
                 </div>
-            </div>
-        </>
-    );
-}
+            </EditDialogField>
 
-function DialogField({
-    label,
-    description,
-    children,
-}: {
-    label: string;
-    description: string;
-    children: React.ReactNode;
-}) {
-    return (
-        <div className="space-y-2.5">
-            <div>
-                <p className="text-subheading text-foreground">{label}</p>
-                <p className="mt-1 text-note text-muted-foreground">{description}</p>
-            </div>
-            {children}
-        </div>
+            <EditDialogField label="扫描深度" note="根目录记为 1；层级越深，扫描范围越大。">
+                <DepthStepper value={maxDepth} onChange={setMaxDepth} />
+            </EditDialogField>
+        </EditDialogShell>
     );
 }

@@ -29,7 +29,7 @@ export function IgnoreRulesEditor({
     }, [value]);
 
     return (
-        <div className={cn('rounded-xl border border-border bg-background', className)}>
+        <div className={cn('rounded-lg border border-border bg-background', className)}>
             <div className="relative min-h-[2rem] overflow-hidden rounded-[inherit]">
                 <pre
                     ref={highlightRef}

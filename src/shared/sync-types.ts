@@ -4,6 +4,8 @@
 // 详细设计见 docs/06-sync-design.md 与 docs/07-m3-features.md
 // ---------------------------------------------------------------------------
 
+import { generateId, ID_PREFIX } from './id.js';
+
 export const SYNC_SCHEMA = 'fm.sync/v1';
 export const SYNC_BUNDLE_FILENAME = 'manifest.json';
 export const SYNC_INDEX_FILENAME = 'index.json';
@@ -37,19 +39,106 @@ export interface DeviceRegistry {
 // 同步设置
 // ---------------------------------------------------------------------------
 
+export type SyncConfigScope = 'shared' | 'local';
+
+export type SyncConfigType = 'folder' | 'shared-dir' | 'zip' | 'p2p';
+
+export type SyncMode = 'two-way' | 'mirror-local-to-target' | 'mirror-target-to-local';
+
+export interface SyncTargeting {
+  /** 显式包含的项目 ID；为空表示不限项目 */
+  projectIds: string[];
+  /** 显式包含的扫描根 ID；为空表示不限扫描根 */
+  rootIds: string[];
+  /** 显式忽略的项目 ID；优先级高于 projectIds/rootIds */
+  ignoredProjectIds: string[];
+  /** 显式忽略的扫描根 ID；优先级高于 rootIds */
+  ignoredRootIds: string[];
+}
+
+export interface FolderSyncSettings {
+  /** 目标根目录；每个项目会映射到该目录下 */
+  targetDir?: string;
+  /** 手动同步前是否先展示对比视图 */
+  compareBeforeSync: boolean;
+  /** 是否启用自动同步 */
+  autoSync: boolean;
+  /** 自动同步间隔（分钟） */
+  intervalMinutes?: number;
+}
+
+export interface SharedDirSyncSettings {
+  /** 共享目录路径（OneDrive / Dropbox / 中转设备挂载点）；为空表示未配置 */
+  bundleDir?: string;
+}
+
+export interface ZipSyncSettings {
+  /** 最近一次导出的 zip 目标文件，可选，仅用于回填 UI */
+  exportFile?: string;
+}
+
 export interface SyncNetworkSettings {
   /** TCP 监听端口 */
   listenPort: number;
   /** 启动时自动开启监听 */
   autoStart: boolean;
-  /** 中转模式：自动把收到的推送写入 bundleDir，并允许其他设备拉取 */
+  /** 中转模式：自动把收到的推送写入共享目录，并允许其他设备拉取 */
   relayMode: boolean;
+  /** 具有仲裁权限的设备 ID（规划中） */
+  ownerDeviceId?: string;
+  /** 仲裁/访问密钥（规划中） */
+  accessKey?: string;
 }
 
-export interface SyncSettings {
-  /** 共享目录路径（OneDrive / Dropbox / 中转设备挂载点）；为空表示未配置 */
+export interface SyncConfigBase {
+  id: string;
+  name: string;
+  scope: SyncConfigScope;
+  type: SyncConfigType;
+  mode: SyncMode;
+  targets: SyncTargeting;
+}
+
+export interface FolderSyncConfig extends SyncConfigBase {
+  type: 'folder';
+  folder: FolderSyncSettings;
+}
+
+export interface SharedDirSyncConfig extends SyncConfigBase {
+  type: 'shared-dir';
+  sharedDir: SharedDirSyncSettings;
+}
+
+export interface ZipSyncConfig extends SyncConfigBase {
+  type: 'zip';
+  zip: ZipSyncSettings;
+}
+
+export interface P2PSyncConfig extends SyncConfigBase {
+  type: 'p2p';
+  network: SyncNetworkSettings;
+}
+
+export type SyncConfig =
+  | FolderSyncConfig
+  | SharedDirSyncConfig
+  | ZipSyncConfig
+  | P2PSyncConfig;
+
+export interface LegacySyncSettings {
+  /** 旧版共享目录路径 */
   bundleDir?: string;
+  /** 旧版网络监听配置 */
   network?: SyncNetworkSettings;
+}
+
+export function createDefaultSyncTargeting(): SyncTargeting {
+  return {
+    projectIds: [],
+    rootIds: [],
+    ignoredProjectIds: [],
+    ignoredRootIds: [],
+  };
 }
 
 export function createDefaultSyncNetwork(): SyncNetworkSettings {
@@ -60,10 +149,72 @@ export function createDefaultSyncNetwork(): SyncNetworkSettings {
   };
 }
 
-export function createDefaultSyncSettings(): SyncSettings {
+export function createDefaultFolderSyncSettings(): FolderSyncSettings {
   return {
-    network: createDefaultSyncNetwork(),
+    compareBeforeSync: true,
+    autoSync: false,
   };
+}
+
+export function createDefaultSharedDirSyncSettings(): SharedDirSyncSettings {
+  return {};
+}
+
+export function createDefaultZipSyncSettings(): ZipSyncSettings {
+  return {};
+}
+
+export function createDefaultSyncConfig<TType extends SyncConfigType>(
+  type: TType,
+  scope: SyncConfigScope = 'local',
+): Extract<SyncConfig, { type: TType }> {
+  const base: SyncConfigBase = {
+    id: generateId(ID_PREFIX.syncConfig),
+    name: defaultSyncConfigName(type),
+    scope,
+    type,
+    mode: type === 'zip' ? 'mirror-local-to-target' : 'two-way',
+    targets: createDefaultSyncTargeting(),
+  };
+
+  switch (type) {
+    case 'folder':
+      return { ...base, type, folder: createDefaultFolderSyncSettings() } as Extract<SyncConfig, { type: TType }>;
+    case 'shared-dir':
+      return { ...base, type, sharedDir: createDefaultSharedDirSyncSettings() } as Extract<SyncConfig, { type: TType }>;
+    case 'zip':
+      return { ...base, type, zip: createDefaultZipSyncSettings() } as Extract<SyncConfig, { type: TType }>;
+    case 'p2p':
+      return { ...base, type, network: createDefaultSyncNetwork() } as Extract<SyncConfig, { type: TType }>;
+  }
+}
+
+export function defaultSyncConfigName(type: SyncConfigType): string {
+  switch (type) {
+    case 'folder':
+      return '文件夹同步';
+    case 'shared-dir':
+      return '共享目录同步';
+    case 'zip':
+      return 'ZIP 备份';
+    case 'p2p':
+      return 'P2P 同步';
+  }
+}
+
+export function getSyncConfigTypeLabel(type: SyncConfigType): string {
+  return defaultSyncConfigName(type);
+}
+
+export function getSyncModeLabel(mode: SyncMode): string {
+  switch (mode) {
+    case 'two-way':
+      return '双向同步';
+    case 'mirror-local-to-target':
+      return '镜像本地到目标';
+    case 'mirror-target-to-local':
+      return '镜像目标到本地';
+  }
 }
 
 // ---------------------------------------------------------------------------
