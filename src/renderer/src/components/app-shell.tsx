@@ -4,11 +4,11 @@
 
 import { useEffect } from 'react';
 import { Sidebar } from './sidebar.js';
+import { ScanSettingsPanel, SettingsPanel, SyncSettingsPanel } from './settings-panel.js';
 import { TitleBar } from './title-bar.js';
 import { Toolbar } from './toolbar.js';
 import { ProjectGrid } from './project-grid.js';
 import { ProjectDrawer } from './project-drawer.js';
-import { SettingsPanel } from './settings-panel.js';
 import { Toaster } from './toaster.js';
 import { ThemeEffect } from './theme-effect.js';
 import { WarningsPanel } from './warnings-panel.js';
@@ -49,6 +49,10 @@ export function AppShell() {
             </div>
           ) : route === 'warnings' ? (
             <WarningsPanel />
+          ) : route === 'scan-settings' ? (
+            <ScanSettingsPanel />
+          ) : route === 'sync-settings' ? (
+            <SyncSettingsPanel />
           ) : route === 'settings' ? (
             <SettingsPanel />
           ) : (

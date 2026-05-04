@@ -30,7 +30,7 @@ import type {
 
 export type TagFilter = 'ALL' | { tag: string };
 export type View = 'grid' | 'list';
-export type Route = 'browse' | 'settings' | 'warnings';
+export type Route = 'browse' | 'scan-settings' | 'sync-settings' | 'settings' | 'warnings';
 
 export interface ToastMessage {
   id: string;

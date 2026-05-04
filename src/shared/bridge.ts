@@ -208,7 +208,11 @@ export interface FmSyncBridge {
   pushSharedDir(configId: string, projectIds?: string[]): Promise<{ pushed: string[] }>;
   pullSharedDir(configId: string, items: SyncPullItem[]): Promise<SyncPullResult[]>;
   previewSharedDirSync(configId: string, projectIds?: string[]): Promise<SyncPlanPreview>;
-  openSharedDirSyncPreview(configId: string, projectIds?: string[]): Promise<SyncPlanPreviewSession>;
+  openSharedDirSyncPreview(
+    configId: string,
+    projectIds?: string[],
+    configOverride?: Extract<SyncConfig, { type: 'shared-dir' }>,
+  ): Promise<SyncPlanPreviewSession>;
   onSyncPreviewEvent(handler: (event: SyncPlanPreviewEvent) => void): () => void;
   getSyncPreviewRows(
     sessionId: string,
@@ -222,10 +226,24 @@ export interface FmSyncBridge {
 
   /** 文件夹同步：预览 / 执行 */
   previewFolderSync(configId: string, projectIds?: string[]): Promise<SyncPlanPreview>;
-  openFolderSyncPreview(configId: string, projectIds?: string[]): Promise<SyncPlanPreviewSession>;
+  openFolderSyncPreview(
+    configId: string,
+    projectIds?: string[],
+    configOverride?: Extract<SyncConfig, { type: 'folder' }>,
+  ): Promise<SyncPlanPreviewSession>;
   applyFolderSync(configId: string, projectIds?: string[], request?: SyncPlanApplyRequest): Promise<SyncApplyResult>;
-  openSyncDiff(configId: string, projectId: string, relativePath: string): Promise<void>;
-  openConflictMerge(configId: string, projectId: string, relativePath: string): Promise<SyncConflictMergeDraft>;
+  openSyncDiff(
+    configId: string,
+    projectId: string,
+    relativePath: string,
+    configOverride?: Extract<SyncConfig, { type: 'folder' | 'shared-dir' }>,
+  ): Promise<void>;
+  openConflictMerge(
+    configId: string,
+    projectId: string,
+    relativePath: string,
+    configOverride?: Extract<SyncConfig, { type: 'folder' | 'shared-dir' }>,
+  ): Promise<SyncConflictMergeDraft>;
 
   /** zip 导入/导出 */
   exportZip(configId: string, projectIds: string[], outputFile: string): Promise<{ outputFile: string; projects: number }>;

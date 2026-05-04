@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { AlertTriangle, Inbox, Pencil, Plus, Settings, Tag } from 'lucide-react';
+import { AlertTriangle, FolderRoot, GitCompareArrows, Inbox, Pencil, Plus, Settings, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   useAppActions,
@@ -128,8 +128,20 @@ export function Sidebar() {
           />
         ) : null}
         <SidebarFooterItem
+          icon={<FolderRoot className="size-4" />}
+          label="扫描设置"
+          active={route === 'scan-settings'}
+          onClick={() => actions.setRoute('scan-settings')}
+        />
+        <SidebarFooterItem
+          icon={<GitCompareArrows className="size-4" />}
+          label="同步设置"
+          active={route === 'sync-settings'}
+          onClick={() => actions.setRoute('sync-settings')}
+        />
+        <SidebarFooterItem
           icon={<Settings className="size-4" />}
-          label="设置"
+          label="软件设置"
           active={route === 'settings'}
           onClick={() => actions.setRoute('settings')}
         />

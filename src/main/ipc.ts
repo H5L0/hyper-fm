@@ -846,10 +846,10 @@ function registerSyncHandlers(): void {
 
   ipcMain.handle(
     'fm:sync:openSharedDirSyncPreview',
-    wrap('fm:sync:openSharedDirSyncPreview', async (event, configId: unknown, projectIds: unknown) => {
+    wrap('fm:sync:openSharedDirSyncPreview', async (event, configId: unknown, projectIds: unknown, configOverride: unknown) => {
       assertString(configId, 'configId');
       const session = requireSession();
-      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'shared-dir');
+      const syncConfig = getPreviewableSyncConfigOfTypeOrThrow(session.config, configId, 'shared-dir', configOverride);
       const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
       return openSharedDirSyncPreviewSession(event.sender.id, session.config, syncConfig, ids);
     }),
@@ -927,10 +927,10 @@ function registerSyncHandlers(): void {
 
   ipcMain.handle(
     'fm:sync:openFolderSyncPreview',
-    wrap('fm:sync:openFolderSyncPreview', async (event, configId: unknown, projectIds: unknown) => {
+    wrap('fm:sync:openFolderSyncPreview', async (event, configId: unknown, projectIds: unknown, configOverride: unknown) => {
       assertString(configId, 'configId');
       const session = requireSession();
-      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'folder');
+      const syncConfig = getPreviewableSyncConfigOfTypeOrThrow(session.config, configId, 'folder', configOverride);
       const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
       return openFolderSyncPreviewSession(event.sender.id, session.config, syncConfig, ids);
     }),
@@ -964,24 +964,24 @@ function registerSyncHandlers(): void {
 
   ipcMain.handle(
     'fm:sync:openSyncDiff',
-    wrap('fm:sync:openSyncDiff', async (_e, configId: unknown, projectId: unknown, relativePath: unknown) => {
+    wrap('fm:sync:openSyncDiff', async (_e, configId: unknown, projectId: unknown, relativePath: unknown, configOverride: unknown) => {
       assertString(configId, 'configId');
       assertString(projectId, 'projectId');
       assertString(relativePath, 'relativePath');
       const session = requireSession();
-      const syncConfig = getPreviewableSyncConfigOrThrow(session.config, configId);
+      const syncConfig = getPreviewableSyncConfigOrThrow(session.config, configId, configOverride);
       await openSyncDiff(session.config, syncConfig, projectId, relativePath);
     }),
   );
 
   ipcMain.handle(
     'fm:sync:openConflictMerge',
-    wrap('fm:sync:openConflictMerge', async (_e, configId: unknown, projectId: unknown, relativePath: unknown) => {
+    wrap('fm:sync:openConflictMerge', async (_e, configId: unknown, projectId: unknown, relativePath: unknown, configOverride: unknown) => {
       assertString(configId, 'configId');
       assertString(projectId, 'projectId');
       assertString(relativePath, 'relativePath');
       const session = requireSession();
-      const syncConfig = getPreviewableSyncConfigOrThrow(session.config, configId);
+      const syncConfig = getPreviewableSyncConfigOrThrow(session.config, configId, configOverride);
       return openConflictMerge(session.config, syncConfig, projectId, relativePath);
     }),
   );
@@ -1227,15 +1227,63 @@ function resolveConfigProjectIds(
   return requested.filter(id => allowed.has(id));
 }
 
+type PreviewKind = 'folder' | 'shared-dir';
+type PreviewableSyncConfig = Extract<SyncConfig, { type: PreviewKind }>;
+
+function isSyncConfigInput(value: unknown): value is SyncConfig {
+  return Boolean(value)
+    && typeof value === 'object'
+    && typeof (value as { id?: unknown }).id === 'string'
+    && typeof (value as { type?: unknown }).type === 'string';
+}
+
+function getPreviewableSyncConfigOverride(configId: string, configOverride: unknown): PreviewableSyncConfig | undefined {
+  if (configOverride === undefined || configOverride === null) {
+    return undefined;
+  }
+  if (!isSyncConfigInput(configOverride)) {
+    throw new FmError('CONFIG_INVALID', '同步配置草稿格式不正确');
+  }
+
+  const normalized = normalizeSyncConfig(configOverride);
+  if (normalized.id !== configId) {
+    throw new FmError('CONFIG_INVALID', '同步配置草稿与当前配置不匹配');
+  }
+  if (normalized.type !== 'folder' && normalized.type !== 'shared-dir') {
+    throw new FmError('CONFIG_INVALID', `${normalized.name} 不支持目录级对比`);
+  }
+  return normalized;
+}
+
 function getPreviewableSyncConfigOrThrow(
   config: AppConfig,
   configId: string,
-): Extract<SyncConfig, { type: 'folder' | 'shared-dir' }> {
+  configOverride?: unknown,
+): PreviewableSyncConfig {
+  getSyncConfigOrThrow(config, configId);
+  const override = getPreviewableSyncConfigOverride(configId, configOverride);
+  if (override) {
+    return override;
+  }
+
   const syncConfig = getSyncConfigOrThrow(config, configId);
   if (syncConfig.type !== 'folder' && syncConfig.type !== 'shared-dir') {
     throw new FmError('CONFIG_INVALID', `${syncConfig.name} 不支持目录级对比`);
   }
   return syncConfig;
+}
+
+function getPreviewableSyncConfigOfTypeOrThrow<TType extends PreviewKind>(
+  config: AppConfig,
+  configId: string,
+  type: TType,
+  configOverride?: unknown,
+): Extract<SyncConfig, { type: TType }> {
+  const syncConfig = getPreviewableSyncConfigOrThrow(config, configId, configOverride);
+  if (syncConfig.type !== type) {
+    throw new FmError('CONFIG_INVALID', `${syncConfig.name} 不是 ${getSyncConfigTypeLabel(type)} 配置`);
+  }
+  return syncConfig as Extract<SyncConfig, { type: TType }>;
 }
 
 function isSyncPlanApplyRequest(value: unknown): value is SyncPlanApplyRequest {

@@ -7,7 +7,7 @@ import { SYNC_SCHEMA, createDefaultSyncConfig, type SyncFileEntry, type SyncProj
 import type { Project, ProjectSyncState } from '../../shared/types.js';
 import { normalizePath } from '../../shared/path-utils.js';
 import { publishToBundleDir, readBundleIndex, readProjectZip } from './dir-bundle.js';
-import { applySharedDirSync, buildProjectSyncPlan, previewSharedDirSync } from './file-sync.js';
+import { applySharedDirSync, buildProjectSyncPlan, previewFolderSync, previewSharedDirSync } from './file-sync.js';
 import { buildProjectSnapshot } from './snapshot.js';
 import { packProjectZip, unpackProjectZip } from './zip-bundle.js';
 
@@ -58,11 +58,10 @@ async function writeProjectFiles(rootPath: string, files: Record<string, string>
     }));
 }
 
-function createProject(projectPath: string): Project {
+function createProject(projectPath: string, overrides: Partial<Project> = {}): Project {
     return {
         projectId: 'pj-demo',
         id: 'pj-demo',
-        path: projectPath,
         rootId: '__manual__',
         hasMetaFile: false,
         lastScannedAt: '2026-01-01T00:00:00Z',
@@ -76,6 +75,8 @@ function createProject(projectPath: string): Project {
         tags: [],
         ignore: [],
         fingerprint: { kind: 'metadata' },
+        ...overrides,
+        path: normalizePath(overrides.path ?? projectPath),
     };
 }
 
@@ -183,6 +184,108 @@ describe('file-sync', () => {
             kind: 'delete',
             direction: 'to-target',
         });
+    });
+
+    test('[previewFolderSync] 目标目录无重名时应直接使用原文件夹名', async () => {
+        const tempRoot = await createTempDir();
+        const localProjectDir = path.join(tempRoot, 'workspace/demo');
+        const targetDir = normalizePath(path.join(tempRoot, 'target'));
+
+        await fs.mkdir(localProjectDir, { recursive: true });
+        await fs.mkdir(targetDir, { recursive: true });
+        await writeProjectFiles(localProjectDir, { 'README.md': 'from local' });
+
+        const syncConfig = createDefaultSyncConfig('folder', 'local');
+        syncConfig.id = 'sync-folder';
+        syncConfig.name = '文件夹同步';
+        syncConfig.folder.targetDir = targetDir;
+
+        const config = createDefaultConfig();
+        config.projects = [createProject(localProjectDir, { id: 'pj-abc123', projectId: 'pj-abc123', name: '演示项目' })];
+
+        const preview = await previewFolderSync(config, syncConfig, ['pj-abc123']);
+        expect(preview.projects[0]?.targetPath).toBe(`${targetDir}/demo`);
+    });
+
+    test('[previewFolderSync] 目标目录存在同名文件夹时应切换到冲突父目录', async () => {
+        const tempRoot = await createTempDir();
+        const localProjectDir = path.join(tempRoot, 'workspace/demo');
+        const targetDir = normalizePath(path.join(tempRoot, 'target'));
+
+        await fs.mkdir(path.join(targetDir, 'demo'), { recursive: true });
+        await fs.mkdir(localProjectDir, { recursive: true });
+        await writeProjectFiles(localProjectDir, { 'README.md': 'from local' });
+
+        const syncConfig = createDefaultSyncConfig('folder', 'local');
+        syncConfig.id = 'sync-folder';
+        syncConfig.name = '文件夹同步';
+        syncConfig.folder.targetDir = targetDir;
+
+        const config = createDefaultConfig();
+        config.projects = [createProject(localProjectDir, { id: 'pj-abc123', projectId: 'pj-abc123', name: '演示项目' })];
+
+        const preview = await previewFolderSync(config, syncConfig, ['pj-abc123']);
+        expect(preview.projects[0]?.targetPath).toBe(`${targetDir}/[pj-abc123]演示项目/demo`);
+    });
+
+    test('[previewFolderSync] 多个同名项目时后续项目应自动避让', async () => {
+        const tempRoot = await createTempDir();
+        const firstProjectDir = path.join(tempRoot, 'workspace/a/demo');
+        const secondProjectDir = path.join(tempRoot, 'workspace/b/demo');
+        const targetDir = normalizePath(path.join(tempRoot, 'target'));
+
+        await fs.mkdir(firstProjectDir, { recursive: true });
+        await fs.mkdir(secondProjectDir, { recursive: true });
+        await fs.mkdir(targetDir, { recursive: true });
+        await writeProjectFiles(firstProjectDir, { 'a.txt': 'A' });
+        await writeProjectFiles(secondProjectDir, { 'b.txt': 'B' });
+
+        const syncConfig = createDefaultSyncConfig('folder', 'local');
+        syncConfig.id = 'sync-folder';
+        syncConfig.name = '文件夹同步';
+        syncConfig.folder.targetDir = targetDir;
+
+        const config = createDefaultConfig();
+        config.projects = [
+            createProject(firstProjectDir, { id: 'pj-first1', projectId: 'pj-first1', name: '第一个项目' }),
+            createProject(secondProjectDir, { id: 'pj-second', projectId: 'pj-second', name: '第二个项目' }),
+        ];
+
+        const preview = await previewFolderSync(config, syncConfig, ['pj-first1', 'pj-second']);
+        expect(preview.projects[0]?.targetPath).toBe(`${targetDir}/demo`);
+        expect(preview.projects[1]?.targetPath).toBe(`${targetDir}/[pj-second]第二个项目/demo`);
+    });
+
+    test('[previewFolderSync] 已记录的新规则目标路径应保持稳定', async () => {
+        const tempRoot = await createTempDir();
+        const localProjectDir = path.join(tempRoot, 'workspace/demo');
+        const targetDir = normalizePath(path.join(tempRoot, 'target'));
+
+        await fs.mkdir(localProjectDir, { recursive: true });
+        await fs.mkdir(targetDir, { recursive: true });
+        await writeProjectFiles(localProjectDir, { 'README.md': 'from local' });
+
+        const syncConfig = createDefaultSyncConfig('folder', 'local');
+        syncConfig.id = 'sync-folder';
+        syncConfig.name = '文件夹同步';
+        syncConfig.folder.targetDir = targetDir;
+
+        const config = createDefaultConfig();
+        config.projects = [createProject(localProjectDir, {
+            id: 'pj-abc123',
+            projectId: 'pj-abc123',
+            name: '演示项目',
+            syncStates: [{
+                configId: syncConfig.id,
+                lastSyncedAt: '2026-01-01T00:00:00.000Z',
+                baselineHash: 'hash-demo',
+                baselineFiles: [],
+                targetPath: `${targetDir}/[pj-abc123]演示项目/demo`,
+            }],
+        })];
+
+        const preview = await previewFolderSync(config, syncConfig, ['pj-abc123']);
+        expect(preview.projects[0]?.targetPath).toBe(`${targetDir}/[pj-abc123]演示项目/demo`);
     });
 
     test('[previewSharedDirSync] 共享目录已有最新项目时应生成拉取到本地的计划', async () => {

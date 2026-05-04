@@ -126,8 +126,8 @@ const fmApi: FmBridge = {
       ipcRenderer.invoke('fm:sync:pullSharedDir', configId, items as SyncPullItem[]) as Promise<SyncPullResult[]>,
     previewSharedDirSync: (configId, projectIds) =>
       ipcRenderer.invoke('fm:sync:previewSharedDirSync', configId, projectIds) as Promise<SyncPlanPreview>,
-    openSharedDirSyncPreview: (configId, projectIds) =>
-      ipcRenderer.invoke('fm:sync:openSharedDirSyncPreview', configId, projectIds) as Promise<SyncPlanPreviewSession>,
+    openSharedDirSyncPreview: (configId, projectIds, configOverride) =>
+      ipcRenderer.invoke('fm:sync:openSharedDirSyncPreview', configId, projectIds, configOverride) as Promise<SyncPlanPreviewSession>,
     onSyncPreviewEvent: handler => {
       const listener = (_event: IpcRendererEvent, data: SyncPlanPreviewEvent) => handler(data);
       ipcRenderer.on('fm:sync:preview-event', listener);
@@ -150,14 +150,14 @@ const fmApi: FmBridge = {
       ipcRenderer.invoke('fm:sync:applySharedDirSync', configId, projectIds, request as SyncPlanApplyRequest | undefined) as Promise<SyncApplyResult>,
     previewFolderSync: (configId, projectIds) =>
       ipcRenderer.invoke('fm:sync:previewFolderSync', configId, projectIds) as Promise<SyncPlanPreview>,
-    openFolderSyncPreview: (configId, projectIds) =>
-      ipcRenderer.invoke('fm:sync:openFolderSyncPreview', configId, projectIds) as Promise<SyncPlanPreviewSession>,
+    openFolderSyncPreview: (configId, projectIds, configOverride) =>
+      ipcRenderer.invoke('fm:sync:openFolderSyncPreview', configId, projectIds, configOverride) as Promise<SyncPlanPreviewSession>,
     applyFolderSync: (configId, projectIds, request) =>
       ipcRenderer.invoke('fm:sync:applyFolderSync', configId, projectIds, request as SyncPlanApplyRequest | undefined) as Promise<SyncApplyResult>,
-    openSyncDiff: (configId, projectId, relativePath) =>
-      ipcRenderer.invoke('fm:sync:openSyncDiff', configId, projectId, relativePath) as Promise<void>,
-    openConflictMerge: (configId, projectId, relativePath) =>
-      ipcRenderer.invoke('fm:sync:openConflictMerge', configId, projectId, relativePath) as Promise<SyncConflictMergeDraft>,
+    openSyncDiff: (configId, projectId, relativePath, configOverride) =>
+      ipcRenderer.invoke('fm:sync:openSyncDiff', configId, projectId, relativePath, configOverride) as Promise<void>,
+    openConflictMerge: (configId, projectId, relativePath, configOverride) =>
+      ipcRenderer.invoke('fm:sync:openConflictMerge', configId, projectId, relativePath, configOverride) as Promise<SyncConflictMergeDraft>,
     exportZip: (configId, projectIds, outputFile) =>
       ipcRenderer.invoke('fm:sync:exportZip', configId, projectIds, outputFile) as Promise<{
         outputFile: string;

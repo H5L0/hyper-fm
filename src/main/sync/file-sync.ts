@@ -35,7 +35,8 @@ import { ensureDeviceRegistry } from './device.js';
 import { packProjectZip, unpackBundle, unpackProjectZip } from './zip-bundle.js';
 import { FmError } from '../fm-error.js';
 import { readMetaFile } from '../meta-file.js';
-import { normalizePath } from '../../shared/path-utils.js';
+import { basename, normalizePath } from '../../shared/path-utils.js';
+import { resolveSyncProjectIds } from '../../shared/sync-config.js';
 import { MANUAL_ROOT_ID } from '../project-repo.js';
 
 // ---------------------------------------------------------------------------
@@ -534,6 +535,128 @@ function buildPendingSharedDirTargetPath(
     return normalizePath(deviceProjectZipPath(bundleDir, deviceId, buildProjectSlug(project.id, project.path)));
 }
 
+function normalizeFolderTargetNameKey(value: string): string {
+    return process.platform === 'win32' ? value.toLowerCase() : value;
+}
+
+function getProjectFolderName(project: Pick<Project, 'path'>): string {
+    return basename(project.path) || 'project';
+}
+
+function sanitizeFolderTargetSegment(value: string, fallback: string): string {
+    const sanitized = value
+        .trim()
+        .replace(/[<>:"/\\|?*\u0000-\u001F]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/[. ]+$/g, '')
+        .trim();
+    return sanitized || fallback;
+}
+
+function buildFolderConflictParentName(project: Pick<Project, 'id' | 'name' | 'path'>): string {
+    return `[${project.id}]${sanitizeFolderTargetSegment(project.name, getProjectFolderName(project))}`;
+}
+
+function isPathWithinDirectory(rootPath: string, candidatePath: string): boolean {
+    const normalizedRoot = normalizePath(rootPath);
+    const normalizedCandidate = normalizePath(candidatePath);
+    return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}/`);
+}
+
+function getStoredFolderTargetPath(
+    syncConfig: Extract<SyncConfig, { type: 'folder' }>,
+    project: Pick<Project, 'id' | 'name' | 'path'>,
+    baselineState?: ProjectSyncState,
+): string | undefined {
+    if (!syncConfig.folder.targetDir || !baselineState?.targetPath) {
+        return undefined;
+    }
+
+    const targetDir = normalizePath(syncConfig.folder.targetDir);
+    const targetPath = normalizePath(baselineState.targetPath);
+    if (!isPathWithinDirectory(targetDir, targetPath)) {
+        return undefined;
+    }
+
+    const folderName = getProjectFolderName(project);
+    if (normalizeFolderTargetNameKey(basename(targetPath)) !== normalizeFolderTargetNameKey(folderName)) {
+        return undefined;
+    }
+
+    const directTargetPath = normalizePath(path.resolve(syncConfig.folder.targetDir, folderName));
+    if (targetPath === directTargetPath) {
+        return targetPath;
+    }
+
+    const parentName = basename(path.dirname(targetPath));
+    return parentName.startsWith(`[${project.id}]`) ? targetPath : undefined;
+}
+
+async function readFolderTargetRootNames(targetDir: string): Promise<Set<string>> {
+    try {
+        const entries = await fs.readdir(targetDir, { withFileTypes: true });
+        return new Set(entries.map(entry => normalizeFolderTargetNameKey(entry.name)));
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') {
+            return new Set();
+        }
+        throw error;
+    }
+}
+
+function buildFolderCollisionTargetPath(
+    syncConfig: Extract<SyncConfig, { type: 'folder' }>,
+    project: Pick<Project, 'id' | 'name' | 'path'>,
+): string {
+    return normalizePath(path.resolve(
+        syncConfig.folder.targetDir!,
+        buildFolderConflictParentName(project),
+        getProjectFolderName(project),
+    ));
+}
+
+async function buildFolderTargetPathMap(
+    config: AppConfig,
+    syncConfig: Extract<SyncConfig, { type: 'folder' }>,
+    projectIds?: string[],
+): Promise<Map<string, string>> {
+    if (!syncConfig.folder.targetDir) {
+        throw new FmError('CONFIG_INVALID', `${syncConfig.name} 未配置目标目录`);
+    }
+
+    const allowedProjectIds = new Set(projectIds ?? config.projects.map(project => project.id));
+    const projects = config.projects.filter(project => allowedProjectIds.has(project.id));
+    const existingRootNames = await readFolderTargetRootNames(syncConfig.folder.targetDir);
+    const reservedSimpleNames = new Set<string>();
+    const targetPaths = new Map<string, string>();
+    const normalizedTargetDir = normalizePath(syncConfig.folder.targetDir);
+
+    for (const project of projects) {
+        const folderName = getProjectFolderName(project);
+        const folderKey = normalizeFolderTargetNameKey(folderName);
+        const storedTargetPath = getStoredFolderTargetPath(syncConfig, project, resolveProjectSyncState(project, syncConfig.id));
+
+        if (storedTargetPath) {
+            targetPaths.set(project.id, storedTargetPath);
+            if (normalizePath(path.dirname(storedTargetPath)) === normalizedTargetDir) {
+                reservedSimpleNames.add(folderKey);
+            }
+            continue;
+        }
+
+        if (existingRootNames.has(folderKey) || reservedSimpleNames.has(folderKey)) {
+            targetPaths.set(project.id, buildFolderCollisionTargetPath(syncConfig, project));
+            continue;
+        }
+
+        reservedSimpleNames.add(folderKey);
+        targetPaths.set(project.id, normalizePath(path.resolve(syncConfig.folder.targetDir, folderName)));
+    }
+
+    return targetPaths;
+}
+
 async function readSharedDirProjectFiles(target: SharedDirTargetSnapshot | undefined, bundleDir: string): Promise<Record<string, Uint8Array>> {
     if (!target) return {};
     const zipBytes = await readProjectZip(bundleDir, target.deviceId, target.slug);
@@ -553,7 +676,13 @@ async function loadSyncOperationContext(
             throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${projectId}`);
         }
 
-        const plan = await planFolderProject(config, syncConfig, project);
+        const targetPaths = await buildFolderTargetPathMap(config, syncConfig, resolveSyncProjectIds(syncConfig, config.projects));
+        const targetPath = targetPaths.get(projectId);
+        if (!targetPath) {
+            throw new FmError('PROJECT_NOT_FOUND', `同步目标不存在：${projectId}`);
+        }
+
+        const plan = await planFolderProject(config, syncConfig, project, targetPath);
         const operation = plan.operations.find(item => item.relativePath === relativePath);
         if (!operation) {
             throw new FmError('PROJECT_NOT_FOUND', `同步条目不存在：${relativePath}`);
@@ -564,7 +693,7 @@ async function loadSyncOperationContext(
             plan,
             operation,
             localBytes: operation.local ? await createFileSystemSide(project.path).readBytes(relativePath) : undefined,
-            targetBytes: operation.target ? await createFileSystemSide(plan.targetPath).readBytes(relativePath) : undefined,
+            targetBytes: operation.target ? await createFileSystemSide(targetPath).readBytes(relativePath) : undefined,
         };
     }
 
@@ -848,19 +977,12 @@ export function buildProjectSyncPlan({
     };
 }
 
-function buildFolderTargetPath(syncConfig: Extract<SyncConfig, { type: 'folder' }>, project: Project): string {
-    if (!syncConfig.folder.targetDir) {
-        throw new FmError('CONFIG_INVALID', `${syncConfig.name} 未配置目标目录`);
-    }
-    return normalizePath(path.resolve(syncConfig.folder.targetDir, buildProjectSlug(project.id, project.path)));
-}
-
 async function planFolderProject(
     config: AppConfig,
     syncConfig: Extract<SyncConfig, { type: 'folder' }>,
     project: Project,
+    targetPath: string,
 ): Promise<SyncProjectPlan> {
-    const targetPath = buildFolderTargetPath(syncConfig, project);
     const localEntry = await snapshotForPath(config, project, project.path);
     const targetEntry = await snapshotForPath(config, project, targetPath, {
         name: project.name,
@@ -888,7 +1010,14 @@ export async function previewFolderSync(
 ): Promise<SyncPlanPreview> {
     const allowedProjectIds = new Set(projectIds ?? config.projects.map(project => project.id));
     const projects = config.projects.filter(project => allowedProjectIds.has(project.id));
-    const plans = await Promise.all(projects.map(project => planFolderProject(config, syncConfig, project)));
+    const targetPaths = await buildFolderTargetPathMap(config, syncConfig, projects.map(project => project.id));
+    const plans = await Promise.all(projects.map(project => {
+        const targetPath = targetPaths.get(project.id);
+        if (!targetPath) {
+            throw new FmError('PROJECT_NOT_FOUND', `同步目标不存在：${project.id}`);
+        }
+        return planFolderProject(config, syncConfig, project, targetPath);
+    }));
     return {
         configId: syncConfig.id,
         configName: syncConfig.name,

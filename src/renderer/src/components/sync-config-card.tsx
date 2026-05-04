@@ -91,7 +91,6 @@ export function getSyncConfigLines(syncConfig: SyncConfig): string[] {
             break;
         case 'p2p':
             lines.push(`${getSyncModeLabel(syncConfig.mode)}：端口 ${syncConfig.network.listenPort}`);
-            lines.push(syncConfig.network.relayMode ? '中转模式' : '直连模式');
             break;
     }
     return lines;

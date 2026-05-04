@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { Copy, FileText, FolderOpen, Pencil, Terminal, Trash2 } from 'lucide-react';
+import { Copy, Ellipsis, FileText, FolderOpen, Pencil, Terminal, Trash2 } from 'lucide-react';
 import type { PresetCommandDescriptor, Project } from '@shared/bridge.js';
 import {
   type HighlightSegment,
@@ -71,6 +71,10 @@ export function ProjectGrid() {
     setMenu({ x: e.clientX, y: e.clientY, project });
   };
 
+  const openMenuAt = (x: number, y: number, project: Project) => {
+    setMenu({ x, y, project });
+  };
+
   const query: SearchQuery = useMemo(() => parseSearchQuery(search), [search]);
 
   const filtered = useMemo(() => {
@@ -92,7 +96,7 @@ export function ProjectGrid() {
     return (
       <EmptyState
         title="尚未配置扫描根"
-        hint="前往「设置」添加包含项目的目录后，点击「扫描」来发现项目，也可以从工具栏「添加项目」手动添加。"
+        hint="前往「扫描设置」添加包含项目的目录后，点击「扫描」来发现项目，也可以从工具栏「添加项目」手动添加。"
       />
     );
   }
@@ -198,6 +202,7 @@ export function ProjectGrid() {
               selected={selectedProjectId === p.id}
               onSelect={() => actions.selectProject(p.id)}
               onContextMenu={e => openMenu(e, p)}
+              onMenuOpen={(x, y) => openMenuAt(x, y, p)}
               highlightValues={explain.values}
             />
           );
@@ -214,6 +219,7 @@ function ProjectCard({
   selected,
   onSelect,
   onContextMenu,
+  onMenuOpen,
   highlightValues,
 }: {
   project: Project;
@@ -221,13 +227,21 @@ function ProjectCard({
   selected: boolean;
   onSelect: () => void;
   onContextMenu: (e: MouseEvent) => void;
+  onMenuOpen: (x: number, y: number) => void;
   highlightValues: readonly string[];
 }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
       onContextMenu={onContextMenu}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       className={cn(
         'group relative flex min-h-[9.5rem] flex-col rounded-lg border bg-card px-3.5 py-3 text-left transition-all',
         'hover:border-foreground/20 hover:shadow-sm',
@@ -240,14 +254,34 @@ function ProjectCard({
           values={highlightValues}
           className="truncate font-medium text-foreground"
         />
-        {project.hasMetaFile ? (
-          <span
-            title="使用 .meta-data"
-            className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-caption text-muted-foreground"
+        <div className="flex items-center gap-1">
+          {project.hasMetaFile ? (
+            <span
+              title="使用 .meta-data"
+              className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-caption text-muted-foreground"
+            >
+              meta
+            </span>
+          ) : null}
+          <button
+            type="button"
+            aria-label={`打开 ${project.name} 的更多操作`}
+            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+            onClick={event => {
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              onMenuOpen(rect.left, rect.bottom + 4);
+            }}
+            onContextMenu={event => {
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              onMenuOpen(rect.right, rect.bottom + 4);
+            }}
           >
-            meta
-          </span>
-        ) : null}
+            <Ellipsis className="size-4" />
+          </button>
+        </div>
       </div>
       {project.description ? (
         <p className="mt-1.5 line-clamp-2 text-muted-foreground">
@@ -283,7 +317,7 @@ function ProjectCard({
         />
         <span className="shrink-0 tabular-nums">{relativeTime(project.lastModifiedAt)}</span>
       </div>
-    </button>
+    </div>
   );
 }
 

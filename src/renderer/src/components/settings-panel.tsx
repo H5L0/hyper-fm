@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// 设置面板：配置切换、扫描根、忽略规则、主题、同步、命令
+// 设置面板：按扫描 / 同步 / 软件设置拆分
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from 'react';
@@ -14,20 +14,36 @@ import { IgnoreRulesEditor } from './ignore-rules-editor';
 import { AddScanRootDialog } from './scan-root-dialog.js';
 import { SyncConfigPanel } from './sync-config-panel.js';
 
+const APP_NAME = 'fm';
+const APP_DESCRIPTION = 'fm 是一个文件夹管理及同步软件。';
 const APP_GITHUB_URL = 'https://github.com/H5L0/electron-template';
-const APP_DESCRIPTION = '一个文件夹管理和同步软件。';
 
-export function SettingsPanel() {
-  const { config, configPaths } = useAppState();
+export function SettingSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <h2 className="text-heading text-foreground">{title}</h2>
+      {hint ? <p className="mt-1 text-note text-muted-foreground">{hint}</p> : null}
+      <div className="mt-3.5">{children}</div>
+    </section>
+  );
+}
+
+export function ScanSettingsPanel() {
+  const { config } = useAppState();
   const actions = useAppActions();
   const ignoreGlobsValue = config.ignore.globs.join('\n');
-  const configDisplayName = config.name.trim() || '未命名配置';
-  const configDescription = (config.description ?? '').trim();
   const [globsDraft, setGlobsDraft] = useState(config.ignore.globs.join('\n'));
   const [respectGitignoreDraft, setRespectGitignoreDraft] = useState(config.ignore.respectGitignore);
   const [scanRootDraftPath, setScanRootDraftPath] = useState<string | null>(null);
   const [editingScanRootId, setEditingScanRootId] = useState<string | null>(null);
-  const [metaDialogOpen, setMetaDialogOpen] = useState(false);
 
   useEffect(() => {
     setGlobsDraft(ignoreGlobsValue);
@@ -58,60 +74,9 @@ export function SettingsPanel() {
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="mx-auto max-w-2xl space-y-10">
-        <h1 className="text-display">设置</h1>
+        <h1 className="text-display">扫描设置</h1>
 
-        <Section title="配置文件" hint="当前使用的配置文件信息。">
-          <div className="rounded-2xl border border-border bg-card px-4 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-title text-foreground">{configDisplayName}</p>
-                <p className="mt-1 text-note text-muted-foreground">{configDescription || '未填写描述'}</p>
-
-                <div className="mt-4 space-y-2 text-note text-muted-foreground">
-                  <div>
-                    <span className="text-foreground">共享配置</span>
-                    <p className="mt-0.5 break-all">{configPaths.sharedPath || '未加载'}</p>
-                  </div>
-                  <div>
-                    <span className="text-foreground">本地配置</span>
-                    <p className="mt-0.5 break-all">{configPaths.localPath || '未加载'}</p>
-                  </div>
-                </div>
-              </div>
-              <Button size="icon-xs" variant="ghost" title="编辑配置元信息" onClick={() => setMetaDialogOpen(true)}>
-                <PenLine className="size-4" />
-              </Button>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="outline" onClick={() => void actions.pickAndLoadConfig()}>
-                打开…
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => void actions.pickAndCreateConfig()}>
-                新建…
-              </Button>
-            </div>
-          </div>
-        </Section>
-
-        {metaDialogOpen ? (
-          <ConfigMetaDialog
-            initialName={config.name}
-            initialDescription={config.description ?? ''}
-            onClose={() => setMetaDialogOpen(false)}
-            onSave={async (name, description) => {
-              try {
-                await actions.saveConfigMeta(name, description);
-                actions.toast('success', '已保存配置元信息');
-                setMetaDialogOpen(false);
-              } catch (error) {
-                actions.toast('error', error instanceof Error ? error.message : '保存失败');
-              }
-            }}
-          />
-        ) : null}
-
-        <Section title="扫描根目录" hint="将从以下目录查找项目。">
+        <SettingSection title="扫描根目录" hint="将从以下目录查找项目。">
           <div className="space-y-2">
             {config.scanRoots.length === 0 ? (
               <p className="text-note text-muted-foreground">尚未添加扫描根目录。</p>
@@ -143,7 +108,7 @@ export function SettingsPanel() {
               <FolderPlus className="size-4" /> 添加扫描目录
             </Button>
           </div>
-        </Section>
+        </SettingSection>
 
         {scanRootDraftPath ? (
           <AddScanRootDialog
@@ -159,7 +124,7 @@ export function SettingsPanel() {
           />
         ) : null}
 
-        <Section title="全局忽略规则" hint="扫描项目时将遵守以下忽略规则。">
+        <SettingSection title="全局忽略规则" hint="扫描项目时将遵守以下忽略规则。">
           <CheckboxField
             checked={respectGitignoreDraft}
             onCheckedChange={setRespectGitignoreDraft}
@@ -170,7 +135,7 @@ export function SettingsPanel() {
             <IgnoreRulesEditor
               value={globsDraft}
               onChange={setGlobsDraft}
-              rows={4}
+              rows={8}
               placeholder="# 全局忽略规则\nnode_modules\n.git\ndist/"
             />
           </div>
@@ -183,13 +148,36 @@ export function SettingsPanel() {
           >
             保存
           </Button>
-        </Section>
+        </SettingSection>
 
-        <SyncConfigPanel />
+      </div>
+    </div>
+  );
+}
 
-        <CommandsSection />
+export function SyncSettingsPanel() {
+  return (
+    <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="mx-auto max-w-2xl">
+        <h1 className="text-display">同步设置</h1>
+        <div className="mt-10">
+          <SyncConfigPanel />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        <Section title="主题">
+export function SettingsPanel() {
+  const { config } = useAppState();
+  const actions = useAppActions();
+
+  return (
+    <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="mx-auto max-w-2xl space-y-10">
+        <h1 className="text-display">软件设置</h1>
+
+        <SettingSection title="主题">
           <SegmentedToggleGroup
             ariaLabel="选择主题模式"
             value={config.ui.theme}
@@ -201,11 +189,13 @@ export function SettingsPanel() {
             ]}
             optionMinWidth={112}
           />
-        </Section>
+        </SettingSection>
 
-        <Section title="关于">
+        <CommandsSection />
+
+        <SettingSection title="关于">
           <div className="rounded-2xl border border-border bg-card px-4 py-4">
-            <p className="text-title text-foreground">fm</p>
+            <p className="text-title text-foreground">{APP_NAME}</p>
             <p className="text-note leading-6 text-muted-foreground">{APP_DESCRIPTION}</p>
             <a
               href={APP_GITHUB_URL}
@@ -217,27 +207,9 @@ export function SettingsPanel() {
               <ExternalLink className="size-3.5 shrink-0" />
             </a>
           </div>
-        </Section>
+        </SettingSection>
       </div>
     </div>
-  );
-}
-
-function Section({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h2 className="text-heading text-foreground">{title}</h2>
-      {hint ? <p className="mt-1 text-note text-muted-foreground">{hint}</p> : null}
-      <div className="mt-3.5">{children}</div>
-    </section>
   );
 }
 
@@ -316,7 +288,7 @@ function CommandsSection() {
   };
 
   return (
-    <Section title="命令" hint="可对项目运行的自定义命令。">
+    <SettingSection title="命令" hint="可对项目运行的自定义命令。">
       <div className="space-y-2">
         {list.length === 0 ? (
           <p className="text-note text-muted-foreground">尚未配置自定义命令。</p>
@@ -369,72 +341,7 @@ function CommandsSection() {
           busy={busy}
         />
       ) : null}
-    </Section>
-  );
-}
-
-function ConfigMetaDialog({
-  initialName,
-  initialDescription,
-  onClose,
-  onSave,
-}: {
-  initialName: string;
-  initialDescription: string;
-  onClose: () => void;
-  onSave: (name: string, description: string) => Promise<void>;
-}) {
-  const [name, setName] = useState(initialName);
-  const [description, setDescription] = useState(initialDescription);
-  const [busy, setBusy] = useState(false);
-
-  return (
-    <EditDialogShell
-      title="编辑配置元信息"
-      note="这里只修改当前配置的名称与描述，配置文件路径保持不变。"
-      onClose={onClose}
-      panelClassName="w-[min(520px,calc(100vw-2rem))]"
-      bodyClassName="space-y-4"
-      footerEnd={(
-        <>
-          <Button size="sm" variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button
-            size="sm"
-            disabled={busy || !name.trim()}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await onSave(name, description);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            保存
-          </Button>
-        </>
-      )}
-    >
-      <EditDialogField label="名称">
-        <input
-          value={name}
-          onChange={event => setName(event.target.value)}
-          className="h-9 w-full rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-        />
-      </EditDialogField>
-
-      <EditDialogField label="描述">
-        <textarea
-          rows={3}
-          value={description}
-          onChange={event => setDescription(event.target.value)}
-          placeholder="可选，用于标题栏悬浮信息说明"
-          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-        />
-      </EditDialogField>
-    </EditDialogShell>
+    </SettingSection>
   );
 }
 

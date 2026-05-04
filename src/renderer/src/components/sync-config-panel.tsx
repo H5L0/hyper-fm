@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Download, FolderOpen, FolderRoot, GitCompareArrows, Plus, Server, Upload } from 'lucide-react';
+import { ChevronDown, Divide, Download, FolderOpen, FolderRoot, GitCompareArrows, Plus, Server, Upload } from 'lucide-react';
 import type {
     DeviceRegistry,
     Project,
@@ -31,6 +31,7 @@ import { SyncConfigSummaryCard } from './sync-config-card.js';
 import { SyncPlanDialog } from './sync-plan-dialog.js';
 import { SyncPlanStaticDialog } from './sync-plan-static-dialog.js';
 import { useAppActions, useAppState } from '../store/app-store.js';
+import { SettingSection } from './settings-panel.js';
 
 const SCOPE_OPTIONS: SegmentedToggleOption[] = [
     {
@@ -47,10 +48,10 @@ const SCOPE_OPTIONS: SegmentedToggleOption[] = [
 
 const TYPE_OPTIONS: SegmentedToggleOption[] = [
     {
-        value: 'shared-dir',
-        label: '共享目录',
-        description: '适合共享盘同步',
-        icon: <Upload className="size-4" />,
+        value: 'folder',
+        label: '文件夹',
+        description: '适合本机或挂载目录镜像',
+        icon: <FolderOpen className="size-4" />,
     },
     {
         value: 'zip',
@@ -59,16 +60,16 @@ const TYPE_OPTIONS: SegmentedToggleOption[] = [
         icon: <Download className="size-4" />,
     },
     {
+        value: 'shared-dir',
+        label: '共享目录',
+        description: '适合共享盘同步',
+        icon: <Upload className="size-4" />,
+    },
+    {
         value: 'p2p',
         label: 'P2P',
         description: '适合局域网持续同步',
         icon: <Server className="size-4" />,
-    },
-    {
-        value: 'folder',
-        label: '文件夹',
-        description: '适合本机或挂载目录镜像',
-        icon: <FolderOpen className="size-4" />,
     },
 ];
 
@@ -92,6 +93,11 @@ const MODE_OPTIONS: SegmentedToggleOption[] = [
 
 type TargetListKey = 'projectIds' | 'ignoredProjectIds' | 'rootIds' | 'ignoredRootIds';
 type PreviewableSyncConfig = Extract<SyncConfig, { type: 'folder' }> | Extract<SyncConfig, { type: 'shared-dir' }>;
+type ActiveSyncPlanPreview = {
+    config: PreviewableSyncConfig;
+    session: SyncPlanPreviewSession;
+    persistOnApply: boolean;
+};
 
 export function SyncConfigPanel() {
     const { config } = useAppState();
@@ -102,10 +108,7 @@ export function SyncConfigPanel() {
     const [editingConfig, setEditingConfig] = useState<SyncConfig | null>(null);
     const [busyKey, setBusyKey] = useState<string | null>(null);
     const [serverRunning, setServerRunning] = useState<Record<string, boolean>>({});
-    const [syncPlanPreview, setSyncPlanPreview] = useState<{
-        config: PreviewableSyncConfig;
-        session: SyncPlanPreviewSession;
-    } | null>(null);
+    const [syncPlanPreview, setSyncPlanPreview] = useState<ActiveSyncPlanPreview | null>(null);
     const [zipImportSetup, setZipImportSetup] = useState<{
         config: Extract<SyncConfig, { type: 'zip' }>;
         file: string;
@@ -158,6 +161,7 @@ export function SyncConfigPanel() {
     }), []);
 
     const existingConfigIds = useMemo(() => new Set(syncConfigs.map(item => item.id)), [syncConfigs]);
+    const syncConfigById = useMemo(() => new Map(syncConfigs.map(item => [item.id, item])), [syncConfigs]);
     const includedProjectCounts = useMemo(
         () => Object.fromEntries(syncConfigs.map(item => [item.id, resolveSyncProjectIds(item, config.projects).length])),
         [config.projects, syncConfigs],
@@ -273,10 +277,12 @@ export function SyncConfigPanel() {
             if (syncPlanPreview) {
                 await window.fm.sync.closeSyncPreview(syncPlanPreview.session.sessionId);
             }
+            const savedConfig = syncConfigById.get(syncConfig.id);
+            const persistOnApply = !savedConfig || !areSyncConfigValuesEqual(savedConfig, syncConfig);
             const session = syncConfig.type === 'folder'
-                ? await window.fm.sync.openFolderSyncPreview(syncConfig.id)
-                : await window.fm.sync.openSharedDirSyncPreview(syncConfig.id);
-            setSyncPlanPreview({ config: syncConfig, session });
+                ? await window.fm.sync.openFolderSyncPreview(syncConfig.id, undefined, syncConfig)
+                : await window.fm.sync.openSharedDirSyncPreview(syncConfig.id, undefined, syncConfig);
+            setSyncPlanPreview({ config: syncConfig, session, persistOnApply });
         } catch (error) {
             actions.toast('error', error instanceof Error ? error.message : '预览失败');
         } finally {
@@ -284,7 +290,7 @@ export function SyncConfigPanel() {
         }
     };
 
-    const closeSyncPlanPreview = async (state: { config: PreviewableSyncConfig; session: SyncPlanPreviewSession } | null) => {
+    const closeSyncPlanPreview = async (state: ActiveSyncPlanPreview | null) => {
         if (!state) return;
         setSyncPlanPreview(current => (current?.session.sessionId === state.session.sessionId ? null : current));
         try {
@@ -295,48 +301,38 @@ export function SyncConfigPanel() {
     };
 
     return (
-        <section>
-            <h2 className="text-heading text-foreground">同步</h2>
-            <p className="mt-1 text-note text-muted-foreground">文件同步设定。</p>
-
-            <div className="mt-3.5 space-y-3">
-                <div className="space-y-2 px-1">
-                    <p className="text-subheading text-muted-foreground">本机设备</p>
-                    {device ? (
-                        <div className="flex flex-wrap items-center gap-2.5">
-                            <input
-                                value={deviceNameDraft}
-                                autoComplete="off"
-                                onChange={event => setDeviceNameDraft(event.target.value)}
-                                onBlur={async event => {
-                                    const name = event.target.value.trim();
-                                    if (!name) {
-                                        setDeviceNameDraft(device.selfName);
-                                        return;
-                                    }
-                                    if (name !== device.selfName) {
-                                        const next = await window.fm.sync.setSelfName(name);
-                                        setDevice(next);
-                                        await refreshConfig();
-                                    }
-                                }}
-                                onKeyDown={event => {
-                                    if (event.key === 'Enter') {
-                                        event.currentTarget.blur();
-                                    }
-                                }}
-                                className="h-9 min-w-[220px] flex-1 rounded-lg border border-border bg-background px-3 text-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                            />
-                            <span className="text-note text-muted-foreground">{device.selfId}</span>
-                        </div>
-                    ) : (
-                        <p className="mt-2 text-note text-muted-foreground">加载中…</p>
-                    )}
+        <div className="mx-auto max-w-2xl space-y-10">
+            <SettingSection title="本机设备">
+                <div className="flex flex-wrap items-center gap-2.5">
+                    <input
+                        disabled={!!device}
+                        value={device ? deviceNameDraft : ''}
+                        autoComplete="off"
+                        onChange={event => setDeviceNameDraft(event.target.value)}
+                        onBlur={async event => {
+                            const name = event.target.value.trim();
+                            if (!name) {
+                                setDeviceNameDraft(device!.selfName);
+                                return;
+                            }
+                            if (name !== device!.selfName) {
+                                const next = await window.fm.sync.setSelfName(name);
+                                setDevice(next);
+                                await refreshConfig();
+                            }
+                        }}
+                        onKeyDown={event => {
+                            if (event.key === 'Enter') {
+                                event.currentTarget.blur();
+                            }
+                        }}
+                        className="h-9 min-w-[220px] flex-1 rounded-lg border border-border bg-background px-3 text-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                    />
+                    <span className="text-note text-muted-foreground">{device ? device.selfId : '加载中…'}</span>
                 </div>
+            </SettingSection>
 
-                <div>
-                    <p className="text-subheading text-muted-foreground">同步配置</p>
-                </div>
+            <SettingSection title="同步配置">
                 <div className="space-y-2">
                     {syncConfigs.length === 0 ? (
                         <div className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center">
@@ -346,30 +342,54 @@ export function SyncConfigPanel() {
                             </p>
                         </div>
                     ) : (
-                        syncConfigs.map(syncConfig => (
-                            <SyncConfigSummaryCard
-                                key={syncConfig.id}
-                                syncConfig={syncConfig}
-                                includedProjectCount={includedProjectCounts[syncConfig.id] ?? 0}
-                                busy={busyKey?.includes(syncConfig.id) ?? false}
-                                onEdit={() => setEditingConfig(syncConfig)}
-                                onDelete={() => void removeSyncConfig(syncConfig)}
-                                footer={(
-                                    <SyncConfigActionButtons
-                                        syncConfig={syncConfig}
-                                        busy={busyKey?.includes(syncConfig.id) ?? false}
-                                        serverRunning={serverRunning[syncConfig.id] ?? false}
-                                        onPickDirectory={() => void pickDirectoryForConfig(syncConfig)}
-                                        onCompareAndSync={syncConfig.type === 'folder' || syncConfig.type === 'shared-dir'
-                                            ? () => void previewSyncPlan(syncConfig)
-                                            : undefined}
-                                        onExportZip={syncConfig.type === 'zip' ? () => void exportZip(syncConfig) : undefined}
-                                        onImportZip={syncConfig.type === 'zip' ? () => void importZip(syncConfig) : undefined}
-                                        onToggleServer={syncConfig.type === 'p2p' ? () => void toggleServer(syncConfig) : undefined}
-                                    />
-                                )}
-                            />
-                        ))
+                        syncConfigs.map(syncConfig => {
+                            const busy = busyKey?.includes(syncConfig.id) ?? false;
+                            const onPickDirectory = () => void pickDirectoryForConfig(syncConfig);
+                            const onCompareAndSync = syncConfig.type === 'folder' || syncConfig.type === 'shared-dir'
+                                ? () => void previewSyncPlan(syncConfig)
+                                : undefined;
+                            const onExportZip = syncConfig.type === 'zip' ? () => void exportZip(syncConfig) : undefined;
+                            const onImportZip = syncConfig.type === 'zip' ? () => void importZip(syncConfig) : undefined;
+                            const onToggleServer = syncConfig.type === 'p2p' ? () => void toggleServer(syncConfig) : undefined;
+
+                            return (
+                                <SyncConfigSummaryCard
+                                    key={syncConfig.id}
+                                    syncConfig={syncConfig}
+                                    includedProjectCount={includedProjectCounts[syncConfig.id] ?? 0}
+                                    busy={busy}
+                                    onEdit={() => setEditingConfig(syncConfig)}
+                                    onDelete={() => void removeSyncConfig(syncConfig)}
+                                    footer={syncConfig.type === 'p2p'
+                                        ? (
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <SyncConfigActionButtons
+                                                    syncConfig={syncConfig}
+                                                    busy={busy}
+                                                    serverRunning={serverRunning[syncConfig.id] ?? false}
+                                                    onPickDirectory={onPickDirectory}
+                                                    onToggleServer={onToggleServer}
+                                                />
+                                                <span className="text-note text-muted-foreground">
+                                                    {syncConfig.network.relayMode ? '中转模式' : '直连模式'}
+                                                </span>
+                                            </div>
+                                        )
+                                        : (
+                                            <SyncConfigActionButtons
+                                                syncConfig={syncConfig}
+                                                busy={busy}
+                                                serverRunning={serverRunning[syncConfig.id] ?? false}
+                                                onPickDirectory={onPickDirectory}
+                                                onCompareAndSync={onCompareAndSync}
+                                                onExportZip={onExportZip}
+                                                onImportZip={onImportZip}
+                                                onToggleServer={onToggleServer}
+                                            />
+                                        )}
+                                />
+                            );
+                        })
                     )}
 
                     <Button
@@ -380,111 +400,132 @@ export function SyncConfigPanel() {
                         <Plus className="size-4" /> 添加新同步配置
                     </Button>
                 </div>
-            </div>
+            </SettingSection>
 
-            {editingConfig ? (
-                <SyncConfigDialog
-                    draft={editingConfig}
-                    busy={busyKey === `save:${editingConfig.id}`}
-                    isNew={!existingConfigIds.has(editingConfig.id)}
-                    projects={config.projects}
-                    roots={config.scanRoots}
-                    serverRunning={serverRunning[editingConfig.id] ?? false}
-                    onChange={setEditingConfig}
-                    onClose={() => setEditingConfig(null)}
-                    onSave={() => void saveSyncConfig(editingConfig)}
-                    onPickDirectory={() => void pickDraftDirectory(editingConfig, setEditingConfig)}
-                    onCompareAndSync={editingConfig.type === 'folder' || editingConfig.type === 'shared-dir'
-                        ? () => void previewSyncPlan(editingConfig)
-                        : undefined}
-                    onExportZip={editingConfig.type === 'zip' ? () => void exportZip(editingConfig) : undefined}
-                    onImportZip={editingConfig.type === 'zip' ? () => void importZip(editingConfig) : undefined}
-                    onToggleServer={editingConfig.type === 'p2p' ? () => void toggleServer(editingConfig) : undefined}
-                />
-            ) : null}
-            {syncPlanPreview ? (
-                <SyncPlanDialog
-                    title="同步目录"
-                    session={syncPlanPreview.session}
-                    busy={busyKey === `${syncPlanPreview.config.type === 'folder' ? 'apply-folder' : 'apply-shared-dir'}:${syncPlanPreview.config.id}`}
-                    applyLabel="执行同步"
-                    onClose={() => void closeSyncPlanPreview(syncPlanPreview)}
-                    onOpenDiff={(projectId: string, relativePath: string) => window.fm.sync.openSyncDiff(syncPlanPreview.config.id, projectId, relativePath)}
-                    onOpenConflictMerge={(projectId: string, relativePath: string) => window.fm.sync.openConflictMerge(syncPlanPreview.config.id, projectId, relativePath)}
-                    onApply={(request: SyncPlanApplyRequest) => void applySyncPlanPreview(
-                        syncPlanPreview,
-                        request,
-                        setBusyKey,
-                        refreshConfig,
-                        actions,
-                        closeSyncPlanPreview,
-                    )}
-                />
-            ) : null}
+            {
+                editingConfig ? (
+                    <SyncConfigDialog
+                        draft={editingConfig}
+                        busy={busyKey === `save:${editingConfig.id}`}
+                        isNew={!existingConfigIds.has(editingConfig.id)}
+                        projects={config.projects}
+                        roots={config.scanRoots}
+                        serverRunning={serverRunning[editingConfig.id] ?? false}
+                        onChange={setEditingConfig}
+                        onClose={() => setEditingConfig(null)}
+                        onSave={() => void saveSyncConfig(editingConfig)}
+                        onPickDirectory={() => void pickDraftDirectory(editingConfig, setEditingConfig)}
+                        onCompareAndSync={editingConfig.type === 'folder' || editingConfig.type === 'shared-dir'
+                            ? () => void previewSyncPlan(editingConfig)
+                            : undefined}
+                        onExportZip={editingConfig.type === 'zip' ? () => void exportZip(editingConfig) : undefined}
+                        onImportZip={editingConfig.type === 'zip' ? () => void importZip(editingConfig) : undefined}
+                        onToggleServer={editingConfig.type === 'p2p' ? () => void toggleServer(editingConfig) : undefined}
+                    />
+                ) : null
+            }
+            {
+                syncPlanPreview ? (
+                    <SyncPlanDialog
+                        title="同步目录"
+                        session={syncPlanPreview.session}
+                        busy={busyKey === `${syncPlanPreview.config.type === 'folder' ? 'apply-folder' : 'apply-shared-dir'}:${syncPlanPreview.config.id}`}
+                        applyLabel="执行同步"
+                        onClose={() => void closeSyncPlanPreview(syncPlanPreview)}
+                        onOpenDiff={(projectId: string, relativePath: string) => window.fm.sync.openSyncDiff(
+                            syncPlanPreview.config.id,
+                            projectId,
+                            relativePath,
+                            syncPlanPreview.config,
+                        )}
+                        onOpenConflictMerge={(projectId: string, relativePath: string) => window.fm.sync.openConflictMerge(
+                            syncPlanPreview.config.id,
+                            projectId,
+                            relativePath,
+                            syncPlanPreview.config,
+                        )}
+                        onApply={(request: SyncPlanApplyRequest) => void applySyncPlanPreview(
+                            syncPlanPreview,
+                            request,
+                            setBusyKey,
+                            refreshConfig,
+                            actions,
+                            closeSyncPlanPreview,
+                        )}
+                    />
+                ) : null
+            }
 
-            {zipImportSetup ? (
-                <ZipImportSetupDialog
-                    syncConfig={zipImportSetup.config}
-                    file={zipImportSetup.file}
-                    entries={zipImportSetup.entries}
-                    existingProjects={config.projects}
-                    busy={busyKey === `preview-zip-import:${zipImportSetup.config.id}`}
-                    onClose={() => setZipImportSetup(null)}
-                    onPreview={async targets => {
-                        setBusyKey(`preview-zip-import:${zipImportSetup.config.id}`);
-                        try {
-                            const preview = await window.fm.sync.previewZipImport(zipImportSetup.config.id, zipImportSetup.file, targets);
-                            setZipImportPlanPreview({
-                                config: zipImportSetup.config,
-                                file: zipImportSetup.file,
-                                targets,
-                                preview,
-                            });
-                            setZipImportSetup(null);
-                        } catch (error) {
-                            actions.toast('error', error instanceof Error ? error.message : 'ZIP 导入预览失败');
-                        } finally {
-                            setBusyKey(null);
-                        }
-                    }}
-                />
-            ) : null}
+            {
+                zipImportSetup ? (
+                    <ZipImportSetupDialog
+                        syncConfig={zipImportSetup.config}
+                        file={zipImportSetup.file}
+                        entries={zipImportSetup.entries}
+                        existingProjects={config.projects}
+                        busy={busyKey === `preview-zip-import:${zipImportSetup.config.id}`}
+                        onClose={() => setZipImportSetup(null)}
+                        onPreview={async targets => {
+                            setBusyKey(`preview-zip-import:${zipImportSetup.config.id}`);
+                            try {
+                                const preview = await window.fm.sync.previewZipImport(zipImportSetup.config.id, zipImportSetup.file, targets);
+                                setZipImportPlanPreview({
+                                    config: zipImportSetup.config,
+                                    file: zipImportSetup.file,
+                                    targets,
+                                    preview,
+                                });
+                                setZipImportSetup(null);
+                            } catch (error) {
+                                actions.toast('error', error instanceof Error ? error.message : 'ZIP 导入预览失败');
+                            } finally {
+                                setBusyKey(null);
+                            }
+                        }}
+                    />
+                ) : null
+            }
 
-            {zipImportPlanPreview ? (
-                <SyncPlanStaticDialog
-                    title="导入目录"
-                    preview={zipImportPlanPreview.preview}
-                    busy={busyKey === `apply-zip-import:${zipImportPlanPreview.config.id}`}
-                    applyLabel="执行导入"
-                    onClose={() => setZipImportPlanPreview(null)}
-                    onApply={(request: SyncPlanApplyRequest) => void applyZipImportPreview(
-                        zipImportPlanPreview,
-                        request,
-                        setBusyKey,
-                        refreshConfig,
-                        actions,
-                        setZipImportPlanPreview,
-                    )}
-                />
-            ) : null}
-        </section>
+            {
+                zipImportPlanPreview ? (
+                    <SyncPlanStaticDialog
+                        title="导入目录"
+                        preview={zipImportPlanPreview.preview}
+                        busy={busyKey === `apply-zip-import:${zipImportPlanPreview.config.id}`}
+                        applyLabel="执行导入"
+                        onClose={() => setZipImportPlanPreview(null)}
+                        onApply={(request: SyncPlanApplyRequest) => void applyZipImportPreview(
+                            zipImportPlanPreview,
+                            request,
+                            setBusyKey,
+                            refreshConfig,
+                            actions,
+                            setZipImportPlanPreview,
+                        )}
+                    />
+                ) : null
+            }
+        </div>
     );
 }
 
 async function applySyncPlanPreview(
-    state: {
-        config: PreviewableSyncConfig;
-        session: SyncPlanPreviewSession;
-    },
+    state: ActiveSyncPlanPreview,
     request: SyncPlanApplyRequest,
     setBusyKey: (value: string | null) => void,
     refreshConfig: () => Promise<void>,
     actions: ReturnType<typeof useAppActions>,
-    close: (value: { config: PreviewableSyncConfig; session: SyncPlanPreviewSession } | null) => Promise<void>,
+    close: (value: ActiveSyncPlanPreview | null) => Promise<void>,
 ): Promise<void> {
     const busyKey = `${state.config.type === 'folder' ? 'apply-folder' : 'apply-shared-dir'}:${state.config.id}`;
     setBusyKey(busyKey);
+    let persistedDraft = false;
     try {
+        if (state.persistOnApply) {
+            await window.fm.sync.upsertConfig(normalizeSyncConfig(state.config));
+            persistedDraft = true;
+        }
+
         const result = state.config.type === 'folder'
             ? await window.fm.sync.applyFolderSync(state.config.id, request.projectIds, request)
             : await window.fm.sync.applySharedDirSync(state.config.id, request.projectIds, request);
@@ -492,6 +533,9 @@ async function applySyncPlanPreview(
         actions.toast('success', summarizeApplyResult(result, '同步完成'));
         await close(state);
     } catch (error) {
+        if (persistedDraft) {
+            await refreshConfig().catch(() => undefined);
+        }
         actions.toast('error', error instanceof Error ? error.message : '执行同步失败');
     } finally {
         setBusyKey(null);
@@ -752,22 +796,31 @@ function SyncConfigDialog({
                 />
             </EditDialogField>
 
-            <TypeSpecificEditor draft={draft} onChange={onChange} onPickDirectory={onPickDirectory} />
+            <TypeSpecificEditor
+                draft={draft}
+                busy={busy}
+                allowSyncActions={!isNew}
+                onChange={onChange}
+                onPickDirectory={onPickDirectory}
+                onCompareAndSync={onCompareAndSync}
+            />
 
-            <div>
-                <SyncConfigActionButtons
-                    syncConfig={draft}
-                    busy={busy}
-                    serverRunning={serverRunning}
-                    allowSyncActions={!isNew}
-                    showDirectoryPicker={false}
-                    onPickDirectory={onPickDirectory}
-                    onCompareAndSync={onCompareAndSync}
-                    onExportZip={onExportZip}
-                    onImportZip={onImportZip}
-                    onToggleServer={onToggleServer}
-                />
-            </div>
+            {draft.type === 'zip' || draft.type === 'p2p' ? (
+                <div>
+                    <SyncConfigActionButtons
+                        syncConfig={draft}
+                        busy={busy}
+                        serverRunning={serverRunning}
+                        allowSyncActions={!isNew}
+                        showDirectoryPicker={false}
+                        onPickDirectory={onPickDirectory}
+                        onCompareAndSync={onCompareAndSync}
+                        onExportZip={onExportZip}
+                        onImportZip={onImportZip}
+                        onToggleServer={onToggleServer}
+                    />
+                </div>
+            ) : null}
 
             <EditDialogField label="同步范围">
                 <SyncTargetTree
@@ -783,12 +836,18 @@ function SyncConfigDialog({
 
 function TypeSpecificEditor({
     draft,
+    busy,
+    allowSyncActions,
     onChange,
     onPickDirectory,
+    onCompareAndSync,
 }: {
     draft: SyncConfig;
+    busy: boolean;
+    allowSyncActions: boolean;
     onChange: (next: SyncConfig) => void;
     onPickDirectory: () => void;
+    onCompareAndSync?: () => void;
 }) {
     if (draft.type === 'folder') {
         return (
@@ -806,6 +865,14 @@ function TypeSpecificEditor({
                         />
                         <Button size="sm" variant="outline" onClick={onPickDirectory}>
                             选择
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy || !allowSyncActions || !draft.folder.targetDir || !onCompareAndSync}
+                            onClick={onCompareAndSync}
+                        >
+                            <GitCompareArrows className="size-4" /> 预览同步
                         </Button>
                     </div>
                 </EditDialogField>
@@ -863,6 +930,14 @@ function TypeSpecificEditor({
                     />
                     <Button size="sm" variant="outline" onClick={onPickDirectory}>
                         选择
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || !allowSyncActions || !draft.sharedDir.bundleDir || !onCompareAndSync}
+                        onClick={onCompareAndSync}
+                    >
+                        <GitCompareArrows className="size-4" /> 预览同步
                     </Button>
                 </div>
             </EditDialogField>
@@ -1114,10 +1189,10 @@ function SyncConfigActionButtons({
                     <Button
                         size="sm"
                         variant="outline"
-                        disabled={busy || !allowSyncActions || !syncConfig.folder.targetDir}
+                        disabled={busy || !allowSyncActions || !syncConfig.folder.targetDir || !onCompareAndSync}
                         onClick={onCompareAndSync}
                     >
-                        <GitCompareArrows className="size-4" /> 对比并同步
+                        <GitCompareArrows className="size-4" /> 预览同步
                     </Button>
                 </>
             ) : null}
@@ -1132,10 +1207,10 @@ function SyncConfigActionButtons({
                     <Button
                         size="sm"
                         variant="outline"
-                        disabled={busy || !allowSyncActions || !syncConfig.sharedDir.bundleDir}
+                        disabled={busy || !allowSyncActions || !syncConfig.sharedDir.bundleDir || !onCompareAndSync}
                         onClick={onCompareAndSync}
                     >
-                        <GitCompareArrows className="size-4" /> 对比并同步
+                        <GitCompareArrows className="size-4" /> 预览同步
                     </Button>
                 </>
             ) : null}
@@ -1190,6 +1265,10 @@ function retypeSyncConfig(current: SyncConfig, type: SyncConfigType): SyncConfig
         mode: type === 'zip' && current.mode === 'two-way' ? 'mirror-local-to-target' : current.mode,
         targets: current.targets,
     });
+}
+
+function areSyncConfigValuesEqual(left: SyncConfig, right: SyncConfig): boolean {
+    return JSON.stringify(normalizeSyncConfig(left)) === JSON.stringify(normalizeSyncConfig(right));
 }
 
 async function pickDraftDirectory(draft: SyncConfig, onChange: (next: SyncConfig) => void): Promise<void> {

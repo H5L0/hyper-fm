@@ -2,12 +2,16 @@
 // 顶栏：显示当前配置路径，支持切换
 // ---------------------------------------------------------------------------
 
+import { useState } from 'react';
+import { PenLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppActions, useAppState } from '../store/app-store.js';
+import { ConfigMetaDialog } from './config-meta-dialog.js';
 
 export function TitleBar() {
   const { config, configPaths } = useAppState();
   const actions = useAppActions();
+  const [metaDialogOpen, setMetaDialogOpen] = useState(false);
 
   const configName = config.name?.trim() || '未命名配置';
 
@@ -48,7 +52,27 @@ export function TitleBar() {
         <Button size="xs" variant="ghost" onClick={() => void actions.pickAndCreateConfig()}>
           新建…
         </Button>
+        <Button size="xs" variant="ghost" onClick={() => setMetaDialogOpen(true)}>
+          编辑…
+        </Button>
       </div>
+
+      {metaDialogOpen ? (
+        <ConfigMetaDialog
+          initialName={config.name}
+          initialDescription={config.description ?? ''}
+          onClose={() => setMetaDialogOpen(false)}
+          onSave={async (name, description) => {
+            try {
+              await actions.saveConfigMeta(name, description);
+              actions.toast('success', '已保存配置元信息');
+              setMetaDialogOpen(false);
+            } catch (error) {
+              actions.toast('error', error instanceof Error ? error.message : '保存失败');
+            }
+          }}
+        />
+      ) : null}
     </header>
   );
 }
