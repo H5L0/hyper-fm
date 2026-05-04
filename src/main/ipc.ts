@@ -16,7 +16,9 @@ import {
   type ProjectMetaPatch,
   type ScanReport,
   type SyncConfig,
+  type SyncPlanApplyRequest,
   type SyncImportItem,
+  type SyncImportTarget,
   type SyncPullItem,
 } from '../shared/bridge.js';
 import {
@@ -70,6 +72,25 @@ import {
   previewBundleZip,
   applyBundleZip,
 } from './sync/manager.js';
+import {
+  applySharedDirSync,
+  applyFolderSync,
+  applyZipImport,
+  openConflictMerge,
+  openSyncDiff,
+  previewSharedDirSync,
+  previewFolderSync,
+  previewZipImport,
+} from './sync/file-sync.js';
+import {
+  applySyncPreviewSession,
+  closeSyncPreviewSession,
+  expandSyncPlanApplyRequest,
+  getSyncPreviewRows,
+  openFolderSyncPreviewSession,
+  openSharedDirSyncPreviewSession,
+} from './sync/preview-session.js';
+import { refreshAutoSyncSchedules } from './sync/auto-sync.js';
 import {
   startSyncServer,
   type SyncServer,
@@ -169,7 +190,9 @@ export function registerIpcHandlers(): void {
     'fm:config:load',
     wrap('fm:config:load', async (_e, filePath: unknown): Promise<ConfigSnapshot> => {
       assertString(filePath, 'filePath');
-      return switchConfigFile(filePath);
+      const snapshot = await switchConfigFile(filePath);
+      refreshAutoSyncSchedules();
+      return snapshot;
     }),
   );
 
@@ -178,7 +201,9 @@ export function registerIpcHandlers(): void {
     wrap('fm:config:create', async (_e, filePath: unknown): Promise<ConfigSnapshot> => {
       assertString(filePath, 'filePath');
       const snapshot = await createConfigFile(filePath);
-      return switchConfigFile(snapshot.paths.sharedPath);
+      const next = await switchConfigFile(snapshot.paths.sharedPath);
+      refreshAutoSyncSchedules();
+      return next;
     }),
   );
 
@@ -187,7 +212,9 @@ export function registerIpcHandlers(): void {
     wrap('fm:config:createLocalForShared', async (_e, sharedPath: unknown): Promise<ConfigSnapshot> => {
       assertString(sharedPath, 'sharedPath');
       const snapshot = await createLocalConfigForShared(sharedPath);
-      return switchConfigFile(snapshot.paths.sharedPath);
+      const next = await switchConfigFile(snapshot.paths.sharedPath);
+      refreshAutoSyncSchedules();
+      return next;
     }),
   );
 
@@ -196,6 +223,7 @@ export function registerIpcHandlers(): void {
     wrap('fm:config:save', async (_e, data: unknown): Promise<void> => {
       const config = data as AppConfig;
       await mutate(() => ({ nextConfig: config, result: undefined as void }));
+      refreshAutoSyncSchedules();
     }),
   );
 
@@ -366,6 +394,7 @@ export function registerIpcHandlers(): void {
           description: project.description,
           tags: project.tags,
           ignore: project.ignore,
+          syncRespectGitignore: project.syncRespectGitignore,
         });
         const nextLocal = setProjectMetaFlag(local, id, true);
         const updated = findProjectById(nextShared, nextLocal, id)!;
@@ -673,7 +702,7 @@ function registerSyncHandlers(): void {
         throw new FmError('CONFIG_INVALID', '同步配置必须为对象');
       }
       const nextSyncConfig = normalizeSyncConfig(input as SyncConfig);
-      return mutate(({ config }) => {
+      const result = await mutate(({ config }) => {
         const current = config.syncConfigs ?? [];
         const exists = current.some(item => item.id === nextSyncConfig.id);
         const syncConfigs = exists
@@ -684,6 +713,8 @@ function registerSyncHandlers(): void {
           result: nextSyncConfig,
         };
       });
+      refreshAutoSyncSchedules();
+      return result;
     }),
   );
 
@@ -691,7 +722,7 @@ function registerSyncHandlers(): void {
     'fm:sync:removeConfig',
     wrap('fm:sync:removeConfig', async (_e, id: unknown) => {
       assertString(id, 'id');
-      return mutate(async ({ config }) => {
+      const result = await mutate(async ({ config }) => {
         const server = activeServers.get(id);
         if (server) {
           await server.close();
@@ -705,6 +736,8 @@ function registerSyncHandlers(): void {
           result: undefined as void,
         };
       });
+      refreshAutoSyncSchedules();
+      return result;
     }),
   );
 
@@ -801,6 +834,159 @@ function registerSyncHandlers(): void {
   );
 
   ipcMain.handle(
+    'fm:sync:previewSharedDirSync',
+    wrap('fm:sync:previewSharedDirSync', async (_e, configId: unknown, projectIds: unknown) => {
+      assertString(configId, 'configId');
+      const session = requireSession();
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'shared-dir');
+      const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
+      return previewSharedDirSync(session.config, syncConfig, ids);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:openSharedDirSyncPreview',
+    wrap('fm:sync:openSharedDirSyncPreview', async (event, configId: unknown, projectIds: unknown) => {
+      assertString(configId, 'configId');
+      const session = requireSession();
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'shared-dir');
+      const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
+      return openSharedDirSyncPreviewSession(event.sender.id, session.config, syncConfig, ids);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:getSyncPreviewRows',
+    wrap(
+      'fm:sync:getSyncPreviewRows',
+      async (_e, sessionId: unknown, projectId: unknown, startIndex: unknown, length: unknown, selection: unknown) => {
+        assertString(sessionId, 'sessionId');
+        assertString(projectId, 'projectId');
+        if (typeof startIndex !== 'number' || Number.isNaN(startIndex)) {
+          throw new FmError('CONFIG_INVALID', 'startIndex 必须为数字');
+        }
+        if (typeof length !== 'number' || Number.isNaN(length)) {
+          throw new FmError('CONFIG_INVALID', 'length 必须为数字');
+        }
+        return getSyncPreviewRows(
+          sessionId,
+          projectId,
+          Math.floor(startIndex),
+          Math.floor(length),
+          isSyncPlanSelectionState(selection) ? normalizeSyncPlanSelectionState(selection) : undefined,
+        );
+      },
+    ),
+  );
+
+  ipcMain.handle(
+    'fm:sync:closeSyncPreview',
+    wrap('fm:sync:closeSyncPreview', async (_e, sessionId: unknown) => {
+      assertString(sessionId, 'sessionId');
+      closeSyncPreviewSession(sessionId);
+      return undefined as void;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:applySharedDirSync',
+    wrap('fm:sync:applySharedDirSync', async (_e, configId: unknown, projectIds: unknown, request: unknown) => {
+      assertString(configId, 'configId');
+      const session = requireSession();
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'shared-dir');
+      const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
+      const normalizedRequest = isSyncPlanApplyRequest(request)
+        ? normalizeSyncPlanApplyRequest(request)
+        : undefined;
+      const applyRequest = normalizedRequest?.sessionId
+        ? normalizedRequest
+        : normalizedRequest
+          ? expandSyncPlanApplyRequest(normalizedRequest)
+          : undefined;
+      const { result, nextConfig } = normalizedRequest?.sessionId
+        ? await applySyncPreviewSession(normalizedRequest.sessionId, {
+          ...normalizedRequest,
+          projectIds: normalizedRequest.projectIds.length > 0 ? normalizedRequest.projectIds : ids,
+        })
+        : await applySharedDirSync(session.config, syncConfig, ids, applyRequest);
+      await mutate(() => ({ nextConfig, result: undefined as void }));
+      return result;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:previewFolderSync',
+    wrap('fm:sync:previewFolderSync', async (_e, configId: unknown, projectIds: unknown) => {
+      assertString(configId, 'configId');
+      const session = requireSession();
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'folder');
+      const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
+      return previewFolderSync(session.config, syncConfig, ids);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:openFolderSyncPreview',
+    wrap('fm:sync:openFolderSyncPreview', async (event, configId: unknown, projectIds: unknown) => {
+      assertString(configId, 'configId');
+      const session = requireSession();
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'folder');
+      const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
+      return openFolderSyncPreviewSession(event.sender.id, session.config, syncConfig, ids);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:applyFolderSync',
+    wrap('fm:sync:applyFolderSync', async (_e, configId: unknown, projectIds: unknown, request: unknown) => {
+      assertString(configId, 'configId');
+      const session = requireSession();
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'folder');
+      const ids = resolveConfigProjectIds(session.config, syncConfig, projectIds);
+      const normalizedRequest = isSyncPlanApplyRequest(request)
+        ? normalizeSyncPlanApplyRequest(request)
+        : undefined;
+      const applyRequest = normalizedRequest?.sessionId
+        ? normalizedRequest
+        : normalizedRequest
+          ? expandSyncPlanApplyRequest(normalizedRequest)
+          : undefined;
+      const { result, nextConfig } = normalizedRequest?.sessionId
+        ? await applySyncPreviewSession(normalizedRequest.sessionId, {
+          ...normalizedRequest,
+          projectIds: normalizedRequest.projectIds.length > 0 ? normalizedRequest.projectIds : ids,
+        })
+        : await applyFolderSync(session.config, syncConfig, ids, applyRequest);
+      await mutate(() => ({ nextConfig, result: undefined as void }));
+      return result;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:openSyncDiff',
+    wrap('fm:sync:openSyncDiff', async (_e, configId: unknown, projectId: unknown, relativePath: unknown) => {
+      assertString(configId, 'configId');
+      assertString(projectId, 'projectId');
+      assertString(relativePath, 'relativePath');
+      const session = requireSession();
+      const syncConfig = getPreviewableSyncConfigOrThrow(session.config, configId);
+      await openSyncDiff(session.config, syncConfig, projectId, relativePath);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:openConflictMerge',
+    wrap('fm:sync:openConflictMerge', async (_e, configId: unknown, projectId: unknown, relativePath: unknown) => {
+      assertString(configId, 'configId');
+      assertString(projectId, 'projectId');
+      assertString(relativePath, 'relativePath');
+      const session = requireSession();
+      const syncConfig = getPreviewableSyncConfigOrThrow(session.config, configId);
+      return openConflictMerge(session.config, syncConfig, projectId, relativePath);
+    }),
+  );
+
+  ipcMain.handle(
     'fm:sync:exportZip',
     wrap('fm:sync:exportZip', async (_e, configId: unknown, projectIds: unknown, outputFile: unknown) => {
       assertString(configId, 'configId');
@@ -880,6 +1066,35 @@ function registerSyncHandlers(): void {
       const session = requireSession();
       getSyncConfigOrThrow(session.config, configId, 'zip');
       return applyBundleZip(file, plan as SyncImportItem[]);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:previewZipImport',
+    wrap('fm:sync:previewZipImport', async (_e, configId: unknown, file: unknown, targets: unknown) => {
+      assertString(configId, 'configId');
+      assertString(file, 'file');
+      const session = requireSession();
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'zip');
+      return previewZipImport(session.config, syncConfig, file, Array.isArray(targets) ? targets as SyncImportTarget[] : []);
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:sync:applyZipImport',
+    wrap('fm:sync:applyZipImport', async (_e, configId: unknown, file: unknown, targets: unknown) => {
+      assertString(configId, 'configId');
+      assertString(file, 'file');
+      const session = requireSession();
+      const syncConfig = getSyncConfigOrThrow(session.config, configId, 'zip');
+      const { result, nextConfig } = await applyZipImport(
+        session.config,
+        syncConfig,
+        file,
+        Array.isArray(targets) ? targets as SyncImportTarget[] : [],
+      );
+      await mutate(() => ({ nextConfig, result: undefined as void }));
+      return result;
     }),
   );
 
@@ -1010,6 +1225,49 @@ function resolveConfigProjectIds(
     return [...allowed];
   }
   return requested.filter(id => allowed.has(id));
+}
+
+function getPreviewableSyncConfigOrThrow(
+  config: AppConfig,
+  configId: string,
+): Extract<SyncConfig, { type: 'folder' | 'shared-dir' }> {
+  const syncConfig = getSyncConfigOrThrow(config, configId);
+  if (syncConfig.type !== 'folder' && syncConfig.type !== 'shared-dir') {
+    throw new FmError('CONFIG_INVALID', `${syncConfig.name} 不支持目录级对比`);
+  }
+  return syncConfig;
+}
+
+function isSyncPlanApplyRequest(value: unknown): value is SyncPlanApplyRequest {
+  return Boolean(value)
+    && typeof value === 'object'
+    && Array.isArray((value as { projectIds?: unknown }).projectIds)
+    && Array.isArray((value as { operations?: unknown }).operations);
+}
+
+function isSyncPlanSelectionState(value: unknown): value is Pick<SyncPlanApplyRequest, 'operations' | 'ranges'> {
+  return Boolean(value)
+    && typeof value === 'object'
+    && Array.isArray((value as { operations?: unknown }).operations)
+    && Array.isArray((value as { ranges?: unknown }).ranges);
+}
+
+function normalizeSyncPlanApplyRequest(request: SyncPlanApplyRequest): SyncPlanApplyRequest {
+  return {
+    sessionId: request.sessionId,
+    projectIds: request.projectIds,
+    operations: request.operations,
+    ranges: Array.isArray(request.ranges) ? request.ranges : [],
+  };
+}
+
+function normalizeSyncPlanSelectionState(
+  selection: Pick<SyncPlanApplyRequest, 'operations' | 'ranges'>,
+): { operations: SyncPlanApplyRequest['operations']; ranges: NonNullable<SyncPlanApplyRequest['ranges']> } {
+  return {
+    operations: selection.operations,
+    ranges: Array.isArray(selection.ranges) ? selection.ranges : [],
+  };
 }
 
 function resolveRelayBundleDir(config: AppConfig, preferredScope: SyncConfig['scope']): string | undefined {

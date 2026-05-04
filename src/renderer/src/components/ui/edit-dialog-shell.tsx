@@ -79,9 +79,11 @@ export function EditDialogField({
 }) {
     return (
         <div>
-            <label className="mb-2 block text-subheading">{label}</label>
+            <div className="flex gap-2">
+                <label className="mb-2 block text-subheading">{label}</label>
+                {note ? <label className="text-note text-muted-foreground">{note}</label> : null}
+            </div>
             {children}
-            {note ? <p className="mt-1.5 text-note text-muted-foreground">{note}</p> : null}
         </div>
     );
 }

@@ -5,6 +5,7 @@
 
 import {
     type AppConfig,
+    type FingerprintConflictWarning,
     type FilePathsFingerprint,
     type FolderNameFingerprint,
     type IgnoreRules,
@@ -12,11 +13,15 @@ import {
     type MetaFile,
     type Project,
     type ProjectBinding,
+    type ProjectSyncState,
     type ProjectFingerprint,
     type ScanRoot,
     type ScanWarning,
     type SharedConfig,
     type SharedProject,
+    type SyncBaselineFile,
+    type SyncConflictWarning,
+    type SyncErrorWarning,
     type TagDefinition,
     type UiPreferences,
     CONFIG_SCHEMA_VERSION,
@@ -187,6 +192,7 @@ function validateSharedProject(value: unknown, idx: number, errors: ValidationEr
         description: isString(value.description) ? value.description : undefined,
         tags: isStringArray(value.tags) ? normalizeStringList(value.tags) : [],
         ignore: isStringArray(value.ignore) ? normalizeStringList(value.ignore).map(v => v.replace(/\\/g, '/')) : [],
+        syncRespectGitignore: typeof value.syncRespectGitignore === 'boolean' ? value.syncRespectGitignore : undefined,
         fingerprint,
     };
 }
@@ -224,7 +230,75 @@ function validateProjectBinding(value: unknown, idx: number, errors: ValidationE
         syncedAt: isString(value.syncedAt) ? value.syncedAt : undefined,
         syncedHash: isString(value.syncedHash) ? value.syncedHash : undefined,
         syncedFrom: isString(value.syncedFrom) ? value.syncedFrom : undefined,
+        syncStates: validateProjectSyncStates(value.syncStates, `${base}.syncStates`, errors),
     };
+}
+
+function validateSyncBaselineFile(
+    value: unknown,
+    base: string,
+    errors: ValidationError[],
+): SyncBaselineFile | null {
+    if (!isObject(value)) {
+        pushError(errors, base, '必须为对象');
+        return null;
+    }
+    if (!isString(value.path)) pushError(errors, `${base}.path`, '缺少 path');
+    if (!isString(value.sha1)) pushError(errors, `${base}.sha1`, '缺少 sha1');
+    if (!isString(value.path) || !isString(value.sha1)) {
+        return null;
+    }
+    return {
+        path: value.path.replace(/\\/g, '/'),
+        sha1: value.sha1,
+    };
+}
+
+function validateProjectSyncState(
+    value: unknown,
+    base: string,
+    errors: ValidationError[],
+): ProjectSyncState | null {
+    if (!isObject(value)) {
+        pushError(errors, base, '必须为对象');
+        return null;
+    }
+    if (!isString(value.configId)) pushError(errors, `${base}.configId`, '缺少 configId');
+    if (!isString(value.lastSyncedAt)) pushError(errors, `${base}.lastSyncedAt`, '缺少 lastSyncedAt');
+    if (!isString(value.baselineHash)) pushError(errors, `${base}.baselineHash`, '缺少 baselineHash');
+    if (!Array.isArray(value.baselineFiles)) pushError(errors, `${base}.baselineFiles`, '必须为数组');
+    if (
+        !isString(value.configId) ||
+        !isString(value.lastSyncedAt) ||
+        !isString(value.baselineHash) ||
+        !Array.isArray(value.baselineFiles)
+    ) {
+        return null;
+    }
+    return {
+        configId: value.configId,
+        lastSyncedAt: value.lastSyncedAt,
+        baselineHash: value.baselineHash,
+        baselineFiles: value.baselineFiles
+            .map((item, index) => validateSyncBaselineFile(item, `${base}.baselineFiles[${index}]`, errors))
+            .filter((item): item is SyncBaselineFile => item !== null),
+        targetPath: isString(value.targetPath) ? value.targetPath : undefined,
+    };
+}
+
+function validateProjectSyncStates(
+    value: unknown,
+    base: string,
+    errors: ValidationError[],
+): ProjectSyncState[] | undefined {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) {
+        pushError(errors, base, '必须为数组');
+        return undefined;
+    }
+    return value
+        .map((item, index) => validateProjectSyncState(item, `${base}[${index}]`, errors))
+        .filter((item): item is ProjectSyncState => item !== null);
 }
 
 function validateScanWarning(value: unknown, idx: number, errors: ValidationError[]): ScanWarning | null {
@@ -233,38 +307,97 @@ function validateScanWarning(value: unknown, idx: number, errors: ValidationErro
         pushError(errors, base, '必须为对象');
         return null;
     }
-    const fingerprint = validateFingerprint(value.fingerprint, `${base}.fingerprint`, errors);
     if (!isString(value.id)) pushError(errors, `${base}.id`, '缺少 id');
-    if (value.kind !== 'fingerprint-conflict') pushError(errors, `${base}.kind`, '未知 warning 类型');
-    if (!isString(value.scanRootId)) pushError(errors, `${base}.scanRootId`, '缺少 scanRootId');
-    if (!isString(value.projectId)) pushError(errors, `${base}.projectId`, '缺少 projectId');
-    if (!isString(value.projectName)) pushError(errors, `${base}.projectName`, '缺少 projectName');
-    if (!isStringArray(value.candidatePaths)) pushError(errors, `${base}.candidatePaths`, '必须为字符串数组');
     if (!isString(value.message)) pushError(errors, `${base}.message`, '缺少 message');
     if (!isString(value.createdAt)) pushError(errors, `${base}.createdAt`, '缺少 createdAt');
-    if (
-        !isString(value.id) ||
-        !isString(value.scanRootId) ||
-        !isString(value.projectId) ||
-        !isString(value.projectName) ||
-        !isStringArray(value.candidatePaths) ||
-        !isString(value.message) ||
-        !isString(value.createdAt) ||
-        !fingerprint
-    ) {
+    if (!isString(value.id) || !isString(value.message) || !isString(value.createdAt)) {
         return null;
     }
-    return {
-        id: value.id,
-        kind: 'fingerprint-conflict',
-        scanRootId: value.scanRootId,
-        projectId: value.projectId,
-        projectName: value.projectName,
-        fingerprint,
-        candidatePaths: normalizeStringList(value.candidatePaths),
-        message: value.message,
-        createdAt: value.createdAt,
-    };
+
+    if (value.kind === 'fingerprint-conflict') {
+        const fingerprint = validateFingerprint(value.fingerprint, `${base}.fingerprint`, errors);
+        if (!isString(value.scanRootId)) pushError(errors, `${base}.scanRootId`, '缺少 scanRootId');
+        if (!isString(value.projectId)) pushError(errors, `${base}.projectId`, '缺少 projectId');
+        if (!isString(value.projectName)) pushError(errors, `${base}.projectName`, '缺少 projectName');
+        if (!isStringArray(value.candidatePaths)) pushError(errors, `${base}.candidatePaths`, '必须为字符串数组');
+        if (
+            !isString(value.scanRootId) ||
+            !isString(value.projectId) ||
+            !isString(value.projectName) ||
+            !isStringArray(value.candidatePaths) ||
+            !fingerprint
+        ) {
+            return null;
+        }
+        const warning: FingerprintConflictWarning = {
+            id: value.id,
+            kind: 'fingerprint-conflict',
+            scanRootId: value.scanRootId,
+            projectId: value.projectId,
+            projectName: value.projectName,
+            fingerprint,
+            candidatePaths: normalizeStringList(value.candidatePaths),
+            message: value.message,
+            createdAt: value.createdAt,
+        };
+        return warning;
+    }
+
+    if (value.kind === 'sync-conflict') {
+        if (!isString(value.configId)) pushError(errors, `${base}.configId`, '缺少 configId');
+        if (!isString(value.configName)) pushError(errors, `${base}.configName`, '缺少 configName');
+        if (!isString(value.projectId)) pushError(errors, `${base}.projectId`, '缺少 projectId');
+        if (!isString(value.projectName)) pushError(errors, `${base}.projectName`, '缺少 projectName');
+        if (!isStringArray(value.filePaths)) pushError(errors, `${base}.filePaths`, '必须为字符串数组');
+        if (value.mode !== 'two-way' && value.mode !== 'mirror-local-to-target' && value.mode !== 'mirror-target-to-local') {
+            pushError(errors, `${base}.mode`, '未知同步模式');
+        }
+        if (
+            !isString(value.configId) ||
+            !isString(value.configName) ||
+            !isString(value.projectId) ||
+            !isString(value.projectName) ||
+            !isStringArray(value.filePaths) ||
+            (value.mode !== 'two-way' && value.mode !== 'mirror-local-to-target' && value.mode !== 'mirror-target-to-local')
+        ) {
+            return null;
+        }
+        const warning: SyncConflictWarning = {
+            id: value.id,
+            kind: 'sync-conflict',
+            configId: value.configId,
+            configName: value.configName,
+            projectId: value.projectId,
+            projectName: value.projectName,
+            mode: value.mode,
+            filePaths: normalizeStringList(value.filePaths).map(item => item.replace(/\\/g, '/')),
+            message: value.message,
+            createdAt: value.createdAt,
+        };
+        return warning;
+    }
+
+    if (value.kind === 'sync-error') {
+        if (!isString(value.configId)) pushError(errors, `${base}.configId`, '缺少 configId');
+        if (!isString(value.configName)) pushError(errors, `${base}.configName`, '缺少 configName');
+        if (!isString(value.configId) || !isString(value.configName)) {
+            return null;
+        }
+        const warning: SyncErrorWarning = {
+            id: value.id,
+            kind: 'sync-error',
+            configId: value.configId,
+            configName: value.configName,
+            projectId: isString(value.projectId) ? value.projectId : undefined,
+            projectName: isString(value.projectName) ? value.projectName : undefined,
+            message: value.message,
+            createdAt: value.createdAt,
+        };
+        return warning;
+    }
+
+    pushError(errors, `${base}.kind`, '未知 warning 类型');
+    return null;
 }
 
 function validateUi(value: unknown, errors: ValidationError[]): UiPreferences {
@@ -623,6 +756,7 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
     if (!isObject(input)) {
         throw new Error('配置文件根必须为 JSON 对象');
     }
+    const errors: ValidationError[] = [];
     const sharedInput = {
         version: input.version,
         name: input.name,
@@ -635,6 +769,9 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
                 description: isObject(project) && isString(project.description) ? project.description : undefined,
                 tags: isObject(project) && isStringArray(project.tags) ? project.tags : [],
                 ignore: isObject(project) && isStringArray(project.ignore) ? project.ignore : [],
+                syncRespectGitignore: isObject(project) && typeof project.syncRespectGitignore === 'boolean'
+                    ? project.syncRespectGitignore
+                    : undefined,
                 fingerprint:
                     isObject(project) && isObject(project.fingerprint)
                         ? project.fingerprint
@@ -648,7 +785,7 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
         sharedConfigPath: undefined,
         scanRoots: input.scanRoots,
         bindings: Array.isArray(input.projects)
-            ? input.projects.map(project => ({
+            ? input.projects.map((project, index) => ({
                 projectId: isObject(project) && isString(project.id) ? project.id : '',
                 id: isObject(project) && isString(project.id) ? project.id : '',
                 path: isObject(project) && isString(project.path) ? project.path : '',
@@ -662,6 +799,9 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
                 syncedAt: isObject(project) && isString(project.syncedAt) ? project.syncedAt : undefined,
                 syncedHash: isObject(project) && isString(project.syncedHash) ? project.syncedHash : undefined,
                 syncedFrom: isObject(project) && isString(project.syncedFrom) ? project.syncedFrom : undefined,
+                syncStates: isObject(project)
+                    ? validateProjectSyncStates(project.syncStates, `projects[${index}].syncStates`, errors)
+                    : undefined,
             }))
             : [],
         ui: input.ui,
@@ -697,6 +837,7 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
             description: sharedProject.description,
             tags: [...sharedProject.tags],
             ignore: [...sharedProject.ignore],
+            syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
         });
     }
@@ -736,13 +877,25 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
     }
     for (const project of appConfig.projects) {
         const existing = updatedProjects.get(project.id);
-        if (!existing) continue;
+        if (!existing) {
+            updatedProjects.set(project.id, {
+                id: project.id,
+                name: project.name,
+                description: project.description,
+                tags: [...project.tags],
+                ignore: [...project.ignore],
+                syncRespectGitignore: project.syncRespectGitignore,
+                fingerprint: cloneFingerprint(project.fingerprint),
+            });
+            continue;
+        }
         updatedProjects.set(project.id, {
             ...existing,
             name: project.name,
             description: project.description,
             tags: [...project.tags],
             ignore: [...project.ignore],
+            syncRespectGitignore: project.syncRespectGitignore,
             fingerprint: cloneFingerprint(project.fingerprint),
         });
     }
@@ -783,6 +936,13 @@ export function mergeAppConfigIntoLocal(appConfig: AppConfig, sharedConfigPath =
             syncedAt: project.syncedAt,
             syncedHash: project.syncedHash,
             syncedFrom: project.syncedFrom,
+            syncStates: project.syncStates?.map(state => ({
+                configId: state.configId,
+                lastSyncedAt: state.lastSyncedAt,
+                baselineHash: state.baselineHash,
+                baselineFiles: state.baselineFiles.map(file => ({ path: file.path, sha1: file.sha1 })),
+                targetPath: state.targetPath,
+            })),
         })),
         ui: { ...appConfig.ui },
         warnings: [...appConfig.warnings],
@@ -819,5 +979,6 @@ export function buildMetaFile(project: SharedProject, patch?: Partial<MetaFile>)
         description: patch?.description ?? project.description,
         tags: patch?.tags ?? project.tags,
         ignore: patch?.ignore ?? project.ignore,
+        syncRespectGitignore: patch?.syncRespectGitignore ?? project.syncRespectGitignore,
     };
 }

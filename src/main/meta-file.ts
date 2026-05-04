@@ -40,6 +40,7 @@ function parseMeta(raw: string, source: string): MetaFile {
     description: typeof value.description === 'string' ? value.description : undefined,
     tags: isStringArray(value.tags) ? value.tags : undefined,
     ignore: isStringArray(value.ignore) ? value.ignore : undefined,
+    syncRespectGitignore: typeof value.syncRespectGitignore === 'boolean' ? value.syncRespectGitignore : undefined,
   };
 }
 

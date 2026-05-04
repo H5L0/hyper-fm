@@ -13,8 +13,17 @@ import type {
     ProjectMetaPatch,
     ScanReport,
     ScanRoot,
+    SyncApplyResult,
     SyncConfig,
+    SyncConflictMergeDraft,
+    SyncImportTarget,
     SyncImportResult,
+    SyncPlanApplyRequest,
+    SyncPlanPreviewEvent,
+    SyncPlanPreview,
+    SyncPlanPreviewSession,
+    SyncPlanRowPage,
+    SyncPlanSelectionState,
     SyncProjectRule,
     SyncPullResult,
     TagDefinition,
@@ -25,13 +34,435 @@ import {
     type CommandRunResult,
     type CustomCommand,
     type DeviceRegistry,
+    type SyncFileOperation,
+    type SyncFileOperationKind,
     type SyncDiff,
     type SyncManifest,
+    type SyncPlanRow,
     type SyncProjectEntry,
 } from '@shared/sync-types.js';
 import { normalizeSyncConfig, setProjectSyncRule } from '@shared/sync-config.js';
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+function createMockPlanPreview(configId: string, configName: string, targetPath = 'D:/sync-targets/browser-demo'): SyncPlanPreview {
+    const project = browserState.snapshot.data.projects[0];
+    return {
+        configId,
+        configName,
+        generatedAt: nowIso(),
+        projects: project ? [
+            {
+                projectId: project.id,
+                projectName: project.name,
+                mode: 'two-way',
+                localPath: project.path,
+                targetPath,
+                summary: { create: 1, update: 1, delete: 0, conflict: 1, skip: 1, total: 4 },
+                operations: [
+                    { relativePath: 'README.md', kind: 'create', direction: 'to-target', local: { path: 'README.md', size: 12, mtime: nowIso(), sha1: 'a' }, note: '仅本地存在' },
+                    { relativePath: 'src/main.ts', kind: 'update', direction: 'to-local', target: { path: 'src/main.ts', size: 24, mtime: nowIso(), sha1: 'b' }, note: '目标修改时间更新' },
+                    { relativePath: 'src/conflict.ts', kind: 'conflict', direction: 'none', local: { path: 'src/conflict.ts', size: 18, mtime: nowIso(), sha1: 'c' }, target: { path: 'src/conflict.ts', size: 22, mtime: nowIso(), sha1: 'd' }, note: '两侧都已发生变化' },
+                    { relativePath: 'package.json', kind: 'skip', direction: 'none', local: { path: 'package.json', size: 30, mtime: nowIso(), sha1: 'e' }, target: { path: 'package.json', size: 30, mtime: nowIso(), sha1: 'e' }, note: '内容一致' },
+                ],
+            },
+        ] : [],
+    };
+}
+
+type MockTreeNode =
+    | { kind: 'folder'; name: string; children: Map<string, MockTreeNode> }
+    | { kind: 'file'; name: string; operation: SyncFileOperation };
+
+type MockRowDefinition = Omit<SyncPlanRow, 'checked' | 'partiallyChecked' | 'muted'>;
+
+type MockPreviewSession = {
+    session: SyncPlanPreviewSession;
+    rowsByProject: Record<string, MockRowDefinition[]>;
+};
+
+const mockPreviewSessions = new Map<string, MockPreviewSession>();
+
+function isSyncableMockKind(kind: SyncFileOperationKind | 'mixed'): kind is SyncFileOperationKind {
+    return kind !== 'mixed' && kind !== 'skip';
+}
+
+function createMockFolderNode(name: string): Extract<MockTreeNode, { kind: 'folder' }> {
+    return { kind: 'folder', name, children: new Map() };
+}
+
+function collectMockDescendants(node: MockTreeNode): SyncFileOperation[] {
+    if (node.kind === 'file') {
+        return [node.operation];
+    }
+    return [...node.children.values()].flatMap(child => collectMockDescendants(child));
+}
+
+function sortMockNodes(left: MockTreeNode, right: MockTreeNode): number {
+    if (left.kind !== right.kind) {
+        return left.kind === 'folder' ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name, 'zh-CN');
+}
+
+function buildMockPreviewRows(operations: readonly SyncFileOperation[]): MockRowDefinition[] {
+    const root = createMockFolderNode('__root__');
+
+    for (const operation of operations) {
+        const segments = operation.relativePath.split('/').filter(Boolean);
+        let current = root;
+        for (let index = 0; index < segments.length; index += 1) {
+            const segment = segments[index]!;
+            const isLeaf = index === segments.length - 1;
+            if (isLeaf) {
+                current.children.set(segment, { kind: 'file', name: segment, operation });
+                continue;
+            }
+            const existing = current.children.get(segment);
+            if (existing?.kind === 'folder') {
+                current = existing;
+                continue;
+            }
+            const next = createMockFolderNode(segment);
+            current.children.set(segment, next);
+            current = next;
+        }
+    }
+
+    const rows: MockRowDefinition[] = [];
+
+    const renderNode = (node: MockTreeNode, depth: number, parentPath = ''): void => {
+        if (node.kind === 'file') {
+            const segments = node.operation.relativePath.split('/').filter(Boolean);
+            const index = rows.length;
+            rows.push({
+                index,
+                kind: 'file',
+                depth,
+                label: node.name,
+                folderPath: segments.slice(0, -1).join('/'),
+                aggregateKind: node.operation.kind,
+                subtreeEndIndex: index,
+                relativePath: node.operation.relativePath,
+            });
+            return;
+        }
+
+        let currentNode = node;
+        let fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+        while (currentNode.children.size === 1) {
+            const onlyChild = [...currentNode.children.values()][0]!;
+            if (onlyChild.kind !== 'folder') {
+                break;
+            }
+            fullPath = `${fullPath}/${onlyChild.name}`;
+            currentNode = onlyChild;
+        }
+
+        const descendants = collectMockDescendants(currentNode);
+        const descendantKinds = [...new Set(descendants.map(item => item.kind))];
+        const rowIndex = rows.length;
+        rows.push({
+            index: rowIndex,
+            kind: 'folder',
+            depth,
+            label: `${fullPath}/`,
+            folderPath: fullPath,
+            aggregateKind: descendantKinds.length === 1 ? descendantKinds[0]! : 'mixed',
+            subtreeEndIndex: rowIndex,
+        });
+
+        for (const child of [...currentNode.children.values()].sort(sortMockNodes)) {
+            renderNode(child, depth + 1, fullPath);
+        }
+
+        rows[rowIndex] = {
+            ...rows[rowIndex]!,
+            subtreeEndIndex: rows.length - 1,
+        };
+    };
+
+    for (const child of [...root.children.values()].sort(sortMockNodes)) {
+        renderNode(child, 0);
+    }
+
+    return rows;
+}
+
+type MockPreparedProjectSelection = {
+    operationsByPath: Map<string, SyncPlanApplyRequest['operations'][number] & { sequence: number }>;
+    ranges: Array<SyncPlanSelectionState['ranges'][number]>;
+};
+
+function prepareMockSelection(selection?: SyncPlanSelectionState): Map<string, MockPreparedProjectSelection> {
+    const byProject = new Map<string, MockPreparedProjectSelection>();
+
+    const ensureProject = (projectId: string): MockPreparedProjectSelection => {
+        const existing = byProject.get(projectId);
+        if (existing) {
+            return existing;
+        }
+        const next: MockPreparedProjectSelection = {
+            operationsByPath: new Map(),
+            ranges: [],
+        };
+        byProject.set(projectId, next);
+        return next;
+    };
+
+    for (const [index, operation] of (selection?.operations ?? []).entries()) {
+        const project = ensureProject(operation.projectId);
+        project.operationsByPath.set(operation.relativePath, {
+            ...operation,
+            sequence: operation.sequence ?? index,
+        });
+    }
+
+    for (const range of selection?.ranges ?? []) {
+        ensureProject(range.projectId).ranges.push(range);
+    }
+
+    for (const project of byProject.values()) {
+        project.ranges.sort((left, right) => left.sequence - right.sequence);
+    }
+
+    return byProject;
+}
+
+function resolveMockFileEnabled(
+    projectId: string,
+    row: MockRowDefinition,
+    selectionByProject: Map<string, MockPreparedProjectSelection>,
+): boolean {
+    if (!row.relativePath || !isSyncableMockKind(row.aggregateKind)) {
+        return false;
+    }
+
+    const projectSelection = selectionByProject.get(projectId);
+    if (!projectSelection) {
+        return true;
+    }
+
+    let enabled = true;
+    let sequence = -1;
+
+    for (const range of projectSelection.ranges) {
+        if (row.index < range.startIndex || row.index > range.endIndex) {
+            continue;
+        }
+        if (range.sequence >= sequence) {
+            enabled = range.enabled;
+            sequence = range.sequence;
+        }
+    }
+
+    const explicit = projectSelection.operationsByPath.get(row.relativePath);
+    if (explicit && explicit.sequence >= sequence) {
+        enabled = explicit.enabled;
+    }
+
+    return enabled;
+}
+
+function toMockPreviewRow(
+    projectId: string,
+    row: MockRowDefinition,
+    allRows: MockRowDefinition[],
+    selectionByProject: Map<string, MockPreparedProjectSelection>,
+): SyncPlanRow {
+    if (row.kind === 'file') {
+        const checked = isSyncableMockKind(row.aggregateKind)
+            && resolveMockFileEnabled(projectId, row, selectionByProject);
+        return {
+            ...row,
+            checked,
+            partiallyChecked: false,
+            muted: !checked,
+        };
+    }
+
+    let totalSyncable = 0;
+    let enabledCount = 0;
+    for (let index = row.index + 1; index <= row.subtreeEndIndex; index += 1) {
+        const child = allRows[index];
+        if (!child || child.kind !== 'file' || !isSyncableMockKind(child.aggregateKind)) {
+            continue;
+        }
+        totalSyncable += 1;
+        if (resolveMockFileEnabled(projectId, child, selectionByProject)) {
+            enabledCount += 1;
+        }
+    }
+
+    return {
+        ...row,
+        checked: totalSyncable > 0 && enabledCount === totalSyncable,
+        partiallyChecked: enabledCount > 0 && enabledCount < totalSyncable,
+        muted: enabledCount === 0,
+    };
+}
+
+function getMockPreviewRows(
+    sessionId: string,
+    projectId: string,
+    startIndex: number,
+    length: number,
+    selection?: SyncPlanSelectionState,
+): SyncPlanRowPage {
+    const session = mockPreviewSessions.get(sessionId);
+    const allRows = session?.rowsByProject[projectId] ?? [];
+    const total = allRows.length;
+    const safeStart = Math.max(0, Math.min(startIndex, Math.max(total - 1, 0)));
+    const safeLength = Math.max(0, length);
+    const selectionByProject = prepareMockSelection(selection);
+    const slice = safeLength === 0
+        ? []
+        : allRows.slice(safeStart, safeStart + safeLength).map(row =>
+            toMockPreviewRow(projectId, row, allRows, selectionByProject),
+        );
+
+    return {
+        sessionId,
+        projectId,
+        startIndex: safeStart,
+        total,
+        rows: slice,
+    };
+}
+
+function closeMockPreviewSession(sessionId: string): void {
+    mockPreviewSessions.delete(sessionId);
+}
+
+function createMockPreviewSession(configId: string, configName: string, targetPath: string): SyncPlanPreviewSession {
+    const preview = createMockPlanPreview(configId, configName, targetPath);
+    const sessionId = `browser-preview-${Math.random().toString(36).slice(2, 10)}`;
+    const updatedAt = preview.generatedAt;
+    const rowsByProject = Object.fromEntries(
+        preview.projects.map(project => [project.projectId, buildMockPreviewRows(project.operations)]),
+    );
+    const session: SyncPlanPreviewSession = {
+        sessionId,
+        configId: preview.configId,
+        configName: preview.configName,
+        generatedAt: preview.generatedAt,
+        updatedAt,
+        stage: 'watching',
+        progress: {
+            totalProjects: preview.projects.length,
+            processedProjects: preview.projects.length,
+            watched: true,
+            applying: false,
+        },
+        projects: preview.projects.map(project => ({
+            projectId: project.projectId,
+            projectName: project.projectName,
+            mode: project.mode,
+            localPath: project.localPath,
+            targetPath: project.targetPath,
+            summary: project.summary,
+            rowCount: rowsByProject[project.projectId]?.length ?? 0,
+            status: 'ready',
+            updatedAt,
+        })),
+    };
+
+    mockPreviewSessions.set(sessionId, {
+        session,
+        rowsByProject,
+    });
+
+    return session;
+}
+
+function createMockApplyResult(configId: string, configName: string): SyncApplyResult {
+    const project = browserState.snapshot.data.projects[0];
+    return {
+        configId,
+        configName,
+        executedAt: nowIso(),
+        projects: project ? [
+            {
+                projectId: project.id,
+                projectName: project.name,
+                localPath: project.path,
+                targetPath: 'D:/sync-targets/browser-demo',
+                applied: { create: 1, update: 1, delete: 0, conflict: 1, skip: 1 },
+                conflictPaths: ['src/conflict.ts'],
+            },
+        ] : [],
+    };
+}
+
+function createMockZipBundle(): { manifest: SyncManifest; entries: SyncProjectEntry[] } {
+    const entries: SyncProjectEntry[] = [
+        {
+            id: 'pj-demo01',
+            slug: 'fm-browser-demo',
+            meta: {
+                name: 'fm',
+                description: '浏览器 mock 的 ZIP 导入示例项目。',
+                tags: ['electron', 'tooling'],
+                ignore: ['README.md'],
+                fingerprint: { kind: 'metadata' },
+            },
+            files: [
+                { path: 'README.md', size: 12, mtime: nowIso(), sha1: 'zip-a' },
+                { path: 'src/main.ts', size: 24, mtime: nowIso(), sha1: 'zip-b' },
+            ],
+            hash: 'zip-hash-1',
+            modifiedAt: nowIso(),
+        },
+        {
+            id: 'pj-demo03',
+            slug: 'fm-browser-imported',
+            meta: {
+                name: 'fm-imported-demo',
+                description: '用于演示 ZIP 导入目标路径分配。',
+                tags: ['sync'],
+                ignore: [],
+                fingerprint: { kind: 'folder-name', folderName: 'fm-imported-demo' },
+            },
+            files: [
+                { path: 'package.json', size: 36, mtime: nowIso(), sha1: 'zip-c' },
+            ],
+            hash: 'zip-hash-2',
+            modifiedAt: nowIso(),
+        },
+    ];
+
+    return {
+        manifest: {
+            schema: 'fm.sync/v1',
+            generatedAt: nowIso(),
+            device: { id: 'dev-browser', name: 'Browser Preview' },
+            projects: entries,
+        },
+        entries,
+    };
+}
+
+function updateMockSyncWarnings(configId: string, configName: string): void {
+    const project = browserState.snapshot.data.projects[0];
+    if (!project) return;
+    const warnings = browserState.snapshot.data.warnings.filter(warning => {
+        if (warning.kind !== 'sync-conflict' && warning.kind !== 'sync-error') return true;
+        return warning.configId !== configId;
+    });
+    warnings.push({
+        id: `warn-sync-${Date.now().toString(36)}`,
+        kind: 'sync-conflict',
+        configId,
+        configName,
+        projectId: project.id,
+        projectName: project.name,
+        mode: 'two-way',
+        filePaths: ['src/conflict.ts'],
+        message: `${configName} 检测到 1 个冲突文件，已跳过该文件。`,
+        createdAt: nowIso(),
+    });
+    updateConfig({ ...browserState.snapshot.data, warnings });
+}
 
 function deriveLocalPath(sharedPath: string): string {
     if (!sharedPath) return 'browser://fm.local.json';
@@ -268,6 +699,7 @@ function createProjectFromInput(input: ManualProjectInput): Project {
         description: input.description?.trim() || undefined,
         tags: input.tags?.map(tag => tag.trim()).filter(Boolean) ?? [],
         ignore: [],
+        syncRespectGitignore: input.syncRespectGitignore,
         fingerprint: normalizeFingerprint(input.fingerprint),
         hasMetaFile: input.fingerprint.kind === 'metadata',
         lastScannedAt: nowIso(),
@@ -450,9 +882,10 @@ export function ensureBrowserBridge(): void {
                 })),
             runOne: async (rootId: string): Promise<ScanReport> => {
                 const warnings = browserState.snapshot.data.warnings.filter(warning => {
+                    if (warning.kind !== 'fingerprint-conflict') return true;
                     if (warning.scanRootId !== rootId) return true;
                     const remainingPaths = warning.candidatePaths.filter(
-                        candidatePath => !browserState.snapshot.data.ignoredPaths.includes(candidatePath),
+                        (candidatePath: string) => !browserState.snapshot.data.ignoredPaths.includes(candidatePath),
                     );
                     return remainingPaths.length > 1;
                 });
@@ -491,6 +924,7 @@ export function ensureBrowserBridge(): void {
                     description: patch.description,
                     tags: patch.tags?.map(tag => tag.trim()).filter(Boolean),
                     ignore: patch.ignore?.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean),
+                    syncRespectGitignore: patch.syncRespectGitignore,
                     fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : undefined,
                     hasMetaFile: patch.fingerprint?.kind === 'metadata'
                         ? true
@@ -502,6 +936,7 @@ export function ensureBrowserBridge(): void {
                     description: patch.description,
                     tags: patch.tags?.map(tag => tag.trim()).filter(Boolean),
                     ignore: patch.ignore?.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean),
+                    syncRespectGitignore: patch.syncRespectGitignore,
                     fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : undefined,
                     hasMetaFile: true,
                 }),
@@ -593,6 +1028,56 @@ export function ensureBrowserBridge(): void {
             }),
             pushSharedDir: async (_configId: string, projectIds?: string[]) => ({ pushed: projectIds ?? [] }),
             pullSharedDir: async (): Promise<SyncPullResult[]> => [],
+            previewSharedDirSync: async (configId: string): Promise<SyncPlanPreview> => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                return createMockPlanPreview(configId, syncConfig?.name ?? '共享目录同步', 'D:/OneDrive/fm-sync/devices/dev-desktop/projects/fm-browser-demo.zip');
+            },
+            openSharedDirSyncPreview: async (configId: string): Promise<SyncPlanPreviewSession> => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                return createMockPreviewSession(
+                    configId,
+                    syncConfig?.name ?? '共享目录同步',
+                    'D:/OneDrive/fm-sync/devices/dev-desktop/projects/fm-browser-demo.zip',
+                );
+            },
+            onSyncPreviewEvent: (_handler: (event: SyncPlanPreviewEvent) => void) => () => undefined,
+            getSyncPreviewRows: async (
+                sessionId: string,
+                projectId: string,
+                startIndex: number,
+                length: number,
+                selection?: SyncPlanSelectionState,
+            ): Promise<SyncPlanRowPage> => getMockPreviewRows(sessionId, projectId, startIndex, length, selection),
+            closeSyncPreview: async (sessionId: string): Promise<void> => {
+                closeMockPreviewSession(sessionId);
+            },
+            applySharedDirSync: async (configId: string, _projectIds?: string[], _request?: SyncPlanApplyRequest): Promise<SyncApplyResult> => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                const configName = syncConfig?.name ?? '共享目录同步';
+                updateMockSyncWarnings(configId, configName);
+                return createMockApplyResult(configId, configName);
+            },
+            previewFolderSync: async (configId: string): Promise<SyncPlanPreview> => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                return createMockPlanPreview(configId, syncConfig?.name ?? '文件夹同步');
+            },
+            openFolderSyncPreview: async (configId: string): Promise<SyncPlanPreviewSession> => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                return createMockPreviewSession(configId, syncConfig?.name ?? '文件夹同步', 'D:/sync-targets/browser-demo');
+            },
+            applyFolderSync: async (configId: string, _projectIds?: string[], _request?: SyncPlanApplyRequest): Promise<SyncApplyResult> => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                const configName = syncConfig?.name ?? '文件夹同步';
+                updateMockSyncWarnings(configId, configName);
+                return createMockApplyResult(configId, configName);
+            },
+            openSyncDiff: async (): Promise<void> => undefined,
+            openConflictMerge: async (_configId: string, projectId: string, relativePath: string): Promise<SyncConflictMergeDraft> => ({
+                id: `merge-${Date.now().toString(36)}`,
+                projectId,
+                relativePath,
+                updatedAt: nowIso(),
+            }),
             exportZip: async (configId: string, projectIds: string[], outputFile: string) => {
                 const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
                 if (syncConfig?.type === 'zip') {
@@ -604,17 +1089,19 @@ export function ensureBrowserBridge(): void {
                 return { outputFile, projects: projectIds.length };
             },
             pickExportFile: async () => null,
-            pickImportFile: async () => null,
-            previewZip: async (): Promise<{ manifest: SyncManifest; entries: SyncProjectEntry[] }> => ({
-                manifest: {
-                    schema: 'fm.sync/v1',
-                    generatedAt: nowIso(),
-                    device: { id: 'dev-browser', name: 'Browser Preview' },
-                    projects: [],
-                },
-                entries: [],
-            }),
+            pickImportFile: async () => 'browser://fm-bundle/mock-import.fm-bundle.zip',
+            previewZip: async (): Promise<{ manifest: SyncManifest; entries: SyncProjectEntry[] }> => createMockZipBundle(),
             applyZip: async (): Promise<SyncImportResult[]> => [],
+            previewZipImport: async (configId: string, _file: string, _targets: SyncImportTarget[]): Promise<SyncPlanPreview> => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                return createMockPlanPreview(configId, syncConfig?.name ?? 'ZIP 导入', 'browser://zip-import');
+            },
+            applyZipImport: async (configId: string): Promise<SyncApplyResult> => {
+                const syncConfig = (browserState.snapshot.data.syncConfigs ?? []).find(item => item.id === configId);
+                const configName = syncConfig?.name ?? 'ZIP 导入';
+                updateMockSyncWarnings(configId, configName);
+                return createMockApplyResult(configId, configName);
+            },
             startServer: async (configId: string) => {
                 if (!browserState.runningServers.includes(configId)) {
                     browserState.runningServers = [...browserState.runningServers, configId];

@@ -27,7 +27,7 @@ export function TriStateRuleButton({
       title={stateLabel}
       aria-label={stateLabel}
       className={cn(
-        'mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md border transition-colors',
+        'inline-flex size-5 shrink-0 items-center justify-center rounded-sm border transition-colors',
         state === 'selected'
           ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
           : state === 'ignored'

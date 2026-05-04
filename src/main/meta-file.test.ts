@@ -24,6 +24,7 @@ describe('meta-file', () => {
       description: 'Unity 原型',
       tags: ['unity'],
       ignore: ['dist/', 'README.md'],
+      syncRespectGitignore: true,
     });
     expect(await metaFileExists(dir)).toBe(true);
     const meta = await readMetaFile(dir);
@@ -31,6 +32,7 @@ describe('meta-file', () => {
     expect(meta?.name).toBe('MyGame');
     expect(meta?.tags).toEqual(['unity']);
     expect(meta?.ignore).toEqual(['dist/', 'README.md']);
+    expect(meta?.syncRespectGitignore).toBe(true);
   });
 
   test('[readMetaFile] 非法 JSON 应抛错', async () => {

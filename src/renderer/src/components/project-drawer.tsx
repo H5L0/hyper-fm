@@ -36,6 +36,7 @@ function projectToForm(project: Project): FormState {
     description: project.description ?? '',
     tags: [...project.tags],
     ignore: [...project.ignore],
+    syncRespectGitignore: project.syncRespectGitignore ?? false,
     fingerprint: project.fingerprint,
   };
 }
@@ -48,6 +49,7 @@ function formsEqual(a: FormState, b: FormState): boolean {
   for (let i = 0; i < a.ignore.length; i++) {
     if (a.ignore[i] !== b.ignore[i]) return false;
   }
+  if (a.syncRespectGitignore !== b.syncRespectGitignore) return false;
   if (!sameFingerprint(a.fingerprint, b.fingerprint)) return false;
   if (a.tags.length !== b.tags.length) return false;
   for (let i = 0; i < a.tags.length; i++) {
@@ -171,6 +173,7 @@ export function ProjectDrawer() {
     description: form.description,
     tags: form.tags,
     ignore: form.ignore,
+    syncRespectGitignore: form.syncRespectGitignore,
     fingerprint: form.fingerprint,
   });
 

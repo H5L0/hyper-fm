@@ -59,4 +59,61 @@ describe('snapshot', () => {
     expect(entry.id).toBe('pj-xyz123');
     expect(entry.meta.name).toBe('demo');
   });
+
+  test('[buildProjectSnapshot] 开启 respectGitignore 时应应用嵌套 .gitignore', async () => {
+    const dir = await tmpDir();
+    await writeTree(dir, {
+      '.gitignore': 'dist\n',
+      'dist/app.js': 'ignored',
+      'generated/root.txt': 'keep',
+      'src/.gitignore': '/generated\nsecret/\n',
+      'src/main.ts': 'console.log(1)',
+      'src/generated/codegen.ts': 'ignored',
+      'src/nested/secret/token.txt': 'ignored',
+      'src/nested/keep.ts': 'keep',
+    });
+    const entry = await buildProjectSnapshot({
+      projectId: 'pj-git001',
+      projectPath: dir,
+      meta: { name: 'gitignore-demo', tags: [] },
+      ignorePatterns: [],
+      respectGitignore: true,
+    });
+
+    const paths = entry.files.map(file => file.path).sort();
+    expect(paths).toEqual([
+      '.gitignore',
+      'generated/root.txt',
+      'src/.gitignore',
+      'src/main.ts',
+      'src/nested/keep.ts',
+    ]);
+  });
+
+  test('[buildProjectSnapshot] 关闭 respectGitignore 时不应应用 .gitignore', async () => {
+    const dir = await tmpDir();
+    await writeTree(dir, {
+      '.gitignore': 'dist\n',
+      'dist/app.js': 'keep',
+      'src/.gitignore': '/generated\nsecret/\n',
+      'src/generated/codegen.ts': 'keep',
+      'src/nested/secret/token.txt': 'keep',
+    });
+    const entry = await buildProjectSnapshot({
+      projectId: 'pj-git002',
+      projectPath: dir,
+      meta: { name: 'gitignore-off', tags: [] },
+      ignorePatterns: [],
+      respectGitignore: false,
+    });
+
+    const paths = entry.files.map(file => file.path).sort();
+    expect(paths).toEqual([
+      '.gitignore',
+      'dist/app.js',
+      'src/.gitignore',
+      'src/generated/codegen.ts',
+      'src/nested/secret/token.txt',
+    ]);
+  });
 });

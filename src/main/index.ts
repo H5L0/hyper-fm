@@ -5,6 +5,7 @@ import { createLogger } from '../shared/logger.js';
 import { registerIpcHandlers } from './ipc.js';
 import { initSession } from './session.js';
 import { resolveDefaultConfigPaths } from './config-store.js';
+import { disposeAutoSyncSchedules, refreshAutoSyncSchedules } from './sync/auto-sync.js';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -63,6 +64,7 @@ async function bootstrap(): Promise<void> {
   const defaultPaths = resolveDefaultConfigPaths(defaultConfigDir());
   try {
     await initSession(defaultPaths.sharedPath);
+    refreshAutoSyncSchedules();
   } catch (error) {
     logger.error('初始化配置失败', error);
   }
@@ -87,6 +89,7 @@ void bootstrap().catch(error => {
 
 app.on('window-all-closed', () => {
   logger.info('所有窗口关闭');
+  disposeAutoSyncSchedules();
   if (process.platform !== 'darwin') {
     app.quit();
   }

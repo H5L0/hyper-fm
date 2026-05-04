@@ -44,14 +44,93 @@ async function sha1OfFile(absPath: string): Promise<string> {
 
 interface WalkOptions {
   ignore: IgnoreMatcher;
+  respectGitignore: boolean;
   /** 单文件大小上限（字节）；超过则跳过 */
   maxFileBytes: number;
+}
+
+interface ScopedGitignoreRule {
+  baseSegments: string[];
+  dirOnly: boolean;
+  rooted: boolean;
+  hasSlash: boolean;
+  segments: Array<{ literal?: string; star?: true }>;
+}
+
+function parseGitignoreRule(baseSegments: readonly string[], line: string): ScopedGitignoreRule | null {
+  let source = line.trim();
+  if (!source || source.startsWith('#') || source.startsWith('!')) return null;
+
+  const dirOnly = source.endsWith('/');
+  if (dirOnly) source = source.slice(0, -1);
+
+  const rooted = source.startsWith('/');
+  if (rooted) source = source.slice(1);
+
+  const hasSlash = source.includes('/');
+  const segments = source.split('/').filter(Boolean).map(segment => (
+    segment === '*'
+      ? { star: true as const }
+      : { literal: segment }
+  ));
+
+  if (segments.length === 0) return null;
+
+  return {
+    baseSegments: [...baseSegments],
+    dirOnly,
+    rooted,
+    hasSlash,
+    segments,
+  };
+}
+
+function matchGitignoreSegment(segment: { literal?: string; star?: true }, name: string): boolean {
+  if (segment.star) return true;
+  return segment.literal === name;
+}
+
+function matchScopedGitignoreRule(rule: ScopedGitignoreRule, relativeSegments: readonly string[], isDir: boolean): boolean {
+  if (rule.dirOnly && !isDir) return false;
+  if (relativeSegments.length < rule.baseSegments.length) return false;
+
+  for (let index = 0; index < rule.baseSegments.length; index += 1) {
+    if (relativeSegments[index] !== rule.baseSegments[index]) {
+      return false;
+    }
+  }
+
+  const localSegments = relativeSegments.slice(rule.baseSegments.length);
+  if (localSegments.length === 0) return false;
+
+  if (rule.rooted || rule.hasSlash) {
+    if (rule.segments.length !== localSegments.length) return false;
+    for (let index = 0; index < rule.segments.length; index += 1) {
+      if (!matchGitignoreSegment(rule.segments[index]!, localSegments[index]!)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (rule.segments.length !== 1) return false;
+  return matchGitignoreSegment(rule.segments[0]!, localSegments[localSegments.length - 1]!);
+}
+
+async function readGitignoreLines(directory: string): Promise<string[]> {
+  try {
+    const raw = await fs.readFile(path.join(directory, '.gitignore'), 'utf8');
+    return raw.split(/\r?\n/);
+  } catch {
+    return [];
+  }
 }
 
 async function walk(
   rootAbs: string,
   relDir: string,
   options: WalkOptions,
+  gitignoreRules: readonly ScopedGitignoreRule[],
   out: SyncFileEntry[],
 ): Promise<void> {
   const dirAbs = path.join(rootAbs, relDir);
@@ -61,12 +140,23 @@ async function walk(
   } catch {
     return;
   }
+
+  const baseSegments = relDir.split('/').filter(Boolean);
+  const localRules = options.respectGitignore
+    ? (await readGitignoreLines(dirAbs))
+      .map(line => parseGitignoreRule(baseSegments, line))
+      .filter((rule): rule is ScopedGitignoreRule => rule !== null)
+    : [];
+  const mergedGitignoreRules = localRules.length > 0 ? [...gitignoreRules, ...localRules] : gitignoreRules;
+
   for (const ent of entries) {
     const childRel = relDir ? `${relDir}/${ent.name}` : ent.name;
+    const childSegments = childRel.split('/').filter(Boolean);
     if (options.ignore.isIgnored(childRel, ent.isDirectory())) continue;
+    if (mergedGitignoreRules.some(rule => matchScopedGitignoreRule(rule, childSegments, ent.isDirectory()))) continue;
     if (ent.isSymbolicLink()) continue;
     if (ent.isDirectory()) {
-      await walk(rootAbs, childRel, options, out);
+      await walk(rootAbs, childRel, options, mergedGitignoreRules, out);
       continue;
     }
     if (!ent.isFile()) continue;
@@ -113,6 +203,8 @@ export interface BuildSnapshotInput {
   meta: SyncProjectMeta;
   /** 同步专用忽略规则（基于 AppConfig.ignore.globs + 项目 .meta-data.ignore 合并） */
   ignorePatterns: readonly string[];
+  /** 是否额外遵循项目目录中的 .gitignore（含嵌套目录） */
+  respectGitignore?: boolean;
   /** 单文件大小上限，超出忽略。默认 50MB */
   maxFileBytes?: number;
 }
@@ -125,7 +217,17 @@ export async function buildProjectSnapshot(
   const { projectId, projectPath, meta } = input;
   const matcher = createIgnoreMatcher(input.ignorePatterns);
   const files: SyncFileEntry[] = [];
-  await walk(projectPath, '', { ignore: matcher, maxFileBytes: input.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES }, files);
+  await walk(
+    projectPath,
+    '',
+    {
+      ignore: matcher,
+      respectGitignore: input.respectGitignore === true,
+      maxFileBytes: input.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES,
+    },
+    [],
+    files,
+  );
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
   let mtime = '1970-01-01T00:00:00.000Z';

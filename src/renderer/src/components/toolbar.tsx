@@ -28,6 +28,7 @@ export function Toolbar() {
         description: '',
         tags: [],
         ignore: [],
+        syncRespectGitignore: false,
         fingerprint: { kind: 'folder-name', folderName: '' },
     });
     const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
@@ -46,6 +47,7 @@ export function Toolbar() {
             name: override?.name ?? (form.name.trim() || undefined),
             description: override?.description ?? (form.description.trim() || undefined),
             tags: override?.tags ?? form.tags,
+            syncRespectGitignore: override?.syncRespectGitignore ?? form.syncRespectGitignore,
             fingerprint: override?.fingerprint ?? form.fingerprint,
         };
         if (!payload.path) {
@@ -125,6 +127,7 @@ export function Toolbar() {
                 name: form.name.trim() || undefined,
                 description: form.description.trim() || undefined,
                 tags: form.tags,
+                syncRespectGitignore: form.syncRespectGitignore,
                 fingerprint: form.fingerprint,
             });
             actions.toast('success', `已添加项目：${project.name}`);

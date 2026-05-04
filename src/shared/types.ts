@@ -40,6 +40,21 @@ export interface ProjectBinding {
   syncedHash?: string;
   /** 上次拉取来源设备 ID */
   syncedFrom?: string;
+  /** 每个同步配置自己的稳定基线，用于双向同步冲突判断 */
+  syncStates?: ProjectSyncState[];
+}
+
+export interface SyncBaselineFile {
+  path: string;
+  sha1: string;
+}
+
+export interface ProjectSyncState {
+  configId: string;
+  lastSyncedAt: string;
+  baselineHash: string;
+  baselineFiles: SyncBaselineFile[];
+  targetPath?: string;
 }
 
 export interface MetadataFingerprint {
@@ -67,6 +82,8 @@ export interface SharedProject {
   description?: string;
   tags: string[];
   ignore: string[];
+  /** 同步项目文件时是否额外遵循项目目录中的 .gitignore（含嵌套目录） */
+  syncRespectGitignore?: boolean;
   fingerprint: ProjectFingerprint;
 }
 
@@ -75,10 +92,12 @@ export interface Project extends ProjectBinding {
   description?: string;
   tags: string[];
   ignore: string[];
+  /** 同步项目文件时是否额外遵循项目目录中的 .gitignore（含嵌套目录） */
+  syncRespectGitignore?: boolean;
   fingerprint: ProjectFingerprint;
 }
 
-export interface ScanWarning {
+export interface FingerprintConflictWarning {
   id: string;
   kind: 'fingerprint-conflict';
   scanRootId: string;
@@ -89,6 +108,35 @@ export interface ScanWarning {
   message: string;
   createdAt: string;
 }
+
+export interface SyncConflictWarning {
+  id: string;
+  kind: 'sync-conflict';
+  configId: string;
+  configName: string;
+  projectId: string;
+  projectName: string;
+  mode: import('./sync-types.js').SyncMode;
+  filePaths: string[];
+  message: string;
+  createdAt: string;
+}
+
+export interface SyncErrorWarning {
+  id: string;
+  kind: 'sync-error';
+  configId: string;
+  configName: string;
+  projectId?: string;
+  projectName?: string;
+  message: string;
+  createdAt: string;
+}
+
+export type ScanWarning =
+  | FingerprintConflictWarning
+  | SyncConflictWarning
+  | SyncErrorWarning;
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 export type ViewMode = 'grid' | 'list';
@@ -169,6 +217,7 @@ export interface MetaFile {
   description?: string;
   tags?: string[];
   ignore?: string[];
+  syncRespectGitignore?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +229,7 @@ export interface ProjectMetaPatch {
   description?: string;
   tags?: string[];
   ignore?: string[];
+  syncRespectGitignore?: boolean;
   fingerprint?: ProjectFingerprint;
 }
 

@@ -17,6 +17,7 @@ import type {
 } from '@shared/bridge.js';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { CheckboxField } from '@/components/ui/checkbox-field';
 import { EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import { SegmentedToggleGroup } from '@/components/ui/segmented-toggle-group';
 import { cn } from '@/lib/utils';
@@ -31,6 +32,7 @@ export interface ProjectEditorFormValue {
     description: string;
     tags: string[];
     ignore: string[];
+    syncRespectGitignore: boolean;
     fingerprint: ProjectFingerprint;
 }
 
@@ -204,13 +206,24 @@ export function ProjectEditorDrawer({
                                     />
                                 </DrawerField>
 
-                                <DrawerField label="项目指纹">
+                                <DrawerField label="识别方式">
                                     <FingerprintEditor
                                         inspection={inspection}
                                         fingerprint={form.fingerprint}
                                         editable={fingerprintEditable}
                                         path={form.path}
                                         onChange={fingerprint => onFormChange({ ...form, fingerprint })}
+                                    />
+                                </DrawerField>
+
+                                <DrawerField label="同步">
+                                    <CheckboxField
+                                        checked={form.syncRespectGitignore}
+                                        onCheckedChange={checked => onFormChange({ ...form, syncRespectGitignore: checked })}
+                                        label="同步时遵循项目目录中的 .gitignore"
+                                        className="items-center"
+                                        checkboxClassName="mt-0"
+                                        contentClassName="pt-0"
                                     />
                                 </DrawerField>
 
@@ -318,7 +331,7 @@ function FingerprintEditor({
     return (
         <div className="space-y-3">
             <SegmentedToggleGroup
-                ariaLabel="选择项目指纹类型"
+                ariaLabel="选择项目识别方式"
                 value={fingerprint.kind}
                 onValueChange={nextValue => setKind(nextValue as ProjectFingerprint['kind'])}
                 optionMinWidth={170}
@@ -328,7 +341,7 @@ function FingerprintEditor({
                         value: 'metadata',
                         label: 'metadata',
                         description: '在原目录放置元数据文件识别项目',
-                        badge: <div className="rounded-full bg-green-500 w-2 h-2"></div>,
+                        badge: hasMetaFile ? <div className="rounded-full bg-green-500 w-2 h-2"></div> : undefined,
                         icon: <FileCode2 className="size-4" />,
                         disabled: !editable,
                     },

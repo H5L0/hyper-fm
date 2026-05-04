@@ -83,6 +83,7 @@ describe('project-repo / manual add', () => {
                 path: 'D:/p/demo',
                 name: 'Demo',
                 tags: ['ts'],
+                syncRespectGitignore: true,
                 fingerprint: { kind: 'folder-name', folderName: 'demo' },
             },
             'win32',
@@ -91,6 +92,7 @@ describe('project-repo / manual add', () => {
         expect(result.nextLocal.bindings).toHaveLength(1);
         expect(result.project.id).toMatch(/^pj-[a-z0-9]{6}$/);
         expect(result.project.ignore).toEqual([]);
+        expect(result.project.syncRespectGitignore).toBe(true);
         expect(result.project.fingerprint.kind).toBe('folder-name');
     });
 
@@ -110,9 +112,11 @@ describe('project-repo / manual add', () => {
         const patched = applyProjectPatch(added.nextShared, added.nextLocal, added.project.id, {
             tags: [' a ', '', 'b'],
             ignore: ['dist/', ' README.md ', ''],
+            syncRespectGitignore: true,
         });
         expect(patched.project.tags).toEqual(['a', 'b']);
         expect(patched.project.ignore).toEqual(['README.md', 'dist/']);
+        expect(patched.project.syncRespectGitignore).toBe(true);
     });
 
     test('[removeProject] 应删除共享项目、本地绑定与相关告警', () => {

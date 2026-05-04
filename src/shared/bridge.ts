@@ -22,9 +22,18 @@ import type {
   DeviceRegistry,
   KnownDevice,
   PresetCommandDescriptor,
+  SyncApplyResult,
   SyncConfig,
+  SyncConflictMergeDraft,
   SyncDiff,
   SyncManifest,
+  SyncPlanApplyRequest,
+  SyncPlanPreviewEvent,
+  SyncPlanPreview,
+  SyncPlanPreviewSession,
+  SyncPlanRow,
+  SyncPlanRowPage,
+  SyncPlanSelectionState,
   SyncProjectEntry,
 } from './sync-types.js';
 import type { SyncProjectRule } from './sync-config.js';
@@ -50,9 +59,18 @@ export type {
   DeviceRegistry,
   KnownDevice,
   PresetCommandDescriptor,
+  SyncApplyResult,
   SyncConfig,
+  SyncConflictMergeDraft,
   SyncDiff,
   SyncManifest,
+  SyncPlanApplyRequest,
+  SyncPlanPreviewEvent,
+  SyncPlanPreview,
+  SyncPlanPreviewSession,
+  SyncPlanRow,
+  SyncPlanRowPage,
+  SyncPlanSelectionState,
   SyncProjectEntry,
 };
 export type { SyncProjectRule };
@@ -125,6 +143,7 @@ export interface ManualProjectInput {
   name?: string;
   description?: string;
   tags?: string[];
+  syncRespectGitignore?: boolean;
   fingerprint: ProjectFingerprint;
 }
 
@@ -188,6 +207,25 @@ export interface FmSyncBridge {
   diffSharedDir(configId: string, projectIds?: string[]): Promise<SyncDiff>;
   pushSharedDir(configId: string, projectIds?: string[]): Promise<{ pushed: string[] }>;
   pullSharedDir(configId: string, items: SyncPullItem[]): Promise<SyncPullResult[]>;
+  previewSharedDirSync(configId: string, projectIds?: string[]): Promise<SyncPlanPreview>;
+  openSharedDirSyncPreview(configId: string, projectIds?: string[]): Promise<SyncPlanPreviewSession>;
+  onSyncPreviewEvent(handler: (event: SyncPlanPreviewEvent) => void): () => void;
+  getSyncPreviewRows(
+    sessionId: string,
+    projectId: string,
+    startIndex: number,
+    length: number,
+    selection?: SyncPlanSelectionState,
+  ): Promise<SyncPlanRowPage>;
+  closeSyncPreview(sessionId: string): Promise<void>;
+  applySharedDirSync(configId: string, projectIds?: string[], request?: SyncPlanApplyRequest): Promise<SyncApplyResult>;
+
+  /** 文件夹同步：预览 / 执行 */
+  previewFolderSync(configId: string, projectIds?: string[]): Promise<SyncPlanPreview>;
+  openFolderSyncPreview(configId: string, projectIds?: string[]): Promise<SyncPlanPreviewSession>;
+  applyFolderSync(configId: string, projectIds?: string[], request?: SyncPlanApplyRequest): Promise<SyncApplyResult>;
+  openSyncDiff(configId: string, projectId: string, relativePath: string): Promise<void>;
+  openConflictMerge(configId: string, projectId: string, relativePath: string): Promise<SyncConflictMergeDraft>;
 
   /** zip 导入/导出 */
   exportZip(configId: string, projectIds: string[], outputFile: string): Promise<{ outputFile: string; projects: number }>;
@@ -195,6 +233,8 @@ export interface FmSyncBridge {
   pickImportFile(): Promise<string | null>;
   previewZip(file: string): Promise<{ manifest: SyncManifest; entries: SyncProjectEntry[] }>;
   applyZip(configId: string, file: string, plan: SyncImportItem[]): Promise<SyncImportResult[]>;
+  previewZipImport(configId: string, file: string, targets: SyncImportTarget[]): Promise<SyncPlanPreview>;
+  applyZipImport(configId: string, file: string, targets: SyncImportTarget[]): Promise<SyncApplyResult>;
 
   /** TCP 服务端 */
   startServer(configId: string): Promise<{ port: number }>;
@@ -226,6 +266,11 @@ export interface SyncImportResult {
   projectId: string;
   applied: boolean;
   targetPath?: string;
+}
+
+export interface SyncImportTarget {
+  projectId: string;
+  targetPath: string;
 }
 
 // ---------------------------------------------------------------------------

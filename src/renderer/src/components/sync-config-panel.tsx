@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Download, FolderOpen, FolderRoot, Plus, Server, Upload } from 'lucide-react';
-import type { DeviceRegistry, Project, ScanRoot, SyncConfig, SyncProjectRule } from '@shared/bridge.js';
+import { ChevronDown, Download, FolderOpen, FolderRoot, GitCompareArrows, Plus, Server, Upload } from 'lucide-react';
+import type {
+    DeviceRegistry,
+    Project,
+    ScanRoot,
+    SyncApplyResult,
+    SyncConfig,
+    SyncImportTarget,
+    SyncPlanApplyRequest,
+    SyncPlanPreview,
+    SyncPlanPreviewSession,
+    SyncProjectEntry,
+    SyncProjectRule,
+} from '@shared/bridge.js';
 import { createScopedSyncConfig, normalizeSyncConfig, resolveSyncProjectIds } from '@shared/sync-config.js';
 import {
     type SyncConfigScope,
@@ -16,6 +28,8 @@ import {
 } from '@/components/ui/segmented-toggle-group';
 import { TriStateRuleButton, getNextTriStateRule } from '@/components/ui/tri-state-rule-button';
 import { SyncConfigSummaryCard } from './sync-config-card.js';
+import { SyncPlanDialog } from './sync-plan-dialog.js';
+import { SyncPlanStaticDialog } from './sync-plan-static-dialog.js';
 import { useAppActions, useAppState } from '../store/app-store.js';
 
 const SCOPE_OPTIONS: SegmentedToggleOption[] = [
@@ -77,6 +91,7 @@ const MODE_OPTIONS: SegmentedToggleOption[] = [
 ];
 
 type TargetListKey = 'projectIds' | 'ignoredProjectIds' | 'rootIds' | 'ignoredRootIds';
+type PreviewableSyncConfig = Extract<SyncConfig, { type: 'folder' }> | Extract<SyncConfig, { type: 'shared-dir' }>;
 
 export function SyncConfigPanel() {
     const { config } = useAppState();
@@ -87,6 +102,21 @@ export function SyncConfigPanel() {
     const [editingConfig, setEditingConfig] = useState<SyncConfig | null>(null);
     const [busyKey, setBusyKey] = useState<string | null>(null);
     const [serverRunning, setServerRunning] = useState<Record<string, boolean>>({});
+    const [syncPlanPreview, setSyncPlanPreview] = useState<{
+        config: PreviewableSyncConfig;
+        session: SyncPlanPreviewSession;
+    } | null>(null);
+    const [zipImportSetup, setZipImportSetup] = useState<{
+        config: Extract<SyncConfig, { type: 'zip' }>;
+        file: string;
+        entries: SyncProjectEntry[];
+    } | null>(null);
+    const [zipImportPlanPreview, setZipImportPlanPreview] = useState<{
+        config: Extract<SyncConfig, { type: 'zip' }>;
+        file: string;
+        targets: SyncImportTarget[];
+        preview: SyncPlanPreview;
+    } | null>(null);
 
     useEffect(() => {
         void window.fm.sync.getDevice().then(setDevice);
@@ -108,6 +138,24 @@ export function SyncConfigPanel() {
             setServerRunning(Object.fromEntries(entries));
         });
     }, [syncConfigs]);
+
+    useEffect(() => window.fm.sync.onSyncPreviewEvent(event => {
+        setSyncPlanPreview(current => {
+            if (!current || current.session.sessionId !== event.sessionId) {
+                return current;
+            }
+            if (event.type === 'session-closed') {
+                return null;
+            }
+            if (!event.session) {
+                return current;
+            }
+            return {
+                ...current,
+                session: event.session,
+            };
+        });
+    }), []);
 
     const existingConfigIds = useMemo(() => new Set(syncConfigs.map(item => item.id)), [syncConfigs]);
     const includedProjectCounts = useMemo(
@@ -167,19 +215,6 @@ export function SyncConfigPanel() {
         }
     };
 
-    const pushSharedDir = async (syncConfig: Extract<SyncConfig, { type: 'shared-dir' }>) => {
-        setBusyKey(`push:${syncConfig.id}`);
-        try {
-            const result = await window.fm.sync.pushSharedDir(syncConfig.id, config.projects.map(item => item.id));
-            await refreshConfig();
-            actions.toast('success', `已推送 ${result.pushed.length} 个项目`);
-        } catch (error) {
-            actions.toast('error', error instanceof Error ? error.message : '推送失败');
-        } finally {
-            setBusyKey(null);
-        }
-    };
-
     const exportZip = async (syncConfig: Extract<SyncConfig, { type: 'zip' }>) => {
         const file = await window.fm.sync.pickExportFile();
         if (!file) return;
@@ -201,7 +236,11 @@ export function SyncConfigPanel() {
         setBusyKey(`import:${syncConfig.id}`);
         try {
             const preview = await window.fm.sync.previewZip(file);
-            actions.toast('info', `预览完成：bundle 含 ${preview.entries.length} 个项目，导入确认 UI 下一步接入。`);
+            setZipImportSetup({
+                config: syncConfig,
+                file,
+                entries: preview.entries,
+            });
         } catch (error) {
             actions.toast('error', error instanceof Error ? error.message : '预览失败');
         } finally {
@@ -228,9 +267,31 @@ export function SyncConfigPanel() {
         }
     };
 
-    const previewFolderDiff = (syncConfig: Extract<SyncConfig, { type: 'folder' }>) => {
-        void syncConfig;
-        actions.toast('info', '文件夹对比视图会在下一步同步执行器接入；本轮先完成配置体验与界面重构。');
+    const previewSyncPlan = async (syncConfig: PreviewableSyncConfig) => {
+        setBusyKey(`preview:${syncConfig.id}`);
+        try {
+            if (syncPlanPreview) {
+                await window.fm.sync.closeSyncPreview(syncPlanPreview.session.sessionId);
+            }
+            const session = syncConfig.type === 'folder'
+                ? await window.fm.sync.openFolderSyncPreview(syncConfig.id)
+                : await window.fm.sync.openSharedDirSyncPreview(syncConfig.id);
+            setSyncPlanPreview({ config: syncConfig, session });
+        } catch (error) {
+            actions.toast('error', error instanceof Error ? error.message : '预览失败');
+        } finally {
+            setBusyKey(null);
+        }
+    };
+
+    const closeSyncPlanPreview = async (state: { config: PreviewableSyncConfig; session: SyncPlanPreviewSession } | null) => {
+        if (!state) return;
+        setSyncPlanPreview(current => (current?.session.sessionId === state.session.sessionId ? null : current));
+        try {
+            await window.fm.sync.closeSyncPreview(state.session.sessionId);
+        } catch {
+            // 关闭预览失败时不阻塞 UI，最多只是留下一次性会话缓存。
+        }
     };
 
     return (
@@ -299,11 +360,12 @@ export function SyncConfigPanel() {
                                         busy={busyKey?.includes(syncConfig.id) ?? false}
                                         serverRunning={serverRunning[syncConfig.id] ?? false}
                                         onPickDirectory={() => void pickDirectoryForConfig(syncConfig)}
-                                        onPushSharedDir={syncConfig.type === 'shared-dir' ? () => void pushSharedDir(syncConfig) : undefined}
+                                        onCompareAndSync={syncConfig.type === 'folder' || syncConfig.type === 'shared-dir'
+                                            ? () => void previewSyncPlan(syncConfig)
+                                            : undefined}
                                         onExportZip={syncConfig.type === 'zip' ? () => void exportZip(syncConfig) : undefined}
                                         onImportZip={syncConfig.type === 'zip' ? () => void importZip(syncConfig) : undefined}
                                         onToggleServer={syncConfig.type === 'p2p' ? () => void toggleServer(syncConfig) : undefined}
-                                        onPreviewFolderDiff={syncConfig.type === 'folder' ? () => previewFolderDiff(syncConfig) : undefined}
                                     />
                                 )}
                             />
@@ -332,14 +394,242 @@ export function SyncConfigPanel() {
                     onClose={() => setEditingConfig(null)}
                     onSave={() => void saveSyncConfig(editingConfig)}
                     onPickDirectory={() => void pickDraftDirectory(editingConfig, setEditingConfig)}
-                    onPushSharedDir={editingConfig.type === 'shared-dir' ? () => void pushSharedDir(editingConfig) : undefined}
+                    onCompareAndSync={editingConfig.type === 'folder' || editingConfig.type === 'shared-dir'
+                        ? () => void previewSyncPlan(editingConfig)
+                        : undefined}
                     onExportZip={editingConfig.type === 'zip' ? () => void exportZip(editingConfig) : undefined}
                     onImportZip={editingConfig.type === 'zip' ? () => void importZip(editingConfig) : undefined}
                     onToggleServer={editingConfig.type === 'p2p' ? () => void toggleServer(editingConfig) : undefined}
-                    onPreviewFolderDiff={editingConfig.type === 'folder' ? () => previewFolderDiff(editingConfig) : undefined}
+                />
+            ) : null}
+            {syncPlanPreview ? (
+                <SyncPlanDialog
+                    title="同步目录"
+                    session={syncPlanPreview.session}
+                    busy={busyKey === `${syncPlanPreview.config.type === 'folder' ? 'apply-folder' : 'apply-shared-dir'}:${syncPlanPreview.config.id}`}
+                    applyLabel="执行同步"
+                    onClose={() => void closeSyncPlanPreview(syncPlanPreview)}
+                    onOpenDiff={(projectId: string, relativePath: string) => window.fm.sync.openSyncDiff(syncPlanPreview.config.id, projectId, relativePath)}
+                    onOpenConflictMerge={(projectId: string, relativePath: string) => window.fm.sync.openConflictMerge(syncPlanPreview.config.id, projectId, relativePath)}
+                    onApply={(request: SyncPlanApplyRequest) => void applySyncPlanPreview(
+                        syncPlanPreview,
+                        request,
+                        setBusyKey,
+                        refreshConfig,
+                        actions,
+                        closeSyncPlanPreview,
+                    )}
+                />
+            ) : null}
+
+            {zipImportSetup ? (
+                <ZipImportSetupDialog
+                    syncConfig={zipImportSetup.config}
+                    file={zipImportSetup.file}
+                    entries={zipImportSetup.entries}
+                    existingProjects={config.projects}
+                    busy={busyKey === `preview-zip-import:${zipImportSetup.config.id}`}
+                    onClose={() => setZipImportSetup(null)}
+                    onPreview={async targets => {
+                        setBusyKey(`preview-zip-import:${zipImportSetup.config.id}`);
+                        try {
+                            const preview = await window.fm.sync.previewZipImport(zipImportSetup.config.id, zipImportSetup.file, targets);
+                            setZipImportPlanPreview({
+                                config: zipImportSetup.config,
+                                file: zipImportSetup.file,
+                                targets,
+                                preview,
+                            });
+                            setZipImportSetup(null);
+                        } catch (error) {
+                            actions.toast('error', error instanceof Error ? error.message : 'ZIP 导入预览失败');
+                        } finally {
+                            setBusyKey(null);
+                        }
+                    }}
+                />
+            ) : null}
+
+            {zipImportPlanPreview ? (
+                <SyncPlanStaticDialog
+                    title="导入目录"
+                    preview={zipImportPlanPreview.preview}
+                    busy={busyKey === `apply-zip-import:${zipImportPlanPreview.config.id}`}
+                    applyLabel="执行导入"
+                    onClose={() => setZipImportPlanPreview(null)}
+                    onApply={(request: SyncPlanApplyRequest) => void applyZipImportPreview(
+                        zipImportPlanPreview,
+                        request,
+                        setBusyKey,
+                        refreshConfig,
+                        actions,
+                        setZipImportPlanPreview,
+                    )}
                 />
             ) : null}
         </section>
+    );
+}
+
+async function applySyncPlanPreview(
+    state: {
+        config: PreviewableSyncConfig;
+        session: SyncPlanPreviewSession;
+    },
+    request: SyncPlanApplyRequest,
+    setBusyKey: (value: string | null) => void,
+    refreshConfig: () => Promise<void>,
+    actions: ReturnType<typeof useAppActions>,
+    close: (value: { config: PreviewableSyncConfig; session: SyncPlanPreviewSession } | null) => Promise<void>,
+): Promise<void> {
+    const busyKey = `${state.config.type === 'folder' ? 'apply-folder' : 'apply-shared-dir'}:${state.config.id}`;
+    setBusyKey(busyKey);
+    try {
+        const result = state.config.type === 'folder'
+            ? await window.fm.sync.applyFolderSync(state.config.id, request.projectIds, request)
+            : await window.fm.sync.applySharedDirSync(state.config.id, request.projectIds, request);
+        await refreshConfig();
+        actions.toast('success', summarizeApplyResult(result, '同步完成'));
+        await close(state);
+    } catch (error) {
+        actions.toast('error', error instanceof Error ? error.message : '执行同步失败');
+    } finally {
+        setBusyKey(null);
+    }
+}
+
+async function applyZipImportPreview(
+    state: {
+        config: Extract<SyncConfig, { type: 'zip' }>;
+        file: string;
+        targets: SyncImportTarget[];
+        preview: SyncPlanPreview;
+    },
+    request: SyncPlanApplyRequest,
+    setBusyKey: (value: string | null) => void,
+    refreshConfig: () => Promise<void>,
+    actions: ReturnType<typeof useAppActions>,
+    close: (value: null) => void,
+): Promise<void> {
+    setBusyKey(`apply-zip-import:${state.config.id}`);
+    try {
+        const targetMap = new Map(state.targets.map(target => [target.projectId, target]));
+        const selectedTargets = request.projectIds
+            .map(projectId => targetMap.get(projectId))
+            .filter((target): target is SyncImportTarget => Boolean(target));
+        const result = await window.fm.sync.applyZipImport(state.config.id, state.file, selectedTargets);
+        await refreshConfig();
+        actions.toast('success', summarizeApplyResult(result, '导入完成'));
+        close(null);
+    } catch (error) {
+        actions.toast('error', error instanceof Error ? error.message : 'ZIP 导入失败');
+    } finally {
+        setBusyKey(null);
+    }
+}
+
+function summarizeApplyResult(result: SyncApplyResult, fallback: string): string {
+    const summary = result.projects.reduce(
+        (acc, project) => ({
+            create: acc.create + project.applied.create,
+            update: acc.update + project.applied.update,
+            delete: acc.delete + project.applied.delete,
+            conflict: acc.conflict + project.applied.conflict,
+        }),
+        { create: 0, update: 0, delete: 0, conflict: 0 },
+    );
+    return `${fallback}：新增 ${summary.create}，更新 ${summary.update}，删除 ${summary.delete}${summary.conflict > 0 ? `，冲突 ${summary.conflict}` : ''}`;
+}
+
+function ZipImportSetupDialog({
+    syncConfig,
+    file,
+    entries,
+    existingProjects,
+    busy,
+    onClose,
+    onPreview,
+}: {
+    syncConfig: Extract<SyncConfig, { type: 'zip' }>;
+    file: string;
+    entries: SyncProjectEntry[];
+    existingProjects: Project[];
+    busy: boolean;
+    onClose: () => void;
+    onPreview: (targets: SyncImportTarget[]) => Promise<void>;
+}) {
+    const [targets, setTargets] = useState<Record<string, string>>(() => Object.fromEntries(
+        entries.map(entry => [entry.id, existingProjects.find(project => project.id === entry.id)?.path ?? '']),
+    ));
+
+    const canPreview = entries.length > 0 && entries.every(entry => targets[entry.id]?.trim());
+
+    return (
+        <EditDialogShell
+            title={`选择导入目标：${syncConfig.name}`}
+            note={`源文件：${file}`}
+            onClose={onClose}
+            panelClassName="w-[min(860px,calc(100vw-2rem))]"
+            bodyClassName="space-y-4"
+            footerEnd={(
+                <>
+                    <Button size="sm" variant="outline" onClick={onClose}>
+                        取消
+                    </Button>
+                    <Button
+                        size="sm"
+                        disabled={busy || !canPreview}
+                        onClick={() => void onPreview(entries.map(entry => ({
+                            projectId: entry.id,
+                            targetPath: targets[entry.id]!.trim(),
+                        })))}
+                    >
+                        预览导入
+                    </Button>
+                </>
+            )}
+        >
+            {entries.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border bg-muted/10 px-4 py-8 text-center text-note text-muted-foreground">
+                    当前 ZIP 中没有可导入的项目。
+                </div>
+            ) : entries.map(entry => {
+                const linkedProject = existingProjects.find(project => project.id === entry.id);
+                return (
+                    <div key={entry.id} className="rounded-xl border border-border bg-card px-4 py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="text-body font-medium text-foreground">{entry.meta.name}</p>
+                                <p className="mt-1 text-note text-muted-foreground">
+                                    {linkedProject ? `已存在本地绑定：${linkedProject.path}` : '尚未在本机建立绑定，将导入为新项目'}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="mt-3 flex items-center gap-2">
+                            <input
+                                value={targets[entry.id] ?? ''}
+                                onChange={event => setTargets(current => ({ ...current, [entry.id]: event.target.value }))}
+                                placeholder="选择本地目标目录"
+                                className="h-9 flex-1 rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                            />
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                    const picked = await window.fm.sync.pickDirectory('选择导入目标目录');
+                                    if (picked) {
+                                        setTargets(current => ({ ...current, [entry.id]: picked }));
+                                    }
+                                }}
+                            >
+                                选择
+                            </Button>
+                        </div>
+                    </div>
+                );
+            })}
+        </EditDialogShell>
     );
 }
 
@@ -354,11 +644,10 @@ function SyncConfigDialog({
     onClose,
     onSave,
     onPickDirectory,
-    onPushSharedDir,
+    onCompareAndSync,
     onExportZip,
     onImportZip,
     onToggleServer,
-    onPreviewFolderDiff,
 }: {
     draft: SyncConfig;
     busy: boolean;
@@ -370,11 +659,10 @@ function SyncConfigDialog({
     onClose: () => void;
     onSave: () => void;
     onPickDirectory: () => void;
-    onPushSharedDir?: () => void;
+    onCompareAndSync?: () => void;
     onExportZip?: () => void;
     onImportZip?: () => void;
     onToggleServer?: () => void;
-    onPreviewFolderDiff?: () => void;
 }) {
     const includedProjectCount = useMemo(() => resolveSyncProjectIds(draft, projects).length, [draft, projects]);
 
@@ -403,14 +691,13 @@ function SyncConfigDialog({
     return (
         <EditDialogShell
             title={isNew ? '添加同步配置' : '修改同步配置'}
-            note="标题、归属、同步类型与手动规则都在这里统一配置；shared 会写入 fm.shared.json，local 会写入 fm.local.json。"
             onClose={onClose}
             panelClassName="w-[min(860px,calc(100vw-2rem))]"
             bodyClassName="space-y-6"
             footerStart={(
                 <div>
                     <p className="text-subheading text-foreground">
-                        包含 {includedProjectCount} 个项目
+                        同步范围包含 {includedProjectCount} 个项目
                     </p>
                 </div>
             )}
@@ -467,20 +754,20 @@ function SyncConfigDialog({
 
             <TypeSpecificEditor draft={draft} onChange={onChange} onPickDirectory={onPickDirectory} />
 
-            <EditDialogField label="快捷操作">
+            <div>
                 <SyncConfigActionButtons
                     syncConfig={draft}
                     busy={busy}
                     serverRunning={serverRunning}
                     allowSyncActions={!isNew}
+                    showDirectoryPicker={false}
                     onPickDirectory={onPickDirectory}
-                    onPushSharedDir={onPushSharedDir}
+                    onCompareAndSync={onCompareAndSync}
                     onExportZip={onExportZip}
                     onImportZip={onImportZip}
                     onToggleServer={onToggleServer}
-                    onPreviewFolderDiff={onPreviewFolderDiff}
                 />
-            </EditDialogField>
+            </div>
 
             <EditDialogField label="同步范围">
                 <SyncTargetTree
@@ -523,40 +810,40 @@ function TypeSpecificEditor({
                     </div>
                 </EditDialogField>
 
-                <CheckboxField
-                    checked={draft.folder.compareBeforeSync}
-                    onCheckedChange={checked => onChange(normalizeSyncConfig({
-                        ...draft,
-                        folder: { ...draft.folder, compareBeforeSync: checked },
-                    }))}
-                    label="手动同步前先展示一对一差异视图"
-                />
+                <div className="rounded-xl bg-muted/20 px-3 py-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <CheckboxField
+                            checked={draft.folder.autoSync}
+                            onCheckedChange={checked => onChange(normalizeSyncConfig({
+                                ...draft,
+                                folder: { ...draft.folder, autoSync: checked },
+                            }))}
+                            label="自动同步"
+                            className="items-center"
+                            checkboxClassName="mt-0"
+                            contentClassName="flex-none pt-0"
+                        />
 
-                <CheckboxField
-                    checked={draft.folder.autoSync}
-                    onCheckedChange={checked => onChange(normalizeSyncConfig({
-                        ...draft,
-                        folder: { ...draft.folder, autoSync: checked },
-                    }))}
-                    label="自动同步"
-                />
-
-                <EditDialogField label="自动同步间隔（分钟）">
-                    <input
-                        type="number"
-                        min={1}
-                        value={draft.folder.intervalMinutes ?? ''}
-                        disabled={!draft.folder.autoSync}
-                        onChange={event => onChange(normalizeSyncConfig({
-                            ...draft,
-                            folder: {
-                                ...draft.folder,
-                                intervalMinutes: event.target.value ? Number(event.target.value) : undefined,
-                            },
-                        }))}
-                        className="h-9 w-full rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50"
-                    />
-                </EditDialogField>
+                        <div className="flex items-center gap-2 text-note text-muted-foreground">
+                            <span>间隔</span>
+                            <input
+                                type="number"
+                                min={1}
+                                value={draft.folder.intervalMinutes ?? ''}
+                                disabled={!draft.folder.autoSync}
+                                onChange={event => onChange(normalizeSyncConfig({
+                                    ...draft,
+                                    folder: {
+                                        ...draft.folder,
+                                        intervalMinutes: event.target.value ? Number(event.target.value) : undefined,
+                                    },
+                                }))}
+                                className="h-9 w-24 rounded-lg border border-border bg-background px-3 text-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50"
+                            />
+                            <span>分钟</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -797,49 +1084,58 @@ function SyncConfigActionButtons({
     busy,
     serverRunning,
     allowSyncActions = true,
+    showDirectoryPicker = true,
     onPickDirectory,
-    onPushSharedDir,
+    onCompareAndSync,
     onExportZip,
     onImportZip,
     onToggleServer,
-    onPreviewFolderDiff,
 }: {
     syncConfig: SyncConfig;
     busy: boolean;
     serverRunning: boolean;
     allowSyncActions?: boolean;
+    showDirectoryPicker?: boolean;
     onPickDirectory?: () => void;
-    onPushSharedDir?: () => void;
+    onCompareAndSync?: () => void;
     onExportZip?: () => void;
     onImportZip?: () => void;
     onToggleServer?: () => void;
-    onPreviewFolderDiff?: () => void;
 }) {
     return (
         <div className="flex flex-wrap items-center gap-2">
             {syncConfig.type === 'folder' ? (
                 <>
-                    <Button size="sm" variant="outline" disabled={busy} onClick={onPickDirectory}>
-                        <FolderOpen className="size-4" /> 选择目标目录
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={busy} onClick={onPreviewFolderDiff}>
-                        预览差异
+                    {showDirectoryPicker ? (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={onPickDirectory}>
+                            <FolderOpen className="size-4" /> 选择目标目录
+                        </Button>
+                    ) : null}
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || !allowSyncActions || !syncConfig.folder.targetDir}
+                        onClick={onCompareAndSync}
+                    >
+                        <GitCompareArrows className="size-4" /> 对比并同步
                     </Button>
                 </>
             ) : null}
 
             {syncConfig.type === 'shared-dir' ? (
                 <>
-                    <Button size="sm" variant="outline" disabled={busy} onClick={onPickDirectory}>
-                        <FolderOpen className="size-4" /> 选择共享目录
-                    </Button>
+                    {showDirectoryPicker ? (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={onPickDirectory}>
+                            <FolderOpen className="size-4" /> 选择共享目录
+                        </Button>
+                    ) : null}
                     <Button
                         size="sm"
                         variant="outline"
                         disabled={busy || !allowSyncActions || !syncConfig.sharedDir.bundleDir}
-                        onClick={onPushSharedDir}
+                        onClick={onCompareAndSync}
                     >
-                        <Upload className="size-4" /> 推送全部
+                        <GitCompareArrows className="size-4" /> 对比并同步
                     </Button>
                 </>
             ) : null}

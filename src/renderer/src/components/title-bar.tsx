@@ -23,7 +23,7 @@ export function TitleBar() {
           >
             {configName}
           </button>
-          <div className="pointer-events-none absolute top-full left-0 z-50 mt-2 hidden w-[420px] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover px-3 py-3 text-left shadow-lg group-hover:block group-focus-within:block">
+          <div className="pointer-events-none absolute top-full left-0 z-50 mt-2 hidden w-[520px] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover px-3 py-3 text-left shadow-lg group-hover:block group-focus-within:block">
             <p className="text-subheading text-foreground">{configName}</p>
             {config.description ? (
               <p className="mt-1 text-note text-muted-foreground">{config.description}</p>

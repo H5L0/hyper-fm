@@ -16,11 +16,20 @@ import type {
   ScanProgressEvent,
   ScanReport,
   ScanRoot,
+  SyncApplyResult,
   SyncConfig,
+  SyncConflictMergeDraft,
   SyncDiff,
   SyncImportItem,
+  SyncImportTarget,
   SyncImportResult,
   SyncManifest,
+  SyncPlanApplyRequest,
+  SyncPlanPreviewEvent,
+  SyncPlanPreview,
+  SyncPlanPreviewSession,
+  SyncPlanRowPage,
+  SyncPlanSelectionState,
   SyncProjectEntry,
   SyncProjectRule,
   SyncPullItem,
@@ -115,6 +124,40 @@ const fmApi: FmBridge = {
       ipcRenderer.invoke('fm:sync:pushSharedDir', configId, projectIds) as Promise<{ pushed: string[] }>,
     pullSharedDir: (configId, items) =>
       ipcRenderer.invoke('fm:sync:pullSharedDir', configId, items as SyncPullItem[]) as Promise<SyncPullResult[]>,
+    previewSharedDirSync: (configId, projectIds) =>
+      ipcRenderer.invoke('fm:sync:previewSharedDirSync', configId, projectIds) as Promise<SyncPlanPreview>,
+    openSharedDirSyncPreview: (configId, projectIds) =>
+      ipcRenderer.invoke('fm:sync:openSharedDirSyncPreview', configId, projectIds) as Promise<SyncPlanPreviewSession>,
+    onSyncPreviewEvent: handler => {
+      const listener = (_event: IpcRendererEvent, data: SyncPlanPreviewEvent) => handler(data);
+      ipcRenderer.on('fm:sync:preview-event', listener);
+      return () => {
+        ipcRenderer.off('fm:sync:preview-event', listener);
+      };
+    },
+    getSyncPreviewRows: (sessionId, projectId, startIndex, length, selection) =>
+      ipcRenderer.invoke(
+        'fm:sync:getSyncPreviewRows',
+        sessionId,
+        projectId,
+        startIndex,
+        length,
+        selection as SyncPlanSelectionState | undefined,
+      ) as Promise<SyncPlanRowPage>,
+    closeSyncPreview: sessionId =>
+      ipcRenderer.invoke('fm:sync:closeSyncPreview', sessionId) as Promise<void>,
+    applySharedDirSync: (configId, projectIds, request) =>
+      ipcRenderer.invoke('fm:sync:applySharedDirSync', configId, projectIds, request as SyncPlanApplyRequest | undefined) as Promise<SyncApplyResult>,
+    previewFolderSync: (configId, projectIds) =>
+      ipcRenderer.invoke('fm:sync:previewFolderSync', configId, projectIds) as Promise<SyncPlanPreview>,
+    openFolderSyncPreview: (configId, projectIds) =>
+      ipcRenderer.invoke('fm:sync:openFolderSyncPreview', configId, projectIds) as Promise<SyncPlanPreviewSession>,
+    applyFolderSync: (configId, projectIds, request) =>
+      ipcRenderer.invoke('fm:sync:applyFolderSync', configId, projectIds, request as SyncPlanApplyRequest | undefined) as Promise<SyncApplyResult>,
+    openSyncDiff: (configId, projectId, relativePath) =>
+      ipcRenderer.invoke('fm:sync:openSyncDiff', configId, projectId, relativePath) as Promise<void>,
+    openConflictMerge: (configId, projectId, relativePath) =>
+      ipcRenderer.invoke('fm:sync:openConflictMerge', configId, projectId, relativePath) as Promise<SyncConflictMergeDraft>,
     exportZip: (configId, projectIds, outputFile) =>
       ipcRenderer.invoke('fm:sync:exportZip', configId, projectIds, outputFile) as Promise<{
         outputFile: string;
@@ -131,6 +174,10 @@ const fmApi: FmBridge = {
       }>,
     applyZip: (configId, file, plan) =>
       ipcRenderer.invoke('fm:sync:applyZip', configId, file, plan as SyncImportItem[]) as Promise<SyncImportResult[]>,
+    previewZipImport: (configId, file, targets) =>
+      ipcRenderer.invoke('fm:sync:previewZipImport', configId, file, targets as SyncImportTarget[]) as Promise<SyncPlanPreview>,
+    applyZipImport: (configId, file, targets) =>
+      ipcRenderer.invoke('fm:sync:applyZipImport', configId, file, targets as SyncImportTarget[]) as Promise<SyncApplyResult>,
     startServer: configId => ipcRenderer.invoke('fm:sync:startServer', configId) as Promise<{ port: number }>,
     stopServer: configId => ipcRenderer.invoke('fm:sync:stopServer', configId) as Promise<void>,
     isServerRunning: configId => ipcRenderer.invoke('fm:sync:isServerRunning', configId) as Promise<boolean>,

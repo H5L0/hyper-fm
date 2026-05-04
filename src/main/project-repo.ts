@@ -36,6 +36,7 @@ export function buildProjects(shared: SharedConfig, local: LocalConfig): Project
             description: sharedProject.description,
             tags: [...sharedProject.tags],
             ignore: [...sharedProject.ignore],
+            syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
         });
     }
@@ -88,7 +89,9 @@ export async function mergeScanResult(
     const bindingsOutsideRoot = ctx.local.bindings.filter(
         binding => binding.rootId !== ctx.rootId && !matched.bindings.some(next => next.projectId === binding.projectId),
     );
-    const warningsOutsideRoot = (ctx.local.warnings ?? []).filter(warning => warning.scanRootId !== ctx.rootId);
+    const warningsOutsideRoot = (ctx.local.warnings ?? []).filter(
+        warning => warning.kind !== 'fingerprint-conflict' || warning.scanRootId !== ctx.rootId,
+    );
 
     const nextLocal: LocalConfig = {
         ...ctx.local,
@@ -131,6 +134,10 @@ export function applyProjectPatch(
         ignore: patch.ignore
             ? [...new Set(patch.ignore.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean))].sort()
             : existing.ignore,
+        syncRespectGitignore:
+            patch.syncRespectGitignore !== undefined
+                ? patch.syncRespectGitignore
+                : existing.syncRespectGitignore,
         fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : existing.fingerprint,
     };
 
@@ -146,6 +153,7 @@ export function applyProjectPatch(
             description: nextProject.description,
             tags: nextProject.tags,
             ignore: nextProject.ignore,
+            syncRespectGitignore: nextProject.syncRespectGitignore,
             fingerprint: nextProject.fingerprint,
         },
     };
@@ -172,6 +180,7 @@ export interface AddProjectInput {
     description?: string;
     tags?: string[];
     ignore?: string[];
+    syncRespectGitignore?: boolean;
     fingerprint: ProjectFingerprint;
     hasMetaFile?: boolean;
     mtime?: string;
@@ -204,6 +213,7 @@ export function addProjectManual(
         description: input.description,
         tags: input.tags?.map(tag => tag.trim()).filter(Boolean) ?? [],
         ignore: [...new Set((input.ignore ?? []).map(item => item.replace(/\\/g, '/').trim()).filter(Boolean))].sort(),
+        syncRespectGitignore: input.syncRespectGitignore,
         fingerprint: normalizeFingerprint(input.fingerprint),
     };
     const binding = {
@@ -227,6 +237,7 @@ export function addProjectManual(
             description: sharedProject.description,
             tags: sharedProject.tags,
             ignore: sharedProject.ignore,
+            syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
         },
     };
@@ -289,7 +300,9 @@ export function removeScanRoot(local: LocalConfig, id: string): LocalConfig {
         ...local,
         scanRoots: local.scanRoots.filter(root => root.id !== id),
         bindings: local.bindings.filter(binding => binding.rootId !== id),
-        warnings: (local.warnings ?? []).filter(warning => warning.scanRootId !== id),
+        warnings: (local.warnings ?? []).filter(
+            warning => warning.kind !== 'fingerprint-conflict' || warning.scanRootId !== id,
+        ),
     };
 }
 

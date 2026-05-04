@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FolderOpen, GitCompareArrows, RefreshCw } from 'lucide-react';
-import type { ScanWarning } from '@shared/bridge.js';
+import type { FingerprintConflictWarning, ScanWarning } from '@shared/types.js';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '../store/app-store.js';
 
-function fingerprintLabel(warning: ScanWarning): string {
+function fingerprintLabel(warning: FingerprintConflictWarning): string {
     switch (warning.fingerprint.kind) {
         case 'metadata':
             return 'Metadata';
@@ -23,16 +23,30 @@ function warningKindMeta(kind: ScanWarning['kind']): { title: string; descriptio
                 title: '项目冲突',
                 description: '扫描时发现多个目录对应同一项目，已跳过加载，请保留正确目录或修改项目配置后重新扫描。',
             };
+        case 'sync-conflict':
+            return {
+                title: '同步冲突',
+                description: '同步时发现两侧都改动过同一文件，这些文件已被保留待人工处理。',
+            };
+        case 'sync-error':
+            return {
+                title: '同步错误',
+                description: '后台同步任务或手动执行中出现错误，请检查配置、路径和权限。',
+            };
     }
 }
 
 export function WarningsPanel() {
     const { config } = useAppState();
     const actions = useAppActions();
-    const [repairing, setRepairing] = useState<ScanWarning | null>(null);
+    const [repairing, setRepairing] = useState<FingerprintConflictWarning | null>(null);
 
     const summary = useMemo(() => {
-        const projectIds = new Set(config.warnings.map(warning => warning.projectId));
+        const projectIds = new Set(
+            config.warnings
+                .map(warning => warning.projectId)
+                .filter((projectId): projectId is string => typeof projectId === 'string' && projectId.length > 0),
+        );
         return {
             warnings: config.warnings.length,
             projects: projectIds.size,
@@ -90,7 +104,11 @@ export function WarningsPanel() {
                                 key={kind}
                                 kind={kind}
                                 warnings={warnings}
-                                onRepair={warning => setRepairing(warning)}
+                                onRepair={warning => {
+                                    if (warning.kind === 'fingerprint-conflict') {
+                                        setRepairing(warning);
+                                    }
+                                }}
                             />
                         ))}
                     </div>
@@ -156,6 +174,50 @@ function WarningSection({
 function WarningCard({ warning, onRepair }: { warning: ScanWarning; onRepair: () => void }) {
     const actions = useAppActions();
 
+    if (warning.kind === 'sync-conflict') {
+        return (
+            <section className="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                    <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <h3 className="truncate text-body font-medium text-foreground">{warning.projectName}</h3>
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-caption text-muted-foreground">
+                            {warning.configName}
+                        </span>
+                    </div>
+                </div>
+
+                <p className="mt-2 text-note text-muted-foreground">{warning.message}</p>
+
+                <div className="mt-2 space-y-1.5">
+                    {warning.filePaths.map(filePath => (
+                        <div key={filePath} className="rounded-md bg-muted/35 px-3 py-2 text-note text-muted-foreground">
+                            {filePath}
+                        </div>
+                    ))}
+                </div>
+            </section>
+        );
+    }
+
+    if (warning.kind === 'sync-error') {
+        return (
+            <section className="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                    <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <h3 className="truncate text-body font-medium text-foreground">{warning.projectName || warning.configName}</h3>
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-caption text-muted-foreground">
+                            {warning.configName}
+                        </span>
+                    </div>
+                </div>
+
+                <p className="mt-2 text-note text-muted-foreground">{warning.message}</p>
+            </section>
+        );
+    }
+
     return (
         <section className="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
             <div className="flex flex-wrap items-center gap-2">
@@ -196,7 +258,7 @@ function WarningCard({ warning, onRepair }: { warning: ScanWarning; onRepair: ()
     );
 }
 
-function RepairWarningDialog({ warning, onClose }: { warning: ScanWarning; onClose: () => void }) {
+function RepairWarningDialog({ warning, onClose }: { warning: FingerprintConflictWarning; onClose: () => void }) {
     const actions = useAppActions();
     const [keepPath, setKeepPath] = useState(warning.candidatePaths[0] ?? '');
     const [busy, setBusy] = useState(false);
@@ -205,8 +267,8 @@ function RepairWarningDialog({ warning, onClose }: { warning: ScanWarning; onClo
         if (!keepPath || busy) return;
         setBusy(true);
         try {
-            const ignored = warning.candidatePaths.filter(candidatePath => candidatePath !== keepPath);
-            await Promise.all(ignored.map(candidatePath => window.fm.scan.ignorePath(candidatePath)));
+            const ignored = warning.candidatePaths.filter((candidatePath: string) => candidatePath !== keepPath);
+            await Promise.all(ignored.map((candidatePath: string) => window.fm.scan.ignorePath(candidatePath)));
             await actions.runScanOne(warning.scanRootId);
             actions.toast('success', `已保留选中目录，并忽略其他 ${ignored.length} 个目录`);
             onClose();
@@ -238,7 +300,7 @@ function RepairWarningDialog({ warning, onClose }: { warning: ScanWarning; onClo
                 </div>
 
                 <div className="max-h-[60vh] space-y-2 overflow-y-auto px-4 py-4">
-                    {warning.candidatePaths.map(candidatePath => (
+                    {warning.candidatePaths.map((candidatePath: string) => (
                         <label
                             key={candidatePath}
                             className={cn(

@@ -235,6 +235,9 @@ export interface SyncProjectMeta {
   name: string;
   description?: string;
   tags: string[];
+  ignore?: string[];
+  syncRespectGitignore?: boolean;
+  fingerprint?: import('./types.js').ProjectFingerprint;
 }
 
 export interface SyncProjectEntry {
@@ -289,6 +292,176 @@ export interface SyncDiff {
   local: { device: { id: string; name: string } };
   remote: { device: { id: string; name: string } };
   entries: SyncDiffEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// 文件级同步计划
+// ---------------------------------------------------------------------------
+
+export type SyncFileOperationKind = 'create' | 'update' | 'delete' | 'conflict' | 'skip';
+
+export type SyncFileOperationDirection = 'to-local' | 'to-target' | 'none';
+
+export type SyncConflictResolution = 'keep-local' | 'keep-target' | 'manual';
+
+export interface SyncFileOperation {
+  relativePath: string;
+  kind: SyncFileOperationKind;
+  direction: SyncFileOperationDirection;
+  local?: SyncFileEntry;
+  target?: SyncFileEntry;
+  note?: string;
+}
+
+export interface SyncPlanSummary {
+  create: number;
+  update: number;
+  delete: number;
+  conflict: number;
+  skip: number;
+  total: number;
+}
+
+export interface SyncProjectPlan {
+  projectId: string;
+  projectName: string;
+  mode: SyncMode;
+  localPath: string;
+  targetPath: string;
+  summary: SyncPlanSummary;
+  operations: SyncFileOperation[];
+}
+
+export interface SyncPlanPreview {
+  configId: string;
+  configName: string;
+  generatedAt: string;
+  projects: SyncProjectPlan[];
+}
+
+export interface SyncPlanOperationSelection {
+  projectId: string;
+  relativePath: string;
+  enabled: boolean;
+  sequence?: number;
+  conflictResolution?: SyncConflictResolution;
+  mergeDraftId?: string;
+}
+
+export interface SyncPlanRangeSelection {
+  projectId: string;
+  startIndex: number;
+  endIndex: number;
+  enabled: boolean;
+  sequence: number;
+}
+
+export interface SyncPlanSelectionState {
+  operations: SyncPlanOperationSelection[];
+  ranges: SyncPlanRangeSelection[];
+}
+
+export interface SyncPlanApplyRequest {
+  sessionId?: string;
+  projectIds: string[];
+  operations: SyncPlanOperationSelection[];
+  ranges?: SyncPlanRangeSelection[];
+}
+
+export interface SyncConflictMergeDraft {
+  id: string;
+  projectId: string;
+  relativePath: string;
+  updatedAt: string;
+}
+
+export type SyncPlanPreviewProjectStatus = 'queued' | 'scanning' | 'ready' | 'updating' | 'applying' | 'error';
+
+export type SyncPlanPreviewSessionStage = 'preparing' | 'watching' | 'applying' | 'error';
+
+export interface SyncPlanPreviewProgress {
+  totalProjects: number;
+  processedProjects: number;
+  activeProjectId?: string;
+  watched: boolean;
+  applying: boolean;
+}
+
+export interface SyncPlanPreviewProjectSummary {
+  projectId: string;
+  projectName: string;
+  mode: SyncMode;
+  localPath: string;
+  targetPath: string;
+  summary: SyncPlanSummary;
+  rowCount: number;
+  status: SyncPlanPreviewProjectStatus;
+  updatedAt: string;
+  errorMessage?: string;
+}
+
+export interface SyncPlanPreviewSession {
+  sessionId: string;
+  configId: string;
+  configName: string;
+  generatedAt: string;
+  updatedAt: string;
+  stage: SyncPlanPreviewSessionStage;
+  progress: SyncPlanPreviewProgress;
+  projects: SyncPlanPreviewProjectSummary[];
+}
+
+export interface SyncPlanPreviewEvent {
+  type: 'session-updated' | 'session-closed';
+  sessionId: string;
+  session?: SyncPlanPreviewSession;
+  changedProjectIds?: string[];
+}
+
+export interface SyncPlanRow {
+  index: number;
+  kind: 'folder' | 'file';
+  depth: number;
+  label: string;
+  folderPath: string;
+  aggregateKind: SyncFileOperationKind | 'mixed';
+  subtreeEndIndex: number;
+  relativePath?: string;
+  checked: boolean;
+  partiallyChecked: boolean;
+  muted: boolean;
+}
+
+export interface SyncPlanRowPage {
+  sessionId: string;
+  projectId: string;
+  startIndex: number;
+  total: number;
+  rows: SyncPlanRow[];
+}
+
+export interface SyncApplySummary {
+  create: number;
+  update: number;
+  delete: number;
+  conflict: number;
+  skip: number;
+}
+
+export interface SyncApplyProjectResult {
+  projectId: string;
+  projectName: string;
+  localPath: string;
+  targetPath: string;
+  applied: SyncApplySummary;
+  conflictPaths: string[];
+}
+
+export interface SyncApplyResult {
+  configId: string;
+  configName: string;
+  executedAt: string;
+  projects: SyncApplyProjectResult[];
 }
 
 // ---------------------------------------------------------------------------

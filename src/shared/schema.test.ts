@@ -100,6 +100,7 @@ describe('schema', () => {
                     name: 'Game',
                     tags: ['unity'],
                     ignore: ['dist/'],
+                    syncRespectGitignore: true,
                     fingerprint: { kind: 'file-paths', paths: ['package.json', 'src/main.ts'] },
                 },
             ],
@@ -111,6 +112,7 @@ describe('schema', () => {
         expect(config.description).toBe('shared config');
         expect(config.projects[0]?.fingerprint.kind).toBe('file-paths');
         expect(config.projects[0]?.ignore).toEqual(['dist/']);
+        expect(config.projects[0]?.syncRespectGitignore).toBe(true);
         expect(config.tags?.[0]?.name).toBe('unity');
     });
 

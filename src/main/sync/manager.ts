@@ -36,16 +36,30 @@ import { FmError } from '../fm-error.js';
 // 构建本地 manifest
 // ---------------------------------------------------------------------------
 
-async function ignorePatternsFor(config: AppConfig, project: Project): Promise<string[]> {
+async function ignorePatternsFor(
+  config: AppConfig,
+  project: Pick<Project, 'path' | 'ignore' | 'hasMetaFile' | 'syncRespectGitignore'>,
+): Promise<{ ignorePatterns: string[]; respectGitignore: boolean }> {
   const base = config.ignore?.globs ?? [];
   const local = project.ignore ?? [];
-  if (!project.hasMetaFile) return [...base, ...local];
+  if (!project.hasMetaFile) {
+    return {
+      ignorePatterns: [...base, ...local],
+      respectGitignore: project.syncRespectGitignore === true,
+    };
+  }
   try {
     const meta = await readMetaFile(project.path);
     const extra = meta?.ignore ?? [];
-    return [...base, ...local, ...extra];
+    return {
+      ignorePatterns: [...base, ...local, ...extra],
+      respectGitignore: (meta?.syncRespectGitignore ?? project.syncRespectGitignore) === true,
+    };
   } catch {
-    return [...base, ...local];
+    return {
+      ignorePatterns: [...base, ...local],
+      respectGitignore: project.syncRespectGitignore === true,
+    };
   }
 }
 
@@ -65,7 +79,7 @@ export async function buildLocalManifest(
   const entries: SyncProjectEntry[] = [];
   const map = new Map<string, SyncProjectEntry>();
   for (const project of targets) {
-    const ignorePatterns = await ignorePatternsFor(cfg, project);
+    const { ignorePatterns, respectGitignore } = await ignorePatternsFor(cfg, project);
     const entry = await buildProjectSnapshot({
       projectId: project.id,
       projectPath: project.path,
@@ -73,8 +87,12 @@ export async function buildLocalManifest(
         name: project.name,
         description: project.description,
         tags: project.tags,
+        ignore: project.ignore,
+        syncRespectGitignore: respectGitignore,
+        fingerprint: project.fingerprint,
       },
       ignorePatterns,
+      respectGitignore,
     });
     entries.push(entry);
     map.set(project.id, entry);
