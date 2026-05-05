@@ -9,6 +9,7 @@ export function SyncConfigSummaryCard({
     includedProjectCount,
     leading,
     detailText,
+    chromeless = false,
     busy = false,
     onEdit,
     onDelete,
@@ -19,6 +20,7 @@ export function SyncConfigSummaryCard({
     includedProjectCount: number;
     leading?: React.ReactNode;
     detailText?: string;
+    chromeless?: boolean;
     busy?: boolean;
     onEdit?: () => void;
     onDelete?: () => void;
@@ -28,7 +30,7 @@ export function SyncConfigSummaryCard({
     const resolvedDetailTexts = detailText ? [detailText] : getSyncConfigLines(syncConfig);
 
     return (
-        <div className={cn('rounded-lg border border-border bg-card px-4 py-4', className)}>
+        <div className={cn(chromeless ? 'px-0 py-0' : 'rounded-lg border border-border bg-card px-4 py-4', className)}>
             <div className="flex items-start gap-3">
                 {leading ? <div>{leading}</div> : null}
 

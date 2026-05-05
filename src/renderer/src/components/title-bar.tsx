@@ -3,7 +3,6 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from 'react';
-import { PenLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppActions, useAppState } from '../store/app-store.js';
 import { ConfigMetaDialog } from './config-meta-dialog.js';

@@ -5,10 +5,12 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, FolderPlus, FolderRoot, PenLine, Plus, Trash2 } from 'lucide-react';
 import type { CustomCommand } from '@shared/bridge.js';
+import { AddableList, AddableListEmpty, AddableListItem } from '@/components/ui/addable-list';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox-field';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import { SegmentedToggleGroup } from '@/components/ui/segmented-toggle-group';
+import { SettingSection } from '@/components/ui/setting-section';
 import { useAppActions, useAppState } from '../store/app-store.js';
 import { IgnoreRulesEditor } from './ignore-rules-editor';
 import { AddScanRootDialog } from './scan-root-dialog.js';
@@ -18,22 +20,24 @@ const APP_NAME = 'fm';
 const APP_DESCRIPTION = 'fm 是一个文件夹管理及同步软件。';
 const APP_GITHUB_URL = 'https://github.com/H5L0/electron-template';
 
-export function SettingSection({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h2 className="text-heading text-foreground">{title}</h2>
-      {hint ? <p className="mt-1 text-note text-muted-foreground">{hint}</p> : null}
-      <div className="mt-3.5">{children}</div>
-    </section>
-  );
+function moveItemToIndex<T extends { id: string }>(items: readonly T[], activeId: string, targetIndex: number): T[] | null {
+  if (!activeId) {
+    return null;
+  }
+
+  const fromIndex = items.findIndex(item => item.id === activeId);
+  if (fromIndex < 0) {
+    return null;
+  }
+
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  const insertIndex = Math.max(0, Math.min(targetIndex, next.length));
+  if (fromIndex === insertIndex) {
+    return null;
+  }
+  next.splice(insertIndex, 0, moved!);
+  return next;
 }
 
 export function ScanSettingsPanel() {
@@ -44,7 +48,6 @@ export function ScanSettingsPanel() {
   const [respectGitignoreDraft, setRespectGitignoreDraft] = useState(config.ignore.respectGitignore);
   const [scanRootDraftPath, setScanRootDraftPath] = useState<string | null>(null);
   const [editingScanRootId, setEditingScanRootId] = useState<string | null>(null);
-
   useEffect(() => {
     setGlobsDraft(ignoreGlobsValue);
     setRespectGitignoreDraft(config.ignore.respectGitignore);
@@ -71,43 +74,69 @@ export function ScanSettingsPanel() {
     }
   };
 
+  const reorderScanRoots = async (activeId: string, targetIndex: number) => {
+    const nextRoots = moveItemToIndex(config.scanRoots, activeId, targetIndex);
+    if (!nextRoots) return;
+
+    try {
+      await window.fm.config.save({ ...config, scanRoots: nextRoots });
+      await actions.loadConfig();
+      actions.toast('success', '已调整扫描目录顺序');
+    } catch (error) {
+      actions.toast('error', error instanceof Error ? error.message : '调整顺序失败');
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="mx-auto max-w-2xl space-y-10">
         <h1 className="text-display">扫描设置</h1>
 
         <SettingSection title="扫描根目录" hint="将从以下目录查找项目。">
-          <div className="space-y-2">
+          <AddableList
+            addIcon={<FolderPlus className="size-4" />}
+            addLabel="添加扫描目录"
+            onAdd={() => void handleAddRoot()}
+            footerEnd={<ListMetaBadge>{config.scanRoots.length} 个扫描根</ListMetaBadge>}
+            divided={false}
+            sortable={{
+              itemIds: config.scanRoots.map(root => root.id),
+              onReorder: (activeId, targetIndex) => reorderScanRoots(activeId, targetIndex),
+            }}
+          >
             {config.scanRoots.length === 0 ? (
-              <p className="text-note text-muted-foreground">尚未添加扫描根目录。</p>
+              <AddableListEmpty>尚未添加扫描根目录。</AddableListEmpty>
             ) : (
               config.scanRoots.map(root => (
-                <div key={root.id} className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
-                  <FolderRoot className="size-4 shrink-0 text-muted-foreground" />
-                  <div className="flex-1 min-w-0">
-                    <p className="break-all text-note text-foreground" title={root.path}>{root.path}</p>
+                <AddableListItem
+                  key={root.id}
+                  itemId={root.id}
+                  showGrabHandle
+                >
+                  <div className="flex items-center gap-2.5">
+                    <FolderRoot className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="break-all text-note text-foreground" title={root.path}>{root.path}</p>
+                    </div>
+                    <Button size="icon-xs" variant="ghost" title="扫描目录设置" onClick={() => {
+                      setEditingScanRootId(root.id);
+                      setScanRootDraftPath(root.path);
+                    }}>
+                      <PenLine className="size-4" />
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      title="删除扫描目录"
+                      onClick={() => void actions.removeScanRoot(root.id)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </div>
-                  <Button size="icon-xs" variant="ghost" title="扫描目录设置" onClick={() => {
-                    setEditingScanRootId(root.id);
-                    setScanRootDraftPath(root.path);
-                  }}>
-                    <PenLine className="size-4" />
-                  </Button>
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    title="删除扫描目录"
-                    onClick={() => void actions.removeScanRoot(root.id)}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
+                </AddableListItem>
               ))
             )}
-            <Button size="sm" variant="outline" onClick={() => void handleAddRoot()}>
-              <FolderPlus className="size-4" /> 添加扫描目录
-            </Button>
-          </div>
+          </AddableList>
         </SettingSection>
 
         {scanRootDraftPath ? (
@@ -218,6 +247,7 @@ export function SettingsPanel() {
 // ---------------------------------------------------------------------------
 
 function CommandsSection() {
+  const { config } = useAppState();
   const actions = useAppActions();
   const [list, setList] = useState<CustomCommand[]>([]);
   const [editingCommand, setEditingCommand] = useState<CustomCommand | null>(null);
@@ -287,43 +317,67 @@ function CommandsSection() {
     }
   };
 
+  const reorderCommands = async (activeId: string, targetIndex: number) => {
+    const source = list.length > 0 ? list : (config.commands ?? []);
+    const nextCommands = moveItemToIndex(source, activeId, targetIndex);
+    if (!nextCommands) return;
+
+    try {
+      await window.fm.config.save({ ...config, commands: nextCommands });
+      setList(nextCommands);
+      await actions.loadConfig();
+      actions.toast('success', '已调整命令顺序');
+    } catch (error) {
+      actions.toast('error', error instanceof Error ? error.message : '调整顺序失败');
+    }
+  };
+
   return (
     <SettingSection title="命令" hint="可对项目运行的自定义命令。">
-      <div className="space-y-2">
+      <AddableList
+        addIcon={<Plus className="size-4" />}
+        addLabel="添加命令"
+        onAdd={() => setCreatingCommand(true)}
+        footerEnd={<ListMetaBadge>{list.length} 条命令</ListMetaBadge>}
+        divided={false}
+        sortable={{
+          itemIds: list.map(command => command.id),
+          onReorder: (activeId, targetIndex) => reorderCommands(activeId, targetIndex),
+        }}
+      >
         {list.length === 0 ? (
-          <p className="text-note text-muted-foreground">尚未配置自定义命令。</p>
+          <AddableListEmpty>尚未配置自定义命令。</AddableListEmpty>
         ) : (
           list.map(c => (
-            <div
+            <AddableListItem
               key={c.id}
-              className="flex items-start gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5"
+              itemId={c.id}
+              showGrabHandle
             >
-              <div className="flex-1 min-w-0">
-                <p className="truncate text-body text-foreground">{c.label}</p>
-                <p className="mt-1 truncate text-note text-muted-foreground">
-                  {c.command}
-                  {c.args?.length ? ` ${c.args.join(' ')}` : ''}
-                </p>
-                {c.description ? (
-                  <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">{c.description}</p>
-                ) : null}
+              <div className="flex items-start gap-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-body text-foreground">{c.label}</p>
+                  <p className="mt-1 truncate text-note text-muted-foreground">
+                    {c.command}
+                    {c.args?.length ? ` ${c.args.join(' ')}` : ''}
+                  </p>
+                  {c.description ? (
+                    <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">{c.description}</p>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button size="icon-xs" variant="ghost" title="编辑命令" onClick={() => setEditingCommand(c)}>
+                    <PenLine className="size-4" />
+                  </Button>
+                  <Button size="icon-xs" variant="ghost" title="删除命令" onClick={() => void removeCommand(c.id)}>
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-1">
-                <Button size="icon-xs" variant="ghost" title="编辑命令" onClick={() => setEditingCommand(c)}>
-                  <PenLine className="size-4" />
-                </Button>
-                <Button size="icon-xs" variant="ghost" title="删除命令" onClick={() => void removeCommand(c.id)}>
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
+            </AddableListItem>
           ))
         )}
-
-        <Button size="sm" variant="outline" onClick={() => setCreatingCommand(true)}>
-          <Plus className="size-4" /> 添加命令
-        </Button>
-      </div>
+      </AddableList>
 
       {creatingCommand ? (
         <CommandDialog
@@ -342,6 +396,14 @@ function CommandsSection() {
         />
       ) : null}
     </SettingSection>
+  );
+}
+
+function ListMetaBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center text-note text-muted-foreground">
+      {children}
+    </span>
   );
 }
 

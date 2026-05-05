@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Divide, Download, FolderOpen, FolderRoot, GitCompareArrows, Plus, Server, Upload } from 'lucide-react';
+import { ChevronDown, Download, FolderOpen, FolderRoot, GitCompareArrows, Plus, Server, Upload } from 'lucide-react';
 import type {
     DeviceRegistry,
     Project,
@@ -19,6 +19,7 @@ import {
     type SyncConfigType,
     type SyncMode,
 } from '@shared/sync-types.js';
+import { AddableList, AddableListEmpty, AddableListItem } from '@/components/ui/addable-list';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox-field';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
@@ -26,12 +27,12 @@ import {
     SegmentedToggleGroup,
     type SegmentedToggleOption,
 } from '@/components/ui/segmented-toggle-group';
+import { SettingSection } from '@/components/ui/setting-section';
 import { TriStateRuleButton, getNextTriStateRule } from '@/components/ui/tri-state-rule-button';
 import { SyncConfigSummaryCard } from './sync-config-card.js';
 import { SyncPlanDialog } from './sync-plan-dialog.js';
 import { SyncPlanStaticDialog } from './sync-plan-static-dialog.js';
 import { useAppActions, useAppState } from '../store/app-store.js';
-import { SettingSection } from './settings-panel.js';
 
 const SCOPE_OPTIONS: SegmentedToggleOption[] = [
     {
@@ -98,6 +99,26 @@ type ActiveSyncPlanPreview = {
     session: SyncPlanPreviewSession;
     persistOnApply: boolean;
 };
+
+function moveItemToIndex<T extends { id: string }>(items: readonly T[], activeId: string, targetIndex: number): T[] | null {
+    if (!activeId) {
+        return null;
+    }
+
+    const fromIndex = items.findIndex(item => item.id === activeId);
+    if (fromIndex < 0) {
+        return null;
+    }
+
+    const next = [...items];
+    const [moved] = next.splice(fromIndex, 1);
+    const insertIndex = Math.max(0, Math.min(targetIndex, next.length));
+    if (fromIndex === insertIndex) {
+        return null;
+    }
+    next.splice(insertIndex, 0, moved!);
+    return next;
+}
 
 export function SyncConfigPanel() {
     const { config } = useAppState();
@@ -290,6 +311,22 @@ export function SyncConfigPanel() {
         }
     };
 
+    const reorderSyncConfigs = async (activeId: string, targetIndex: number) => {
+        const nextConfigs = moveItemToIndex(syncConfigs, activeId, targetIndex);
+        if (!nextConfigs) return;
+
+        setBusyKey(`reorder:${activeId}`);
+        try {
+            await window.fm.config.save({ ...config, syncConfigs: nextConfigs });
+            await refreshConfig();
+            actions.toast('success', '已调整同步配置顺序');
+        } catch (error) {
+            actions.toast('error', error instanceof Error ? error.message : '调整顺序失败');
+        } finally {
+            setBusyKey(null);
+        }
+    };
+
     const closeSyncPlanPreview = async (state: ActiveSyncPlanPreview | null) => {
         if (!state) return;
         setSyncPlanPreview(current => (current?.session.sessionId === state.session.sessionId ? null : current));
@@ -305,17 +342,20 @@ export function SyncConfigPanel() {
             <SettingSection title="本机设备">
                 <div className="flex flex-wrap items-center gap-2.5">
                     <input
-                        disabled={!!device}
+                        disabled={!device}
                         value={device ? deviceNameDraft : ''}
                         autoComplete="off"
                         onChange={event => setDeviceNameDraft(event.target.value)}
                         onBlur={async event => {
-                            const name = event.target.value.trim();
-                            if (!name) {
-                                setDeviceNameDraft(device!.selfName);
+                            if (!device) {
                                 return;
                             }
-                            if (name !== device!.selfName) {
+                            const name = event.target.value.trim();
+                            if (!name) {
+                                setDeviceNameDraft(device.selfName);
+                                return;
+                            }
+                            if (name !== device.selfName) {
                                 const next = await window.fm.sync.setSelfName(name);
                                 setDevice(next);
                                 await refreshConfig();
@@ -326,21 +366,31 @@ export function SyncConfigPanel() {
                                 event.currentTarget.blur();
                             }
                         }}
-                        className="h-9 min-w-[220px] flex-1 rounded-lg border border-border bg-background px-3 text-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                        className="h-9 min-w-55 flex-1 rounded-lg border border-border bg-background px-3 text-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
                     />
                     <span className="text-note text-muted-foreground">{device ? device.selfId : '加载中…'}</span>
                 </div>
             </SettingSection>
 
             <SettingSection title="同步配置">
-                <div className="space-y-2">
+                <AddableList
+                    addIcon={<Plus className="size-4" />}
+                    addLabel="添加同步配置"
+                    onAdd={() => setEditingConfig(createScopedSyncConfig('shared-dir', 'local'))}
+                    footerEnd={<ListMetaBadge>{syncConfigs.length} 条配置</ListMetaBadge>}
+                    divided={false}
+                    sortable={{
+                        itemIds: syncConfigs.map(syncConfig => syncConfig.id),
+                        onReorder: (activeId, targetIndex) => reorderSyncConfigs(activeId, targetIndex),
+                    }}
+                >
                     {syncConfigs.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center">
+                        <AddableListEmpty className="rounded-[calc(var(--addable-list-radius)-0.25rem)] border border-dashed border-border bg-muted/10">
                             <p className="text-body text-foreground">还没有同步配置</p>
                             <p className="mt-1 text-note text-muted-foreground">
                                 先添加一条配置，再决定它是共享目录、ZIP、文件夹还是 P2P。
                             </p>
-                        </div>
+                        </AddableListEmpty>
                     ) : (
                         syncConfigs.map(syncConfig => {
                             const busy = busyKey?.includes(syncConfig.id) ?? false;
@@ -353,53 +403,51 @@ export function SyncConfigPanel() {
                             const onToggleServer = syncConfig.type === 'p2p' ? () => void toggleServer(syncConfig) : undefined;
 
                             return (
-                                <SyncConfigSummaryCard
+                                <AddableListItem
                                     key={syncConfig.id}
-                                    syncConfig={syncConfig}
-                                    includedProjectCount={includedProjectCounts[syncConfig.id] ?? 0}
-                                    busy={busy}
-                                    onEdit={() => setEditingConfig(syncConfig)}
-                                    onDelete={() => void removeSyncConfig(syncConfig)}
-                                    footer={syncConfig.type === 'p2p'
-                                        ? (
-                                            <div className="flex flex-wrap items-center gap-2">
+                                    itemId={syncConfig.id}
+                                    showGrabHandle
+                                >
+                                    <SyncConfigSummaryCard
+                                        syncConfig={syncConfig}
+                                        includedProjectCount={includedProjectCounts[syncConfig.id] ?? 0}
+                                        chromeless
+                                        busy={busy}
+                                        onEdit={() => setEditingConfig(syncConfig)}
+                                        onDelete={() => void removeSyncConfig(syncConfig)}
+                                        footer={syncConfig.type === 'p2p'
+                                            ? (
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <SyncConfigActionButtons
+                                                        syncConfig={syncConfig}
+                                                        busy={busy}
+                                                        serverRunning={serverRunning[syncConfig.id] ?? false}
+                                                        onPickDirectory={onPickDirectory}
+                                                        onToggleServer={onToggleServer}
+                                                    />
+                                                    <span className="text-note text-muted-foreground">
+                                                        {syncConfig.network.relayMode ? '中转模式' : '直连模式'}
+                                                    </span>
+                                                </div>
+                                            )
+                                            : (
                                                 <SyncConfigActionButtons
                                                     syncConfig={syncConfig}
                                                     busy={busy}
                                                     serverRunning={serverRunning[syncConfig.id] ?? false}
                                                     onPickDirectory={onPickDirectory}
+                                                    onCompareAndSync={onCompareAndSync}
+                                                    onExportZip={onExportZip}
+                                                    onImportZip={onImportZip}
                                                     onToggleServer={onToggleServer}
                                                 />
-                                                <span className="text-note text-muted-foreground">
-                                                    {syncConfig.network.relayMode ? '中转模式' : '直连模式'}
-                                                </span>
-                                            </div>
-                                        )
-                                        : (
-                                            <SyncConfigActionButtons
-                                                syncConfig={syncConfig}
-                                                busy={busy}
-                                                serverRunning={serverRunning[syncConfig.id] ?? false}
-                                                onPickDirectory={onPickDirectory}
-                                                onCompareAndSync={onCompareAndSync}
-                                                onExportZip={onExportZip}
-                                                onImportZip={onImportZip}
-                                                onToggleServer={onToggleServer}
-                                            />
-                                        )}
-                                />
+                                            )}
+                                    />
+                                </AddableListItem>
                             );
                         })
                     )}
-
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setEditingConfig(createScopedSyncConfig('shared-dir', 'local'))}
-                    >
-                        <Plus className="size-4" /> 添加新同步配置
-                    </Button>
-                </div>
+                </AddableList>
             </SettingSection>
 
             {
@@ -506,6 +554,14 @@ export function SyncConfigPanel() {
                 ) : null
             }
         </div>
+    );
+}
+
+function ListMetaBadge({ children }: { children: React.ReactNode }) {
+    return (
+        <span className="inline-flex items-center text-note text-muted-foreground">
+            {children}
+        </span>
     );
 }
 
