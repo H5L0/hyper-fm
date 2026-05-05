@@ -16,9 +16,9 @@ import { IgnoreRulesEditor } from './ignore-rules-editor';
 import { AddScanRootDialog } from './scan-root-dialog.js';
 import { SyncConfigPanel } from './sync-config-panel.js';
 
-const APP_NAME = 'fm';
-const APP_DESCRIPTION = 'fm 是一个文件夹管理及同步软件。';
-const APP_GITHUB_URL = 'https://github.com/H5L0/electron-template';
+const APP_NAME = 'hyper-fm';
+const APP_DESCRIPTION = `${APP_NAME} 是一个文件夹管理及同步软件。`;
+const APP_GITHUB_URL = `https://github.com/H5L0/${APP_NAME}`;
 
 function moveItemToIndex<T extends { id: string }>(items: readonly T[], activeId: string, targetIndex: number): T[] | null {
   if (!activeId) {
