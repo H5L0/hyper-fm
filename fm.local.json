@@ -23,7 +23,852 @@
       "rootId": "root_13ffho",
       "hasMetaFile": false,
       "lastScannedAt": "2026-05-02T14:00:13.738Z",
-      "lastModifiedAt": "2026-05-02T14:00:13.738Z"
+      "lastModifiedAt": "2026-05-02T14:00:13.738Z",
+      "syncedAt": "2026-05-03T17:09:50.456Z",
+      "syncedHash": "331935e374c2490b53c0721901fe97032901c711",
+      "syncStates": [
+        {
+          "configId": "sync_2hts6f",
+          "lastSyncedAt": "2026-05-03T16:33:05.040Z",
+          "baselineHash": "331935e374c2490b53c0721901fe97032901c711",
+          "baselineFiles": [
+            {
+              "path": ".eval/evaluations/dummy-eval.result.json",
+              "sha1": "a5b88b0a463c01664c6d771e9a26e2b23d97fbdb"
+            },
+            {
+              "path": ".eval/evaluations/dummy-eval.state.json",
+              "sha1": "399ef533d024a3d2685ee346846519379bbbfbb2"
+            },
+            {
+              "path": ".eval/evaluations/resume-eval.result.json",
+              "sha1": "2e2e397ec4b074db2039cb49848c985a944d572f"
+            },
+            {
+              "path": ".eval/evaluations/resume-eval.state.json",
+              "sha1": "ff9a32fbcdeea5a88d50080db4a7be0cbd169c11"
+            },
+            {
+              "path": ".gitignore",
+              "sha1": "77fd4e0eac01187d243cc759066af090db86329c"
+            },
+            {
+              "path": ".test/data/database-test.db",
+              "sha1": "ebff75a9116e814cb767168b013a5d54177367f5"
+            },
+            {
+              "path": ".test/eval/evaluations/dummy-eval.result.json",
+              "sha1": "a5b88b0a463c01664c6d771e9a26e2b23d97fbdb"
+            },
+            {
+              "path": ".test/eval/evaluations/dummy-eval.state.json",
+              "sha1": "399ef533d024a3d2685ee346846519379bbbfbb2"
+            },
+            {
+              "path": ".test/eval/evaluations/resume-eval.result.json",
+              "sha1": "2e2e397ec4b074db2039cb49848c985a944d572f"
+            },
+            {
+              "path": ".test/eval/evaluations/resume-eval.state.json",
+              "sha1": "ff9a32fbcdeea5a88d50080db4a7be0cbd169c11"
+            },
+            {
+              "path": ".vscode/settings.json",
+              "sha1": "a75971c558b6bb138a324d99eab59d89ecc476b9"
+            },
+            {
+              "path": "AGENTS.md",
+              "sha1": "010a2bc5b39e0008fb06fd0c738276e1c0fdd622"
+            },
+            {
+              "path": "README.md",
+              "sha1": "d699b1fc30402f067ca39233664561f97d533af0"
+            },
+            {
+              "path": "coverage/base.css",
+              "sha1": "17e0e11ed35634e29a77ab7eed97993f03e69a06"
+            },
+            {
+              "path": "coverage/block-navigation.js",
+              "sha1": "3e6d67da50877ac51be055130b91267e97c11ba0"
+            },
+            {
+              "path": "coverage/clover.xml",
+              "sha1": "f2ac869f43a26645fe3adc135404dad0939eec2c"
+            },
+            {
+              "path": "coverage/coverage-final.json",
+              "sha1": "f90d63ff3338c253dd98aec3eb85fb09f7ee9e91"
+            },
+            {
+              "path": "coverage/favicon.png",
+              "sha1": "5ad26e9cc50a29dd96f8dfd7c3f1a50cce0b2539"
+            },
+            {
+              "path": "coverage/index.html",
+              "sha1": "b866c6fce91a508d9dbd2e3bdc417b15d36603a7"
+            },
+            {
+              "path": "coverage/prettify.css",
+              "sha1": "c913ae292c2060519657a2ce6d8366a09e71004b"
+            },
+            {
+              "path": "coverage/prettify.js",
+              "sha1": "c5da667a2551890ac47513d4f160f478d2f565f0"
+            },
+            {
+              "path": "coverage/sort-arrow-sprite.png",
+              "sha1": "da5c0ef467a330913336cd9b0da5f3c900af6c3e"
+            },
+            {
+              "path": "coverage/sorter.js",
+              "sha1": "baef18d658ff9f863629dd4f3a45ab7105e7a18e"
+            },
+            {
+              "path": "coverage/src/cli/cli.ts.html",
+              "sha1": "e1234fb063c9c3a7c895b27ebf6c3d32dd57c88d"
+            },
+            {
+              "path": "coverage/src/cli/index.html",
+              "sha1": "c8d2f94ec9692ed44779bc193334cf417ae464cd"
+            },
+            {
+              "path": "coverage/src/cli/interact-plot-player.ts.html",
+              "sha1": "8b9548869e63f224bd24d3fbca765537aaf0e4ea"
+            },
+            {
+              "path": "coverage/src/cli/interact-translator.ts.html",
+              "sha1": "a9284894bdf39611150abed20382ee7637efc434"
+            },
+            {
+              "path": "coverage/src/config.ts.html",
+              "sha1": "24600c95705c39d93dca7475d10c9304bf689d34"
+            },
+            {
+              "path": "coverage/src/database/database.ts.html",
+              "sha1": "3192f4cd8d63ae3b24153c35b13a2272651b14d4"
+            },
+            {
+              "path": "coverage/src/database/index.html",
+              "sha1": "8dfa3e669d0967b83cab400d6a7704947fbf29aa"
+            },
+            {
+              "path": "coverage/src/database/schema.ts.html",
+              "sha1": "5bb298947f0c4f37778fa8595c8505803e8eb6b0"
+            },
+            {
+              "path": "coverage/src/evaluation/evaluator.ts.html",
+              "sha1": "25d1688e8a7c113a5f6c947fa63343bb990ddf6e"
+            },
+            {
+              "path": "coverage/src/evaluation/index.html",
+              "sha1": "979519decec7f6cc9c08e7835d9c9bbfdff0e775"
+            },
+            {
+              "path": "coverage/src/evaluation/judge.ts.html",
+              "sha1": "5296d8f17d9d2a4bec4176f788d87127ae90c302"
+            },
+            {
+              "path": "coverage/src/evaluation/runner.ts.html",
+              "sha1": "8fc162051a1390b85411c5d20af903509f92afb7"
+            },
+            {
+              "path": "coverage/src/evaluation/storage.ts.html",
+              "sha1": "98ae39aa63cbaa26c3e128f7159764f736877d92"
+            },
+            {
+              "path": "coverage/src/import/index.html",
+              "sha1": "267afe937b31c6158068938dcb73a91b7e9fed7e"
+            },
+            {
+              "path": "coverage/src/import/plot-importer.ts.html",
+              "sha1": "1e3a6f90ab36dd12fcbcd9bf5028a78d0ad76014"
+            },
+            {
+              "path": "coverage/src/import/text-importer.ts.html",
+              "sha1": "c11702af0fe1db7175be12a8168d173425dae2ec"
+            },
+            {
+              "path": "coverage/src/index.html",
+              "sha1": "60fa2538ccd5791239f64f2f7a4a185a31dd630e"
+            },
+            {
+              "path": "coverage/src/llm/index.html",
+              "sha1": "f3a5e8820e5438e08ee218c0b7f1ed4cd05e236b"
+            },
+            {
+              "path": "coverage/src/llm/model-loader.ts.html",
+              "sha1": "d7fa861f184853104cb28d23a77aa435d97ef071"
+            },
+            {
+              "path": "coverage/src/llm/prompt-loader.ts.html",
+              "sha1": "ba2d1ec87e1961062d787bf48e58dd3799df5493"
+            },
+            {
+              "path": "coverage/src/logger.ts.html",
+              "sha1": "5c6593b8bdcbb8bdb61b51c27c563177f801222b"
+            },
+            {
+              "path": "coverage/src/main.ts.html",
+              "sha1": "3b8baad72b1b09f25d129ae10c352d952b9afa78"
+            },
+            {
+              "path": "coverage/src/preprocess/index.html",
+              "sha1": "62bdc282a8c31cc0f559fcd0bf487f04cce3cf01"
+            },
+            {
+              "path": "coverage/src/preprocess/outline-generator.ts.html",
+              "sha1": "ca9bbd1e4f54acbe0d40669bdcf6d0391b8f6155"
+            },
+            {
+              "path": "coverage/src/retrieval/example-finder.ts.html",
+              "sha1": "482cc5b2b5867af31aaccbd36ba902954bb5f73d"
+            },
+            {
+              "path": "coverage/src/retrieval/index.html",
+              "sha1": "5eb3cb998fc9e28ae1d5ee43c465d56dceb8f18c"
+            },
+            {
+              "path": "coverage/src/retrieval/plot-graph-builder.ts.html",
+              "sha1": "816a96298a1e42ddef4db5f540e1533f3b5f7b0e"
+            },
+            {
+              "path": "coverage/src/retrieval/term-matcher.ts.html",
+              "sha1": "144a5ff389a1efae0e1f167452c3ff08145c8888"
+            },
+            {
+              "path": "coverage/src/retrieval/vector-store.ts.html",
+              "sha1": "5183f6410da73ebe06a635d66f12dec5afd80581"
+            },
+            {
+              "path": "coverage/src/server/index.html",
+              "sha1": "4de461461bcad0c50f6623c4c91b217c61711646"
+            },
+            {
+              "path": "coverage/src/server/server.ts.html",
+              "sha1": "2004223a37ecfba162fa6976f7b23761f2167c1e"
+            },
+            {
+              "path": "coverage/src/shared/index.html",
+              "sha1": "c8e08d2154b924e34030c6482220f7cbc18abe37"
+            },
+            {
+              "path": "coverage/src/shared/utils.ts.html",
+              "sha1": "2843b16d309acabfd052329315231426661b2ab9"
+            },
+            {
+              "path": "coverage/src/translation/context/context-collector.ts.html",
+              "sha1": "af075acccedc7a2d094e0e54b24a164149c612f1"
+            },
+            {
+              "path": "coverage/src/translation/context/context-provider.ts.html",
+              "sha1": "225eb5f0b80b71c7301b6012e399f58d2e01bb9d"
+            },
+            {
+              "path": "coverage/src/translation/context/example-context-provider.ts.html",
+              "sha1": "893cf391e80dce02e946badcaf9d9362a545efb3"
+            },
+            {
+              "path": "coverage/src/translation/context/index.html",
+              "sha1": "38e4b1a988010b32c6696bb216e1c530af7ded74"
+            },
+            {
+              "path": "coverage/src/translation/context/plot-context-provider.ts.html",
+              "sha1": "75bf39ea1f8482b7e411b711e9f06e7a1691785d"
+            },
+            {
+              "path": "coverage/src/translation/context/term-context-provider.ts.html",
+              "sha1": "70d4d7a9185fd3df3f663b0cc80dabc75dbd7eb0"
+            },
+            {
+              "path": "coverage/src/translation/index.html",
+              "sha1": "23fedb6bae43f947e28172dd8342cb3cd582334d"
+            },
+            {
+              "path": "coverage/src/translation/template-loader.ts.html",
+              "sha1": "6d3704d3ea0123017f7809a1b91a707057254392"
+            },
+            {
+              "path": "coverage/src/translation/translator.ts.html",
+              "sha1": "b01bdbe8b1cc6c849e9268e3a0e1bbea960c7ec2"
+            },
+            {
+              "path": "coverage/src/types/api.ts.html",
+              "sha1": "861321e492d2ac98271cd0a0f40f573f3dbad058"
+            },
+            {
+              "path": "coverage/src/types/common.ts.html",
+              "sha1": "773b5c31e80173676979643e3aaf1cceac5eaf8c"
+            },
+            {
+              "path": "coverage/src/types/evaluation.ts.html",
+              "sha1": "26f19e73a99ab7bee1ba69503156fda0ec6e4d97"
+            },
+            {
+              "path": "coverage/src/types/index.html",
+              "sha1": "e44489f6c98a925bdbf9fde70224eee7f12aff6c"
+            },
+            {
+              "path": "coverage/src/types/index.ts.html",
+              "sha1": "9ebf42976bc231dd729bfabf49bc00d835c8d881"
+            },
+            {
+              "path": "coverage/src/types/llm.ts.html",
+              "sha1": "defabc532e0d0caf77dc59af7261a80969b86a53"
+            },
+            {
+              "path": "coverage/src/types/plot.ts.html",
+              "sha1": "45437b889d44c699bf147da779a3566652c80e84"
+            },
+            {
+              "path": "coverage/src/types/translation.ts.html",
+              "sha1": "4351defef9e3f812516b752e5e7392a4b7a0281b"
+            },
+            {
+              "path": "data/config/default.global.config.jsonc",
+              "sha1": "e37a452d1fa4a00ee07ca4484e8e51dda8543f3e"
+            },
+            {
+              "path": "data/config/global.config.schema.json",
+              "sha1": "8e51d489f0324622899a18106749a32b3679b14a"
+            },
+            {
+              "path": "data/config/test.global.config.jsonc",
+              "sha1": "a9aa309cec75076dc2ebe15641360725e872f22d"
+            },
+            {
+              "path": "data/database/database.db",
+              "sha1": "baebea39e1e146f39ba4a67d0a4e9961479a808b"
+            },
+            {
+              "path": "data/prisma/sqlite-schema.prisma",
+              "sha1": "695c8dc92d1b5ce17eacd7df6a32d3a0453c79f9"
+            },
+            {
+              "path": "data/prompts/eval/compare-eval.md",
+              "sha1": "eb3678fc02fb2b1d394a4bbf32d13004e00ddac7"
+            },
+            {
+              "path": "data/prompts/eval/judge-eval.md",
+              "sha1": "b4f0ab82211465f70acd698bbb22463cd3fbff45"
+            },
+            {
+              "path": "data/prompts/preprocess/plot/gen-plot-background.md",
+              "sha1": "d523570931be5a6abe48651483850b20e5e7711a"
+            },
+            {
+              "path": "data/prompts/preprocess/plot/gen-plot-summary.md",
+              "sha1": "fb68378b6dbb030ee5b76869ca84cdd8487b7fa6"
+            },
+            {
+              "path": "data/prompts/preprocess/plot/gen-state-summary.md",
+              "sha1": "d492acda348b8364f56b285b443cf1571e9b98d1"
+            },
+            {
+              "path": "data/prompts/preprocess/plot/outline.md",
+              "sha1": "2c01100296c16d0bc3e46936cd0891c2edeea3de"
+            },
+            {
+              "path": "data/prompts/preprocess/preprocess.md",
+              "sha1": "5a24dcd499c2000a780aa08509bc9d41aa48a56a"
+            },
+            {
+              "path": "data/prompts/translation/translation-default.md",
+              "sha1": "48610d51e88d0565f80f26715be816b5f3cd2fc1"
+            },
+            {
+              "path": "data/prompts/translation/translation-group.md",
+              "sha1": "568ff411a41ab8525d70a43a84aa80f145300bc2"
+            },
+            {
+              "path": "data/prompts/translation/translation-plot.md",
+              "sha1": "4c66a1280f7bbda7f88d3e854244dec2816ac744"
+            },
+            {
+              "path": "data/templates/default.template.json",
+              "sha1": "74e2102d45dba82de0fa4fc8dba33f23b337ab7f"
+            },
+            {
+              "path": "data/templates/translation.template.schema.json",
+              "sha1": "f8f0dbdee746bf2998f4349ad340cc58a3aa1cc1"
+            },
+            {
+              "path": "doc/HTTP接口设计.md",
+              "sha1": "499d9b92198cb2f20c6a394270da255a39b14a38"
+            },
+            {
+              "path": "doc/api_test/api-test-context.http",
+              "sha1": "138df8b7afc281247e20faf9e3e4ac4655918270"
+            },
+            {
+              "path": "doc/api_test/api-test-embedding.http",
+              "sha1": "6c0980ca6d775e3c21ad20d8de05798b6d7aaf5a"
+            },
+            {
+              "path": "doc/api_test/api-test-get-task.http",
+              "sha1": "57a919e601998e06de5dee710b70e378463b7fe8"
+            },
+            {
+              "path": "doc/api_test/api-test-get-tasks.http",
+              "sha1": "84a0c3d132aaa2f47ff55e697d85d545937edd72"
+            },
+            {
+              "path": "doc/api_test/api-test-translate-single-error.http",
+              "sha1": "64db8a53e032998c30e50ef1b91bbc2c73373b56"
+            },
+            {
+              "path": "doc/api_test/api-test-translate-single.http",
+              "sha1": "90e550c0ad44c045bb55874a18549cb592f29af4"
+            },
+            {
+              "path": "doc/剧情梗概生成说明.md",
+              "sha1": "a152478df4bef4f5acdb8318fafa81ad322b4949"
+            },
+            {
+              "path": "doc/原始数据格式.md",
+              "sha1": "5f1b9cd9e8072a734660584941a3e3e98dcb2f89"
+            },
+            {
+              "path": "doc/提示词参考.md",
+              "sha1": "e8fb75b8452cded7eacc85c9ea181b44e1c4929c"
+            },
+            {
+              "path": "doc/评估方法.md",
+              "sha1": "c7293a977ff99de27916d41b7506c79d5a75ec99"
+            },
+            {
+              "path": "doc/配置说明.md",
+              "sha1": "b6a879aed658a223b8ac195e99992e6b86794cf7"
+            },
+            {
+              "path": "package-lock.json",
+              "sha1": "c75f78a0bdb9cae10e1b1042f02890c01cde8a58"
+            },
+            {
+              "path": "package.json",
+              "sha1": "9ebc2d8ec779f8fcbf5cc13539ad770da7139769"
+            },
+            {
+              "path": "prisma.config.ts",
+              "sha1": "6f07151c0c202380889fb0a7b7631dc79f62510a"
+            },
+            {
+              "path": "scripts/copy-generated-prisma.ts",
+              "sha1": "6e5d6af2ce1cdec9716bfe5e32de46c83460adec"
+            },
+            {
+              "path": "scripts/generate-config-schema.ts",
+              "sha1": "cb48712e4ec24d96acbb252c38128e64bb775a47"
+            },
+            {
+              "path": "scripts/setup-qdrant-docker.ts",
+              "sha1": "0e8c1fcc2e69c38c0cfbeaacd2c1a3a62d838162"
+            },
+            {
+              "path": "scripts/start-qdrant.ts",
+              "sha1": "3b3949eef2bf64dc992aa7a63f6d450b3600e5fa"
+            },
+            {
+              "path": "src/cli/cli.ts",
+              "sha1": "4bd51717aba8c2e1acb57cf8e408e8b5bdc9e932"
+            },
+            {
+              "path": "src/cli/interact-plot-player.ts",
+              "sha1": "ba4a93460fbf49ae21b24166b68f58d84e34e9f8"
+            },
+            {
+              "path": "src/cli/interact-translator.ts",
+              "sha1": "cfefe900e230fa994d531f91d63c444ed77c8b7e"
+            },
+            {
+              "path": "src/config.test.ts",
+              "sha1": "db2764fd7379f585a0af7bf57cab02bb985182ee"
+            },
+            {
+              "path": "src/config.ts",
+              "sha1": "e6a724c499bb1d23f65058fd606653dc6a460b54"
+            },
+            {
+              "path": "src/database/database.db.test.ts",
+              "sha1": "7289a2fe2e6f4398f86617271ec8ec6f1d42941b"
+            },
+            {
+              "path": "src/database/database.embedding.test.ts",
+              "sha1": "f7956485e3d366bab701b85473507638618b0c0f"
+            },
+            {
+              "path": "src/database/database.ts",
+              "sha1": "de2dbfd309a126236c43cb5685d7a770deb2b9b3"
+            },
+            {
+              "path": "src/database/qdrant-store.test.ts",
+              "sha1": "1079bc8d77e291c79160afccef0571381b2aa00e"
+            },
+            {
+              "path": "src/database/qdrant-store.ts",
+              "sha1": "955dcec9cd24d271d885796c4ddc2b43cb182451"
+            },
+            {
+              "path": "src/evaluation/evaluator.test.ts",
+              "sha1": "d3ed50b067da423182f72f848ae482d42ef0e006"
+            },
+            {
+              "path": "src/evaluation/evaluator.ts",
+              "sha1": "1b75bfadd9a8ebeac88586ddfba9983e1537ddfc"
+            },
+            {
+              "path": "src/evaluation/judge.ts",
+              "sha1": "8ef69b82d566ae8db4997fb6909a39af28f5b720"
+            },
+            {
+              "path": "src/evaluation/runner.test.ts",
+              "sha1": "676d96389589f5a563c97316e1a6ff58827f061e"
+            },
+            {
+              "path": "src/evaluation/runner.ts",
+              "sha1": "8831f4259a27469fe1c288ebbd279fbdc3b7c869"
+            },
+            {
+              "path": "src/evaluation/storage.test.ts",
+              "sha1": "fd965397f3420525357a0ee2242d1b36ba3b3d6f"
+            },
+            {
+              "path": "src/evaluation/storage.ts",
+              "sha1": "930dcda225805c1ab69b018493d7a0a4dad47901"
+            },
+            {
+              "path": "src/generated/prisma/client.d.ts",
+              "sha1": "c82388be1aba5a33155775d14d9f62638d10ba71"
+            },
+            {
+              "path": "src/generated/prisma/client.js",
+              "sha1": "be73c21e2768642dccd5041bfffe266813b15588"
+            },
+            {
+              "path": "src/generated/prisma/default.d.ts",
+              "sha1": "c82388be1aba5a33155775d14d9f62638d10ba71"
+            },
+            {
+              "path": "src/generated/prisma/default.js",
+              "sha1": "8809685cda8e6ab39a130f3d765f16f20fe6122e"
+            },
+            {
+              "path": "src/generated/prisma/edge.d.ts",
+              "sha1": "b8c6835ffd952333d97394e6f331a18dbbf41226"
+            },
+            {
+              "path": "src/generated/prisma/edge.js",
+              "sha1": "4b9f42ee344044fcad76fb1401a6d1398f1e0407"
+            },
+            {
+              "path": "src/generated/prisma/index-browser.js",
+              "sha1": "43aa8c400445fc8e0c628057311842d46b0b5678"
+            },
+            {
+              "path": "src/generated/prisma/index.d.ts",
+              "sha1": "8b0b2d87d3f465614a45456841b4ff4ee228c7bc"
+            },
+            {
+              "path": "src/generated/prisma/index.js",
+              "sha1": "ed72443cf74ae1be90c3918e125df45d233e0eae"
+            },
+            {
+              "path": "src/generated/prisma/package.json",
+              "sha1": "6475567e43d475b494c7d6690e3ddcbd077f18ce"
+            },
+            {
+              "path": "src/generated/prisma/query_compiler_fast_bg.js",
+              "sha1": "9e936a779af9f9b691fbfa1ea572f7edb216e8fb"
+            },
+            {
+              "path": "src/generated/prisma/query_compiler_fast_bg.wasm",
+              "sha1": "2a6fd37939affecdf370c51a133fcca34635e253"
+            },
+            {
+              "path": "src/generated/prisma/query_compiler_fast_bg.wasm-base64.js",
+              "sha1": "35ef238c1b232d0142eeb75366d7da4cc6627f7a"
+            },
+            {
+              "path": "src/generated/prisma/runtime/client.d.ts",
+              "sha1": "bf33057d9c58c21aa5be1a2ffd006c43481cd640"
+            },
+            {
+              "path": "src/generated/prisma/runtime/client.js",
+              "sha1": "da1948d8d0ca4190404eb179065bd492c83ae872"
+            },
+            {
+              "path": "src/generated/prisma/runtime/index-browser.d.ts",
+              "sha1": "57417bbed106c07fe05c41cdfa024c237a8a221c"
+            },
+            {
+              "path": "src/generated/prisma/runtime/index-browser.js",
+              "sha1": "24015c4164907d1413c3bb06cead8ef3c1d02520"
+            },
+            {
+              "path": "src/generated/prisma/runtime/wasm-compiler-edge.js",
+              "sha1": "06d630d082d5775a26000d76c77ee98d8027ba8c"
+            },
+            {
+              "path": "src/generated/prisma/schema.prisma",
+              "sha1": "aa49a39c8d37f976ddeaddd83d8a792dd4821e8b"
+            },
+            {
+              "path": "src/generated/prisma/wasm-edge-light-loader.mjs",
+              "sha1": "6d92121c5102c971d8fa7f0b0e78959dfe960f9f"
+            },
+            {
+              "path": "src/generated/prisma/wasm-worker-loader.mjs",
+              "sha1": "a60afc0d29f60ca575179cf539bed483b0a83d53"
+            },
+            {
+              "path": "src/import/plot-importer.db.test.ts",
+              "sha1": "5599313e05b8314e3d2f4b0b83926376069285d9"
+            },
+            {
+              "path": "src/import/plot-importer.ts",
+              "sha1": "df521b10c379654a034ae29e84edf3609bb4e1bf"
+            },
+            {
+              "path": "src/import/text-importer.db.test.ts",
+              "sha1": "bc06b492d46a6301f656c859788a1c1cf22dc894"
+            },
+            {
+              "path": "src/import/text-importer.test.ts",
+              "sha1": "9e927472c4c5bb363178c8a841efc55b4536772a"
+            },
+            {
+              "path": "src/import/text-importer.ts",
+              "sha1": "2ee2cd8da8426e449f30b90d2c6f5ab9f8d99e49"
+            },
+            {
+              "path": "src/llm/model-loader.ts",
+              "sha1": "258f5ab01b083915c08f3854b2a7420def56ac2b"
+            },
+            {
+              "path": "src/llm/prompt-loader.test.ts",
+              "sha1": "726ec05350e5028ace8f40da14ce7904fd08c7e8"
+            },
+            {
+              "path": "src/llm/prompt-loader.ts",
+              "sha1": "d5e88ec25e7dc87fe4ff272f61399dd2a78909f4"
+            },
+            {
+              "path": "src/logger.ts",
+              "sha1": "04ef23436fde4d5ac5cf744c6c4e40737edfa223"
+            },
+            {
+              "path": "src/main.ts",
+              "sha1": "a43aa4b2d1650ec07af95902ef2c3327bd3a2132"
+            },
+            {
+              "path": "src/preprocess/outline-generator.cli.test.ts",
+              "sha1": "d4aef649bb3579651458c4e49df0adf9e462071e"
+            },
+            {
+              "path": "src/preprocess/outline-generator.test.ts",
+              "sha1": "f7df7425e913f102e60811d2cc996614c9711b93"
+            },
+            {
+              "path": "src/preprocess/outline-generator.ts",
+              "sha1": "fd9a755b93d7d6d72d6324c79cd44b841ec36cbd"
+            },
+            {
+              "path": "src/retrieval/example-finder.ts",
+              "sha1": "e30dfacfb2c13c4c2be26ad1f7ad1f2e64134031"
+            },
+            {
+              "path": "src/retrieval/plot-graph-builder.test.ts",
+              "sha1": "1975feb7655e2d5f41c46cae365f3889fc7f4721"
+            },
+            {
+              "path": "src/retrieval/plot-graph-builder.ts",
+              "sha1": "38777964c444bf55416c1e273b0d74baba0657b4"
+            },
+            {
+              "path": "src/retrieval/term-matcher.ts",
+              "sha1": "a309bdf9c04d2ff7af01e71fdd30a53549547816"
+            },
+            {
+              "path": "src/retrieval/vector-store.test.ts",
+              "sha1": "3b81452442f13ddfd10a142084d90a2005f3fed2"
+            },
+            {
+              "path": "src/retrieval/vector-store.ts",
+              "sha1": "e51fc6542335095a37795efe82c7c8ea307ab431"
+            },
+            {
+              "path": "src/server/server.test.ts",
+              "sha1": "98ca84a29a118b80900da3dc9b13e0a1f50c110d"
+            },
+            {
+              "path": "src/server/server.ts",
+              "sha1": "412f38f0293ff1f1865f3426fcdf79d9bf16e2b1"
+            },
+            {
+              "path": "src/shared/format.ts",
+              "sha1": "e14c6456fa50ee58dbd3102d8fbdf0a26450f1ad"
+            },
+            {
+              "path": "src/shared/utils.ts",
+              "sha1": "fa1721b1534484012ab28ee8deda7a183ac229c6"
+            },
+            {
+              "path": "src/translation/context/context-collector.test.ts",
+              "sha1": "6966f6affe5ec9443939c6225ab35eb462f5651e"
+            },
+            {
+              "path": "src/translation/context/context-collector.ts",
+              "sha1": "dcd3419532b1f742ac3f9987ca2fd23f18abebb7"
+            },
+            {
+              "path": "src/translation/context/context-provider.ts",
+              "sha1": "62e2eaf185fcf4a549274cc34d76388e577388c7"
+            },
+            {
+              "path": "src/translation/context/example-context-provider.test.ts",
+              "sha1": "929e2ebc4cf5a7442aee931565f5652c5ea31a59"
+            },
+            {
+              "path": "src/translation/context/example-context-provider.ts",
+              "sha1": "ea74593355b41751bc7c4ab7cab5c75cb040f813"
+            },
+            {
+              "path": "src/translation/context/plot-context-provider.ts",
+              "sha1": "b23ffbdcad08f383aa2724dd6924833cb0b47364"
+            },
+            {
+              "path": "src/translation/context/speaker-context-provider.test.ts",
+              "sha1": "2a0d104e2ed5a293d6a30949985ee06d5ae3cc86"
+            },
+            {
+              "path": "src/translation/context/speaker-context-provider.ts",
+              "sha1": "836979daa8a475ba9143ce3a8cb0dcd68efb0d01"
+            },
+            {
+              "path": "src/translation/context/term-context-provider.ts",
+              "sha1": "5c746ad4844db4a6593e5ad1262edeebf5ece7bd"
+            },
+            {
+              "path": "src/translation/template-loader.test.ts",
+              "sha1": "1ea0ac871dfb4fff639492847ef2303bf93ad3ef"
+            },
+            {
+              "path": "src/translation/template-loader.ts",
+              "sha1": "0fe5f570be770ba352e39b32c602b42d1433a456"
+            },
+            {
+              "path": "src/translation/translator.test.ts",
+              "sha1": "5db8ce0a804e8d4aa78b6b649bda256c426784c6"
+            },
+            {
+              "path": "src/translation/translator.ts",
+              "sha1": "5c2eecfdac9117d0043aa93c0c22e928bf321f3b"
+            },
+            {
+              "path": "src/types/api.ts",
+              "sha1": "4bad73261cee8c4988fe96c6b1964405dd4fe05e"
+            },
+            {
+              "path": "src/types/common.ts",
+              "sha1": "e11bd07a5b843ff7b900f03176c6aea8fd829fdd"
+            },
+            {
+              "path": "src/types/context-configs.ts",
+              "sha1": "12f58618d4bdd58ade8c9abf80327986a445afde"
+            },
+            {
+              "path": "src/types/context.ts",
+              "sha1": "42d4f2c36a7e0228c09610f8c509fd2ecf3ecf5a"
+            },
+            {
+              "path": "src/types/evaluation.ts",
+              "sha1": "db11549fe51395f6a3840048ba386e6d0fbfe4f3"
+            },
+            {
+              "path": "src/types/global-config.ts",
+              "sha1": "a5187c3280d08bc8ecd4adfad1226ccc9b5f9677"
+            },
+            {
+              "path": "src/types/index.ts",
+              "sha1": "2fcc38d4a8041bc87328af6d09338ac5c984e1c1"
+            },
+            {
+              "path": "src/types/llm.ts",
+              "sha1": "fd0caa2297c0182c681703f321304d81aa62287f"
+            },
+            {
+              "path": "src/types/plot.ts",
+              "sha1": "12e1d36ef6bde351308786d2d4209bbdc247ea14"
+            },
+            {
+              "path": "src/types/translation-configs.ts",
+              "sha1": "cfa2899980fae1cd5647112c2b1e89046ee560bb"
+            },
+            {
+              "path": "src/types/translation.ts",
+              "sha1": "8fcc5735e3917fa51a8326cba1ff077fdf5f27fd"
+            },
+            {
+              "path": "tests/global-setup.ts",
+              "sha1": "2999ff1ada468e38c79132d8438ff9ba16775889"
+            },
+            {
+              "path": "tests/integration.test.ts",
+              "sha1": "1d6d4b4f17f7c052e97688b382d1ccab7512970e"
+            },
+            {
+              "path": "tests/sample-workflow.test.ts",
+              "sha1": "85c4265eb93fe0afcfe12c2525134ae9d04c44bb"
+            },
+            {
+              "path": "tests/samples/plot.sample.csv",
+              "sha1": "a61826c3cafdeb75ee63f8b8dd288fa25de021d8"
+            },
+            {
+              "path": "tests/samples/plot.sample.xlsx",
+              "sha1": "497e44902bad1f0460d75803c079c64260aa7338"
+            },
+            {
+              "path": "tests/samples/speakers.sample.csv",
+              "sha1": "b6d5439bd419691d65524eb638ca97de8c7a1386"
+            },
+            {
+              "path": "tests/samples/terms.sample.csv",
+              "sha1": "abb0ed3642a72717f0eb9c63ef4098fa7a774b66"
+            },
+            {
+              "path": "tests/samples/texts.sample.csv",
+              "sha1": "29646b776c7d0b0bd3598230e137ff1ac66b4a4c"
+            },
+            {
+              "path": "tests/tsconfig.json",
+              "sha1": "74d5db0bb3585f0c980a88c48f213535d9626f75"
+            },
+            {
+              "path": "tsconfig.json",
+              "sha1": "468b633c5a666c6e6720afdcebb8ca5afefc483e"
+            },
+            {
+              "path": "tsconfig.test.json",
+              "sha1": "bd8bd0ea5aa0a8ca65f9bc7bd5befc8f861832f8"
+            },
+            {
+              "path": "vitest.config.ts",
+              "sha1": "f8d86ca4741ef73efd09a15d48418085b10accbb"
+            }
+          ],
+          "targetPath": "C:/DATA/_legecy/Projects/Programs/fm-test/新建文件夹/dear-mt-af0e63"
+        }
+      ]
+    },
+    {
+      "projectId": "pj-0j9bkr",
+      "id": "pj-0j9bkr",
+      "path": "C:/DATA/_legecy/Projects/Games/Gamejam/GoodbyeZombie/GoodbyeZombie",
+      "rootId": "manual",
+      "hasMetaFile": false,
+      "lastScannedAt": "2026-05-03T18:56:08.025Z",
+      "lastModifiedAt": "2026-05-03T18:56:08.025Z"
     }
   ],
   "ui": {
@@ -40,7 +885,7 @@
   "syncConfigs": [
     {
       "id": "sync_ekxrau",
-      "name": "共享目录同步",
+      "name": "P2P同步",
       "scope": "local",
       "type": "p2p",
       "mode": "two-way",
@@ -72,6 +917,22 @@
         "targetDir": "C:\\DATA\\_legecy\\Projects\\Programs\\fm-test\\新建文件夹",
         "compareBeforeSync": true,
         "autoSync": false
+      }
+    },
+    {
+      "id": "sync_t1n58e",
+      "name": "共享目录同步",
+      "scope": "local",
+      "type": "shared-dir",
+      "mode": "two-way",
+      "targets": {
+        "projectIds": [],
+        "rootIds": [],
+        "ignoredProjectIds": [],
+        "ignoredRootIds": []
+      },
+      "sharedDir": {
+        "bundleDir": "C:\\DATA\\_legecy\\Projects\\Programs\\fm-test\\新建文件夹"
       }
     }
   ],

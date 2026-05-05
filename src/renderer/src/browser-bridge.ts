@@ -582,6 +582,10 @@ function createSampleConfig(): AppConfig {
         ],
         ignoredPaths: [],
         tags: baseTags,
+        tagGroups: [
+            { name: '桌面工具', tags: ['electron', 'tooling'] },
+            { name: '同步相关', tags: ['sync'] },
+        ],
         devices: {
             selfId: 'dev-browser',
             selfName: 'Browser Preview',
@@ -973,18 +977,28 @@ export function ensureBrowserBridge(): void {
             },
             remove: async (name: string) => {
                 const tags = (browserState.snapshot.data.tags ?? []).filter(tag => tag.name !== name);
-                updateConfig({ ...browserState.snapshot.data, tags });
+                const tagGroups = (browserState.snapshot.data.tagGroups ?? [])
+                    .map(group => ({
+                        ...group,
+                        tags: group.tags.filter(tag => tag !== name),
+                    }))
+                    .filter(group => group.tags.length > 0);
+                updateConfig({ ...browserState.snapshot.data, tags, tagGroups });
                 return clone(tags);
             },
             rename: async (oldName: string, newName: string) => {
                 const tags = (browserState.snapshot.data.tags ?? []).map(tag =>
                     tag.name === oldName ? { ...tag, name: newName } : tag,
                 );
+                const tagGroups = (browserState.snapshot.data.tagGroups ?? []).map(group => ({
+                    ...group,
+                    tags: group.tags.map(tag => (tag === oldName ? newName : tag)),
+                }));
                 const projects = browserState.snapshot.data.projects.map(project => ({
                     ...project,
                     tags: project.tags.map(tag => (tag === oldName ? newName : tag)),
                 }));
-                updateConfig({ ...browserState.snapshot.data, tags, projects });
+                updateConfig({ ...browserState.snapshot.data, tags, tagGroups, projects });
                 return clone(tags);
             },
         },

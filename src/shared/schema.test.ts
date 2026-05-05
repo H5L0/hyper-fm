@@ -105,6 +105,7 @@ describe('schema', () => {
                 },
             ],
             tags: [{ name: 'unity', color: '#fff' }],
+            tagGroups: [{ name: '引擎项目', tags: ['unity'] }],
         };
         const { config, errors } = validateSharedConfig(input);
         expect(errors).toEqual([]);
@@ -114,6 +115,7 @@ describe('schema', () => {
         expect(config.projects[0]?.ignore).toEqual(['dist/']);
         expect(config.projects[0]?.syncRespectGitignore).toBe(true);
         expect(config.tags?.[0]?.name).toBe('unity');
+        expect(config.tagGroups?.[0]?.tags).toEqual(['unity']);
     });
 
     test('[validateLocalConfig] 应兼容旧版 sync 并迁移为 syncConfigs', () => {
@@ -144,6 +146,9 @@ describe('schema', () => {
                 sharedDir: { bundleDir: 'D:/team-sync' },
             },
         ];
+        shared.tagGroups = [
+            { name: '客户端', tags: ['electron', 'react'] },
+        ];
         local.syncConfigs = [
             {
                 ...createDefaultSyncConfig('p2p', 'local'),
@@ -163,6 +168,7 @@ describe('schema', () => {
         const nextLocal = mergeAppConfigIntoLocal(app, 'D:/cfg/fm.shared.json');
         expect(nextShared.syncConfigs).toHaveLength(1);
         expect(nextShared.syncConfigs?.[0]?.scope).toBe('shared');
+        expect(nextShared.tagGroups).toEqual([{ name: '客户端', tags: ['electron', 'react'] }]);
         expect(nextLocal.syncConfigs).toHaveLength(1);
         expect(nextLocal.syncConfigs?.[0]?.scope).toBe('local');
     });

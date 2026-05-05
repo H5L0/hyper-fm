@@ -198,11 +198,11 @@ export function ProjectEditorDrawer({
 
                                 <DrawerField label="标签">
                                     <TagSelector
+                                        mode='editable'
                                         selectedTags={form.tags}
                                         tagDefs={tagDefs}
                                         onAdd={onAddTag}
                                         onRemove={onRemoveTag}
-                                        selectedContainerClassName="flex min-h-[2rem] flex-wrap items-center gap-1.5 border-0 bg-transparent px-0 py-0"
                                     />
                                 </DrawerField>
 

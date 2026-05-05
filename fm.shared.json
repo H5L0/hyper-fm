@@ -1,6 +1,7 @@
 {
   "version": 2,
   "name": "默认配置",
+  "description": "这是配置的描述。",
   "ignore": {
     "respectGitignore": true,
     "globs": [
@@ -53,6 +54,26 @@
       "fingerprint": {
         "kind": "metadata"
       }
+    },
+    {
+      "id": "pj-0j9bkr",
+      "name": "GoodbyeZombie",
+      "description": "",
+      "tags": [
+        "Unity 3D",
+        "C#"
+      ],
+      "ignore": [
+        ".vs",
+        "Library",
+        "Logs",
+        "Temp",
+        "obj"
+      ],
+      "fingerprint": {
+        "kind": "folder-name",
+        "folderName": "GoodbyeZombie"
+      }
     }
   ],
   "tags": [
@@ -73,5 +94,14 @@
       "color": "#14b8a6"
     }
   ],
-  "syncConfigs": []
+  "syncConfigs": [],
+  "tagGroups": [
+    {
+      "name": "游戏",
+      "tags": [
+        "Unity 3D",
+        "C#"
+      ]
+    }
+  ]
 }

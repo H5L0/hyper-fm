@@ -72,6 +72,7 @@ describe('config-store', () => {
             ignore: [],
             fingerprint: { kind: 'folder-name', folderName: 'demo' },
         });
+        shared.tagGroups = [{ name: '示例组', tags: ['demo'] }];
         local.scanRoots.push({ id: 'root_x', path: 'D:/p', maxDepth: 2, enabled: true });
         local.bindings.push({
             projectId: 'pj-aaaaaa',
@@ -101,6 +102,7 @@ describe('config-store', () => {
         expect(reloaded.data.scanRoots).toHaveLength(1);
         expect(reloaded.data.projects).toHaveLength(1);
         expect(reloaded.data.projects[0]?.path).toBe('D:/p/demo');
+        expect(reloaded.data.tagGroups).toEqual([{ name: '示例组', tags: ['demo'] }]);
         expect(reloaded.data.syncConfigs).toHaveLength(2);
         expect(reloaded.paths.localPath.replace(/\\/g, '/')).toBe(localPath.replace(/\\/g, '/'));
     });

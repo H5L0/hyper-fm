@@ -154,6 +154,8 @@ export interface SharedConfig {
   projects: SharedProject[];
   /** 标签注册表：可在项目详情和侧边栏中显示颜色，未在此处注册的标签按默认色渲染 */
   tags?: TagDefinition[];
+  /** 标签组：标签集合，用于按“同时拥有这些标签”的条件筛选项目 */
+  tagGroups?: TagGroupDefinition[];
   /** 共享同步配置 */
   syncConfigs?: import('./sync-types.js').SyncConfig[];
 }
@@ -187,6 +189,8 @@ export interface AppConfig {
   ignoredPaths: string[];
   /** 标签注册表：可在项目详情和侧边栏中显示颜色，未在此处注册的标签按默认色渲染 */
   tags?: TagDefinition[];
+  /** 标签组：标签集合，用于按“同时拥有这些标签”的条件筛选项目 */
+  tagGroups?: TagGroupDefinition[];
   /** M2：设备身份与已知对端 */
   devices?: import('./sync-types.js').DeviceRegistry;
   /** 同步配置（shared + local 合并视图） */
@@ -204,6 +208,13 @@ export interface TagDefinition {
   name: string;
   /** CSS 颜色（hex 或 var） */
   color: string;
+}
+
+export interface TagGroupDefinition {
+  /** 标签组名（唯一） */
+  name: string;
+  /** 命中条件：项目需同时拥有这些标签 */
+  tags: string[];
 }
 
 // ---------------------------------------------------------------------------

@@ -12,10 +12,16 @@ import {
 } from '../store/app-store.js';
 import { resolveTagColor } from './tag-pill.js';
 import { NewTagDialog } from './new-tag-dialog.js';
+import { TagGroupDialog } from './tag-group-dialog.js';
 
 function isSameFilter(a: TagFilter, b: TagFilter): boolean {
   if (a === b) return true;
-  if (typeof a === 'object' && typeof b === 'object') return a.tag === b.tag;
+  if (typeof a === 'object' && typeof b === 'object') {
+    if (a.kind !== b.kind) return false;
+    if (a.kind === 'tag' && b.kind === 'tag') return a.tag === b.tag;
+    if (a.kind === 'group' && b.kind === 'group') return a.group === b.group;
+    return false;
+  }
   return false;
 }
 
@@ -23,11 +29,17 @@ export function Sidebar() {
   const { config, tagFilter, route } = useAppState();
   const actions = useAppActions();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [tagGroupDialogOpen, setTagGroupDialogOpen] = useState(false);
   const [editTag, setEditTag] = useState<{ name: string; color: string } | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; tag: string; color: string } | null>(null);
+  const [editTagGroup, setEditTagGroup] = useState<{ name: string; tags: string[] } | null>(null);
+  const [menu, setMenu] = useState<
+    | { kind: 'tag'; x: number; y: number; tag: string; color: string }
+    | { kind: 'group'; x: number; y: number; group: string; tags: string[] }
+    | null
+  >(null);
   const warningCount = config.warnings.length;
 
-  const { allCount, tagCounts } = useMemo(() => {
+  const { allCount, tagCounts, tagGroupCounts } = useMemo(() => {
     let all = 0;
     const counts = new Map<string, number>();
     for (const p of config.projects) {
@@ -39,19 +51,39 @@ export function Sidebar() {
       if (!counts.has(def.name)) counts.set(def.name, 0);
     }
     const sorted = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    return { allCount: all, tagCounts: sorted };
-  }, [config.projects, config.tags]);
+    const groupCounts = (config.tagGroups ?? [])
+      .map(group => [
+        group,
+        group.tags.length === 0
+          ? 0
+          : config.projects.filter(project => group.tags.every(tag => project.tags.includes(tag))).length,
+      ] as const)
+      .sort((a, b) => a[0].name.localeCompare(b[0].name));
+    return { allCount: all, tagCounts: sorted, tagGroupCounts: groupCounts };
+  }, [config.projects, config.tags, config.tagGroups]);
 
   const isActive = (filter: TagFilter) =>
     route === 'browse' && isSameFilter(tagFilter, filter);
 
-  const openMenu = (e: MouseEvent, tag: string) => {
+  const openTagMenu = (e: MouseEvent, tag: string) => {
     e.preventDefault();
     setMenu({
+      kind: 'tag',
       x: e.clientX,
       y: e.clientY,
       tag,
       color: resolveTagColor(tag, config.tags),
+    });
+  };
+
+  const openTagGroupMenu = (e: MouseEvent, group: { name: string; tags: string[] }) => {
+    e.preventDefault();
+    setMenu({
+      kind: 'group',
+      x: e.clientX,
+      y: e.clientY,
+      group: group.name,
+      tags: group.tags,
     });
   };
 
@@ -97,12 +129,46 @@ export function Sidebar() {
               }
               label={tag}
               count={count}
-              active={isActive({ tag })}
+              active={isActive({ kind: 'tag', tag })}
               onClick={() => {
                 actions.setRoute('browse');
-                actions.setTagFilter({ tag });
+                actions.setTagFilter({ kind: 'tag', tag });
               }}
-              onContextMenu={e => openMenu(e, tag)}
+              onContextMenu={e => openTagMenu(e, tag)}
+            />
+          ))
+        )}
+
+        <div className="mt-5 mb-1.5 flex items-center justify-between px-2">
+          <span className="text-subheading text-muted-foreground/80">
+            标签组
+          </span>
+          <button
+            type="button"
+            aria-label="新建标签组"
+            onClick={() => setTagGroupDialogOpen(true)}
+            className="inline-flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Plus className="size-3.5" />
+          </button>
+        </div>
+
+        {tagGroupCounts.length === 0 ? (
+          <p className="px-2 py-3 text-note text-muted-foreground">尚无标签组</p>
+        ) : (
+          tagGroupCounts.map(([group, count]) => (
+            <SidebarItem
+              key={group.name}
+              icon={<Tag className="size-4 text-muted-foreground" />}
+              label={group.name}
+              count={count}
+              title={group.tags.join(' · ')}
+              active={isActive({ kind: 'group', group: group.name })}
+              onClick={() => {
+                actions.setRoute('browse');
+                actions.setTagFilter({ kind: 'group', group: group.name });
+              }}
+              onContextMenu={e => openTagGroupMenu(e, group)}
             />
           ))
         )}
@@ -151,13 +217,22 @@ export function Sidebar() {
       {editTag ? (
         <NewTagDialog initial={editTag} onClose={() => setEditTag(null)} />
       ) : null}
+      {tagGroupDialogOpen ? <TagGroupDialog onClose={() => setTagGroupDialogOpen(false)} /> : null}
+      {editTagGroup ? (
+        <TagGroupDialog initial={editTagGroup} onClose={() => setEditTagGroup(null)} />
+      ) : null}
       {menu ? (
-        <TagContextMenu
+        <SidebarContextMenu
           x={menu.x}
           y={menu.y}
+          editLabel={menu.kind === 'tag' ? '修改标签' : '修改标签组'}
           onClose={() => setMenu(null)}
           onEdit={() => {
-            setEditTag({ name: menu.tag, color: menu.color });
+            if (menu.kind === 'tag') {
+              setEditTag({ name: menu.tag, color: menu.color });
+            } else {
+              setEditTagGroup({ name: menu.group, tags: [...menu.tags] });
+            }
             setMenu(null);
           }}
         />
@@ -173,14 +248,16 @@ interface ItemProps {
   active: boolean;
   onClick: () => void;
   onContextMenu?: (e: MouseEvent) => void;
+  title?: string;
 }
 
-function SidebarItem({ icon, label, count, active, onClick, onContextMenu }: ItemProps) {
+function SidebarItem({ icon, label, count, active, onClick, onContextMenu, title }: ItemProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       onContextMenu={onContextMenu}
+      title={title}
       className={cn(
         'group flex h-8 items-center gap-2 rounded-md px-2 text-left transition-colors',
         active
@@ -227,17 +304,19 @@ function SidebarFooterItem({
 }
 
 // ---------------------------------------------------------------------------
-// 标签右键菜单
+// 标签 / 标签组右键菜单
 // ---------------------------------------------------------------------------
 
-function TagContextMenu({
+function SidebarContextMenu({
   x,
   y,
+  editLabel,
   onClose,
   onEdit,
 }: {
   x: number;
   y: number;
+  editLabel: string;
   onClose: () => void;
   onEdit: () => void;
 }) {
@@ -283,7 +362,7 @@ function TagContextMenu({
         className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
       >
         <Pencil className="size-4 text-muted-foreground" />
-        修改标签
+        {editLabel}
       </button>
     </div>
   );

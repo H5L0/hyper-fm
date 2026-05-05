@@ -17,6 +17,18 @@ import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '../store/app-store.js';
 import { TagPill, resolveTagColor } from './tag-pill.js';
 
+function matchesTagFilter(
+  project: Project,
+  filter: ReturnType<typeof useAppState>['tagFilter'],
+  tagGroups: readonly import('@shared/bridge.js').TagGroupDefinition[] | undefined,
+): boolean {
+  if (filter === 'ALL') return true;
+  if (filter.kind === 'tag') return project.tags.includes(filter.tag);
+  const group = tagGroups?.find(item => item.name === filter.group);
+  if (!group || group.tags.length === 0) return false;
+  return group.tags.every(tag => project.tags.includes(tag));
+}
+
 function relativeTime(iso?: string): string {
   if (!iso) return '';
   const t = new Date(iso).getTime();
@@ -81,7 +93,7 @@ export function ProjectGrid() {
     type Row = { project: Project; explain: MatchExplain };
     const rows: Row[] = [];
     for (const p of config.projects) {
-      if (typeof tagFilter === 'object' && !p.tags.includes(tagFilter.tag)) continue;
+      if (!matchesTagFilter(p, tagFilter, config.tagGroups)) continue;
       const explain = matchProject(p, query);
       if (!explain) continue;
       rows.push({ project: p, explain });
@@ -90,7 +102,7 @@ export function ProjectGrid() {
       (b.project.lastModifiedAt ?? '').localeCompare(a.project.lastModifiedAt ?? ''),
     );
     return rows;
-  }, [config.projects, tagFilter, query]);
+  }, [config.projects, config.tagGroups, tagFilter, query]);
 
   if (config.scanRoots.length === 0 && config.projects.length === 0) {
     return (

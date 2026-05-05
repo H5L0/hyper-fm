@@ -23,6 +23,7 @@ import {
     type SyncConflictWarning,
     type SyncErrorWarning,
     type TagDefinition,
+    type TagGroupDefinition,
     type UiPreferences,
     CONFIG_SCHEMA_VERSION,
 } from './types.js';
@@ -111,6 +112,17 @@ function pushError(errors: ValidationError[], path: string, message: string): vo
 
 function normalizeStringList(values: readonly string[]): string[] {
     return values.map(v => v.trim()).filter(Boolean);
+}
+
+function normalizeUniqueStringList(values: readonly string[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const value of normalizeStringList(values)) {
+        if (seen.has(value)) continue;
+        seen.add(value);
+        result.push(value);
+    }
+    return result;
 }
 
 function normalizeFingerprintPaths(paths: readonly string[]): string[] {
@@ -677,6 +689,46 @@ function validateTags(value: unknown, errors: ValidationError[]): TagDefinition[
     return result;
 }
 
+function validateTagGroupDefinition(value: unknown, idx: number, errors: ValidationError[]): TagGroupDefinition | null {
+    const base = `tagGroups[${idx}]`;
+    if (!isObject(value)) {
+        pushError(errors, base, '必须为对象');
+        return null;
+    }
+    const { name, tags } = value;
+    const normalizedName = isString(name) ? name.trim() : '';
+    const normalizedTags = isStringArray(tags) ? normalizeUniqueStringList(tags) : [];
+    if (!normalizedName) {
+        pushError(errors, `${base}.name`, '缺少 name');
+        return null;
+    }
+    if (normalizedTags.length === 0) {
+        pushError(errors, `${base}.tags`, '至少需要一个标签');
+        return null;
+    }
+    return {
+        name: normalizedName,
+        tags: normalizedTags,
+    };
+}
+
+function validateTagGroups(value: unknown, errors: ValidationError[]): TagGroupDefinition[] | undefined {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) {
+        pushError(errors, 'tagGroups', '必须为数组');
+        return undefined;
+    }
+    const seen = new Set<string>();
+    const result: TagGroupDefinition[] = [];
+    for (let i = 0; i < value.length; i++) {
+        const group = validateTagGroupDefinition(value[i], i, errors);
+        if (!group || seen.has(group.name)) continue;
+        seen.add(group.name);
+        result.push(group);
+    }
+    return result;
+}
+
 export interface ValidationResult<T> {
     config: T;
     errors: ValidationError[];
@@ -701,6 +753,7 @@ export function validateSharedConfig(input: unknown): ValidationResult<SharedCon
         .map((p, i) => validateSharedProject(p, i, errors))
         .filter((p): p is SharedProject => p !== null);
     const tags = validateTags(input.tags, errors);
+    const tagGroups = validateTagGroups(input.tagGroups, errors);
     const syncConfigs = validateSyncConfigs(input.syncConfigs, 'shared', errors);
     const config: SharedConfig = {
         version: CONFIG_SCHEMA_VERSION,
@@ -709,6 +762,7 @@ export function validateSharedConfig(input: unknown): ValidationResult<SharedCon
         ignore,
         projects,
         ...(tags ? { tags } : {}),
+        ...(tagGroups ? { tagGroups } : {}),
         ...(syncConfigs ? { syncConfigs } : {}),
     };
     return { config, errors };
@@ -779,6 +833,7 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
             }))
             : [],
         tags: input.tags,
+        tagGroups: input.tagGroups,
     };
     const localInput = {
         version: input.version,
@@ -852,6 +907,14 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
         warnings: [...(local.warnings ?? [])],
         ignoredPaths: [...(local.ignoredPaths ?? [])],
         ...(shared.tags ? { tags: [...shared.tags] } : {}),
+        ...(shared.tagGroups
+            ? {
+                tagGroups: shared.tagGroups.map(group => ({
+                    ...group,
+                    tags: [...group.tags],
+                })),
+            }
+            : {}),
         ...(local.devices ? { devices: local.devices } : {}),
         ...((shared.syncConfigs?.length || local.syncConfigs?.length)
             ? {
@@ -910,6 +973,11 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
         },
         projects: [...updatedProjects.values()],
         ...(appConfig.tags ? { tags: [...appConfig.tags] } : {}),
+        ...(appConfig.tagGroups
+            ? {
+                tagGroups: appConfig.tagGroups.map(group => cloneTagGroup(group)),
+            }
+            : {}),
         ...(appConfig.syncConfigs
             ? {
                 syncConfigs: appConfig.syncConfigs
@@ -965,6 +1033,13 @@ function cloneFingerprint(fingerprint: ProjectFingerprint): ProjectFingerprint {
         return { kind: 'folder-name', folderName: fingerprint.folderName };
     }
     return { kind: 'file-paths', paths: [...fingerprint.paths] };
+}
+
+function cloneTagGroup(group: TagGroupDefinition): TagGroupDefinition {
+    return {
+        name: group.name,
+        tags: [...group.tags],
+    };
 }
 
 // ---------------------------------------------------------------------------

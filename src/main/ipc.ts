@@ -608,7 +608,16 @@ function registerTagHandlers(): void {
     wrap('fm:tags:remove', async (_e, name: unknown) => {
       if (typeof name !== 'string') throw new FmError('CONFIG_INVALID', 'name 必须为字符串');
       return mutate(({ shared }) => {
-        const nextShared = { ...shared, tags: (shared.tags ?? []).filter(t => t.name !== name) };
+        const nextShared = {
+          ...shared,
+          tags: (shared.tags ?? []).filter(t => t.name !== name),
+          tagGroups: (shared.tagGroups ?? [])
+            .map(group => ({
+              ...group,
+              tags: group.tags.filter(tag => tag !== name),
+            }))
+            .filter(group => group.tags.length > 0),
+        };
         return { nextShared, result: nextShared.tags };
       });
     }),
@@ -634,6 +643,10 @@ function registerTagHandlers(): void {
           throw new FmError('CONFIG_INVALID', `标签已存在：${to}`);
         }
         const tags = existing.map(t => (t.name === from ? { ...t, name: to } : t));
+        const tagGroups = (shared.tagGroups ?? []).map(group => ({
+          ...group,
+          tags: group.tags.map(tag => (tag === from ? to : tag)),
+        }));
         const projects = shared.projects.map(p =>
           p.tags.includes(from)
             ? { ...p, tags: p.tags.map(x => (x === from ? to : x)) }
@@ -658,7 +671,7 @@ function registerTagHandlers(): void {
             );
           }
         }
-        return { nextShared: { ...shared, tags, projects }, result: tags };
+        return { nextShared: { ...shared, tags, tagGroups, projects }, result: tags };
       });
     }),
   );

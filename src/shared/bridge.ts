@@ -15,6 +15,7 @@ import type {
   ScanRoot,
   ScanWarning,
   TagDefinition,
+  TagGroupDefinition,
 } from './types.js';
 import type {
   CommandRunResult,
@@ -51,6 +52,7 @@ export type {
   ScanRoot,
   ScanWarning,
   TagDefinition,
+  TagGroupDefinition,
 };
 
 export type {

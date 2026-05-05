@@ -22,13 +22,14 @@ import type {
   ScanProgressEvent,
   ScanRoot,
   TagDefinition,
+  TagGroupDefinition,
 } from '@shared/bridge.js';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-export type TagFilter = 'ALL' | { tag: string };
+export type TagFilter = 'ALL' | { kind: 'tag'; tag: string } | { kind: 'group'; group: string };
 export type View = 'grid' | 'list';
 export type Route = 'browse' | 'scan-settings' | 'sync-settings' | 'settings' | 'warnings';
 
@@ -64,6 +65,8 @@ const INITIAL_STATE: AppState = {
     ui: { theme: 'system', view: 'grid' },
     warnings: [],
     ignoredPaths: [],
+    tags: [],
+    tagGroups: [],
   },
   tagFilter: 'ALL',
   search: '',
@@ -174,6 +177,8 @@ interface AppActions {
   upsertTag(tag: TagDefinition): Promise<void>;
   removeTag(name: string): Promise<void>;
   renameTag(oldName: string, newName: string): Promise<void>;
+  upsertTagGroup(group: TagGroupDefinition, previousName?: string): Promise<void>;
+  removeTagGroup(name: string): Promise<void>;
   toast(level: ToastMessage['level'], text: string): void;
   dismissToast(id: string): void;
 }
@@ -476,25 +481,85 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const removeTag = useCallback(async (name: string) => {
     try {
-      const tags = await window.fm.tags.remove(name);
-      const next: AppConfig = { ...stateRef.current.config, tags };
-      dispatch({ type: 'config', config: next });
+      const activeFilter = stateRef.current.tagFilter;
+      const activeGroup = activeFilter !== 'ALL' && activeFilter.kind === 'group'
+        ? (stateRef.current.config.tagGroups ?? []).find(group => group.name === activeFilter.group)
+        : undefined;
+      const shouldResetGroupFilter = Boolean(activeGroup && activeGroup.tags.includes(name) && activeGroup.tags.length === 1);
+      await window.fm.tags.remove(name);
+      await reloadCurrent();
+      if (shouldResetGroupFilter) {
+        dispatch({ type: 'tagFilter', value: 'ALL' });
+      }
     } catch (error) {
       handleError(error, '删除标签失败');
     }
-  }, [handleError]);
+  }, [handleError, reloadCurrent]);
 
   const renameTag = useCallback(async (oldName: string, newName: string) => {
     try {
+      const activeFilter = stateRef.current.tagFilter;
       const tags = await window.fm.tags.rename(oldName, newName);
       // 标签重命名也会更新项目里的 tags 数组，重新拉一次配置
       await reloadCurrent();
+      if (activeFilter !== 'ALL' && activeFilter.kind === 'tag' && activeFilter.tag === oldName) {
+        dispatch({ type: 'tagFilter', value: { kind: 'tag', tag: newName } });
+      }
       // reloadCurrent 已经覆盖 tags；上面这一行只是为了保证 tags 字段也被更新
       void tags;
     } catch (error) {
       handleError(error, '重命名标签失败');
     }
   }, [handleError, reloadCurrent]);
+
+  const upsertTagGroup = useCallback(async (group: TagGroupDefinition, previousName?: string) => {
+    try {
+      const normalizedName = group.name.trim();
+      const normalizedTags = [...new Set(group.tags.map(tag => tag.trim()).filter(Boolean))];
+      const groups = stateRef.current.config.tagGroups ?? [];
+      const nextGroups = [
+        ...groups.filter(item => item.name !== (previousName ?? normalizedName) && item.name !== normalizedName),
+        { name: normalizedName, tags: normalizedTags },
+      ];
+      const nextConfig: AppConfig = {
+        ...stateRef.current.config,
+        tagGroups: nextGroups,
+      };
+      await window.fm.config.save(nextConfig);
+      dispatch({ type: 'config', config: nextConfig });
+      if (
+        previousName
+        && previousName !== normalizedName
+        && stateRef.current.tagFilter !== 'ALL'
+        && stateRef.current.tagFilter.kind === 'group'
+        && stateRef.current.tagFilter.group === previousName
+      ) {
+        dispatch({ type: 'tagFilter', value: { kind: 'group', group: normalizedName } });
+      }
+    } catch (error) {
+      handleError(error, '保存标签组失败');
+    }
+  }, [handleError]);
+
+  const removeTagGroup = useCallback(async (name: string) => {
+    try {
+      const nextConfig: AppConfig = {
+        ...stateRef.current.config,
+        tagGroups: (stateRef.current.config.tagGroups ?? []).filter(group => group.name !== name),
+      };
+      await window.fm.config.save(nextConfig);
+      dispatch({ type: 'config', config: nextConfig });
+      if (
+        stateRef.current.tagFilter !== 'ALL'
+        && stateRef.current.tagFilter.kind === 'group'
+        && stateRef.current.tagFilter.group === name
+      ) {
+        dispatch({ type: 'tagFilter', value: 'ALL' });
+      }
+    } catch (error) {
+      handleError(error, '删除标签组失败');
+    }
+  }, [handleError]);
 
   // 初始化：拉取当前会话
   useEffect(() => {
@@ -542,6 +607,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       upsertTag,
       removeTag,
       renameTag,
+      upsertTagGroup,
+      removeTagGroup,
       toast,
       dismissToast,
     }),
@@ -560,6 +627,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       removeProjectAction,
       removeScanRootAction,
       removeTag,
+      removeTagGroup,
       renameTag,
       revealProject,
       runScanAll,
@@ -571,6 +639,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       toast,
       updateScanRootAction,
       upsertTag,
+      upsertTagGroup,
     ],
   );
 
