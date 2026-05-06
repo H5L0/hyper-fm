@@ -5,12 +5,12 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { AlertTriangle, FolderRoot, GitCompareArrows, Inbox, Pencil, Plus, Settings, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { resolveTagColor } from '@/components/basic/tag-pill.js';
 import {
   useAppActions,
   useAppState,
   type TagFilter,
-} from '../store/app-store.js';
-import { resolveTagColor } from './tag-pill.js';
+} from '../../store/app-store.js';
 import { NewTagDialog } from './new-tag-dialog.js';
 import { TagGroupDialog } from './tag-group-dialog.js';
 

@@ -6,8 +6,8 @@ import { useState } from 'react';
 import type { TagGroupDefinition } from '@shared/bridge.js';
 import { Button } from '@/components/ui/button';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
-import { useAppActions, useAppState } from '../store/app-store.js';
-import { TagSelector } from './tag-selector.js';
+import { TagSelector } from '@/components/basic/tag-selector.js';
+import { useAppActions, useAppState } from '../../store/app-store.js';
 
 function isSameTagList(a: readonly string[], b: readonly string[]): boolean {
     if (a.length !== b.length) return false;

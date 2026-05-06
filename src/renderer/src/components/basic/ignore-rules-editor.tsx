@@ -30,11 +30,11 @@ export function IgnoreRulesEditor({
 
     return (
         <div className={cn('rounded-lg border border-border bg-background', className)}>
-            <div className="relative min-h-[2rem] overflow-hidden rounded-[inherit]">
+            <div className="relative min-h-8 overflow-hidden rounded-[inherit]">
                 <pre
                     ref={highlightRef}
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 overflow-auto px-3 py-2.5 font-mono text-[13px] leading-6 whitespace-pre-wrap break-words"
+                    className="pointer-events-none absolute inset-0 overflow-auto px-3 py-2.5 font-mono text-[13px] leading-6 whitespace-pre-wrap wrap-break-word"
                 >
                     {lines.length > 0
                         ? lines.map((line, index) => (
@@ -54,7 +54,7 @@ export function IgnoreRulesEditor({
                         highlightRef.current.scrollTop = event.currentTarget.scrollTop;
                         highlightRef.current.scrollLeft = event.currentTarget.scrollLeft;
                     }}
-                    className="relative z-10 block w-full resize-y min-h-[2rem] bg-transparent px-3 py-2.5 font-mono text-[13px] leading-6 text-transparent caret-foreground outline-none placeholder:text-muted-foreground/55 focus-visible:ring-2 focus-visible:ring-ring/40"
+                    className="relative z-10 block min-h-8 w-full resize-y bg-transparent px-3 py-2.5 font-mono text-[13px] leading-6 text-transparent caret-foreground outline-none placeholder:text-muted-foreground/55 focus-visible:ring-2 focus-visible:ring-ring/40"
                 />
             </div>
         </div>

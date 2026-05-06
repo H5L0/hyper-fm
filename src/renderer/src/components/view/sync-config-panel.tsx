@@ -32,7 +32,7 @@ import { TriStateRuleButton, getNextTriStateRule } from '@/components/ui/tri-sta
 import { SyncConfigSummaryCard } from './sync-config-card.js';
 import { SyncPlanDialog } from './sync-plan-dialog.js';
 import { SyncPlanStaticDialog } from './sync-plan-static-dialog.js';
-import { useAppActions, useAppState } from '../store/app-store.js';
+import { useAppActions, useAppState } from '../../store/app-store.js';
 
 const SCOPE_OPTIONS: SegmentedToggleOption[] = [
     {

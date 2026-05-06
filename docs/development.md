@@ -300,10 +300,19 @@ preload 的职责非常明确：
 
 - `App.tsx`：应用根组件与路由/区域编排
 - `store/`：全局状态与 action 组织
-- `components/`：Sidebar、项目卡片/列表、详情抽屉、设置面板、同步相关面板等
+- `components/ui/`：通用原子控件与基础交互控件
+- `components/basic/`：可复用的小型业务组件，例如 tag、项目表单、抽屉壳、忽略规则编辑器等
+- `components/view/`：大界面或大区域组件，例如项目浏览视图、项目信息面板与 panel 下的 info/files/sync 子视图
+- `components/` 根目录：尚未沉淀为三层结构的业务组件、对话框与设置面板
 - `browser-bridge.ts`：对桥接调用做渲染层适配
 
 从协作角度看，渲染层更像“聚合好的状态如何展示与编辑”，而不是“核心业务规则放哪”。
+
+当前与项目浏览相关的视图组织约定如下：
+
+- 整个右侧详情抽屉统一命名为 `project-info-panel`
+- panel 内的三个区域分别拆成 `project-info-view`、`project-files-view`、`project-sync-view`
+- 若某段 UI 会被多个 view 或对话框复用，应优先下沉到 `components/basic/`
 
 ### 3.6 关键链路
 

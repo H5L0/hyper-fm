@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import type { TagDefinition } from '@shared/bridge.js';
 import { Pencil, Plus } from 'lucide-react';
+import type { TagDefinition } from '@shared/bridge.js';
+import { cn } from '@/lib/utils';
+import { NewTagDialog } from '@/components/view/new-tag-dialog.js';
 import { TagPill, resolveTagColor } from './tag-pill.js';
-import { NewTagDialog } from './new-tag-dialog.js';
-import { cn } from '@/lib/utils.js';
 
 function startTransition(update: () => void): void {
     const doc = document as Document & {
@@ -89,7 +89,7 @@ export function TagSelector({
                         title={editing ? '收起标签编辑' : '编辑标签'}
                         onClick={() => setEditing(prev => !prev)}
                         className={cn(
-                            'inline-flex size-7 shrink-0 items-center justify-center rounded-full transition-colors bg-secondary hover:bg-ring/25',
+                            'inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary transition-colors hover:bg-ring/25',
                             editing ? 'bg-ring/50' : undefined,
                         )}
                     >
@@ -98,65 +98,59 @@ export function TagSelector({
                 ) : null}
             </div>
 
-            {
-                editing ? (
-                    <div className={availablePanelClassName ?? 'rounded-md border border-border bg-popover p-2 border-dashed'}>
-                        {
-                            availableLabel && (
-                                <div className="mb-1.5 flex items-center justify-between">
-                                    <span className="text-subheading text-muted-foreground/80">{availableLabel}</span>
-                                </div>
-                            )
-                        }
-                        {available.length === 0 ? (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                                <p className="text-note text-muted-foreground/70">全部标签已选择。</p>
+            {editing ? (
+                <div className={availablePanelClassName ?? 'rounded-md border border-border border-dashed bg-popover p-2'}>
+                    {availableLabel ? (
+                        <div className="mb-1.5 flex items-center justify-between">
+                            <span className="text-subheading text-muted-foreground/80">{availableLabel}</span>
+                        </div>
+                    ) : null}
+                    {available.length === 0 ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-note text-muted-foreground/70">全部标签已选择。</p>
+                            <button
+                                type="button"
+                                aria-label="新建标签"
+                                onClick={() => setDialogOpen(true)}
+                                className="inline-flex size-6 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+                            >
+                                <Plus className="size-3.5" />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {available.map(tag => (
                                 <button
+                                    key={`opt-${tag.name}`}
                                     type="button"
-                                    aria-label="新建标签"
-                                    onClick={() => setDialogOpen(true)}
-                                    className="inline-flex size-6 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+                                    onClick={() => select(tag.name)}
+                                    style={{ viewTransitionName: tagViewName(tag.name) }}
+                                    className="cursor-pointer rounded-full opacity-70 transition-opacity hover:opacity-100"
                                 >
-                                    <Plus className="size-3.5" />
+                                    <TagPill name={tag.name} color={tag.color} size="md" />
                                 </button>
-                            </div>
-                        ) : (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                                {available.map(tag => (
-                                    <button
-                                        key={`opt-${tag.name}`}
-                                        type="button"
-                                        onClick={() => select(tag.name)}
-                                        style={{ viewTransitionName: tagViewName(tag.name) }}
-                                        className="cursor-pointer rounded-full opacity-70 transition-opacity hover:opacity-100"
-                                    >
-                                        <TagPill name={tag.name} color={tag.color} size="md" />
-                                    </button>
-                                ))}
-                                <button
-                                    type="button"
-                                    aria-label="新建标签"
-                                    onClick={() => setDialogOpen(true)}
-                                    className="inline-flex size-6 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
-                                >
-                                    <Plus className="size-3.5" />
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                ) : null
-            }
+                            ))}
+                            <button
+                                type="button"
+                                aria-label="新建标签"
+                                onClick={() => setDialogOpen(true)}
+                                className="inline-flex size-6 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+                            >
+                                <Plus className="size-3.5" />
+                            </button>
+                        </div>
+                    )}
+                </div>
+            ) : null}
 
-            {
-                dialogOpen ? (
-                    <NewTagDialog
-                        onClose={() => setDialogOpen(false)}
-                        onCreated={name => {
-                            startTransition(() => onAdd(name));
-                        }}
-                    />
-                ) : null
-            }
-        </div >
+            {dialogOpen ? (
+                <NewTagDialog
+                    onClose={() => setDialogOpen(false)}
+                    onCreated={name => {
+                        startTransition(() => onAdd(name));
+                    }}
+                />
+            ) : null}
+        </div>
     );
 }

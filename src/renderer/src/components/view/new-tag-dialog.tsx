@@ -5,9 +5,9 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
+import { DEFAULT_TAG_COLOR, TagPill } from '@/components/basic/tag-pill.js';
 import { cn } from '@/lib/utils';
-import { useAppActions, useAppState } from '../store/app-store.js';
-import { DEFAULT_TAG_COLOR, TagPill } from './tag-pill.js';
+import { useAppActions, useAppState } from '../../store/app-store.js';
 
 const TAG_COLOR_PRESETS = [
   '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',

@@ -3,15 +3,15 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect } from 'react';
-import { Sidebar } from './sidebar.js';
-import { ScanSettingsPanel, SettingsPanel, SyncSettingsPanel } from './settings-panel.js';
-import { TitleBar } from './title-bar.js';
-import { Toolbar } from './toolbar.js';
-import { ProjectGrid } from './project-grid.js';
-import { ProjectDrawer } from './project-drawer.js';
-import { Toaster } from './toaster.js';
+import { Sidebar } from './view/sidebar.js';
+import { ScanSettingsPanel, SettingsPanel, SyncSettingsPanel } from './view/settings-panel.js';
+import { TitleBar } from './view/title-bar.js';
+import { Toolbar } from './view/toolbar.js';
+import { ProjectBrowserView } from './view/project-browser-view.js';
+import { ProjectInfoPanel } from './view/project-info-panel/project-info-panel.js';
+import { Toaster } from './view/toaster.js';
 import { ThemeEffect } from './theme-effect.js';
-import { WarningsPanel } from './warnings-panel.js';
+import { WarningsPanel } from './view/warnings-panel.js';
 import { useAppActions, useAppState } from '../store/app-store.js';
 
 export function AppShell() {
@@ -58,12 +58,12 @@ export function AppShell() {
           ) : (
             <>
               <Toolbar />
-              <ProjectGrid />
+              <ProjectBrowserView />
             </>
           )}
         </main>
       </div>
-      <ProjectDrawer />
+      <ProjectInfoPanel />
       <Toaster />
     </div>
   );

@@ -455,7 +455,10 @@ export function registerIpcHandlers(): void {
       const i = input as ManualProjectInput;
       assertString(i?.path, 'input.path');
       const session = requireSession();
-      const inspection = await inspectProjectDirectory(i.path, { globalIgnore: session.config.ignore.globs });
+      const inspection = await inspectProjectDirectory(i.path, {
+        globalIgnore: session.config.ignore.globs,
+        projectIgnore: normalizeIgnoreInput(i.ignore),
+      });
       const conflicts: ManualProjectValidationResult['conflicts'] = [];
       const duplicatePath = findProjectByPath(session.shared, session.local, inspection.path, process.platform);
       if (duplicatePath) {
@@ -497,7 +500,10 @@ export function registerIpcHandlers(): void {
         if (!validation.valid) {
           throw new FmError('FINGERPRINT_CONFLICT', validation.conflicts[0]?.reason ?? '项目指纹冲突', validation.conflicts);
         }
-        const inspection = await inspectProjectDirectory(i.path, { globalIgnore: requireSession().config.ignore.globs });
+        const inspection = await inspectProjectDirectory(i.path, {
+          globalIgnore: requireSession().config.ignore.globs,
+          projectIgnore: normalizeIgnoreInput(i.ignore),
+        });
         const baseName = i.name?.trim() || inspection.name;
         const meta = inspection.hasMetaFile ? await readMetaFile(inspection.path) : null;
         const { nextShared, nextLocal, project } = addProjectManual(
@@ -509,7 +515,8 @@ export function registerIpcHandlers(): void {
             name: meta?.name ?? baseName,
             description: meta?.description ?? i.description,
             tags: meta?.tags ?? i.tags,
-            ignore: meta?.ignore,
+            ignore: meta?.ignore ?? i.ignore,
+            syncRespectGitignore: meta?.syncRespectGitignore ?? i.syncRespectGitignore,
             hasMetaFile: inspection.hasMetaFile || i.fingerprint.kind === 'metadata',
           },
           process.platform,
@@ -522,6 +529,7 @@ export function registerIpcHandlers(): void {
             description: project.description,
             tags: project.tags,
             ignore: project.ignore,
+            syncRespectGitignore: project.syncRespectGitignore,
           });
         }
 
@@ -1438,7 +1446,10 @@ async function validateManualProject(
   shared: ReturnType<typeof requireSession>['shared'],
   local: ReturnType<typeof requireSession>['local'],
 ): Promise<ManualProjectValidationResult> {
-  const inspection = await inspectProjectDirectory(input.path, { globalIgnore: requireSession().config.ignore.globs });
+  const inspection = await inspectProjectDirectory(input.path, {
+    globalIgnore: requireSession().config.ignore.globs,
+    projectIgnore: normalizeIgnoreInput(input.ignore),
+  });
   const conflicts: ManualProjectValidationResult['conflicts'] = [];
   const duplicatePath = findProjectByPath(shared, local, inspection.path, process.platform);
   if (duplicatePath) {

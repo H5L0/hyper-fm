@@ -3,28 +3,23 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from 'react';
-import { FolderPlus, LayoutGrid, List, RefreshCw, X } from 'lucide-react';
+import { FolderPlus, LayoutGrid, List, RefreshCw } from 'lucide-react';
 import type {
     ManualProjectInput,
     ManualProjectValidationResult,
     ProjectDirectoryInspection,
+    SyncProjectRule,
 } from '@shared/bridge.js';
 import { Button } from '@/components/ui/button';
-import { CheckboxField } from '@/components/ui/checkbox-field';
-import { DrawerPanelShell } from '@/components/basic/drawer-panel-shell.js';
 import { cn } from '@/lib/utils';
-import { useAppActions, useAppState } from '../store/app-store.js';
-import { AddScanRootDialog } from './view/scan-root-dialog.js';
-import { ProjectFormValue, ProjectInfoForm } from './view/project-info-panel/project-details-view.js';
-import { SplitMenuButton, SplitMenuEntry } from './ui/split-menu-button.js';
+import { useAppActions, useAppState } from '../../store/app-store.js';
+import { AddScanRootDialog } from './scan-root-dialog.js';
+import { ProjectFormValue } from './project-info-panel/project-details-view.js';
+import { AddProjectInfoPanel } from './project-info-panel/project-info-panel.js';
+import { SplitMenuButton, SplitMenuEntry } from '../ui/split-menu-button.js';
 
-export function Toolbar() {
-    const { search, view, scanProgress, config } = useAppState();
-    const actions = useAppActions();
-    const scanning = !!scanProgress?.running;
-    const [addOpen, setAddOpen] = useState(false);
-    const [scanRootDraftPath, setScanRootDraftPath] = useState<string | null>(null);
-    const [form, setForm] = useState<ProjectFormValue>({
+function createEmptyProjectForm(): ProjectFormValue {
+    return {
         path: '',
         name: '',
         description: '',
@@ -32,10 +27,35 @@ export function Toolbar() {
         ignore: [],
         syncRespectGitignore: false,
         fingerprint: { kind: 'folder-name', folderName: '' },
+    };
+}
+
+function normalizeForCompare(path: string): string {
+    return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+function resolveDraftRootId(projectPath: string, scanRoots: readonly { id: string; path: string }[]): string {
+    const normalizedPath = normalizeForCompare(projectPath.trim());
+    if (!normalizedPath) return 'manual';
+    const matchedRoot = scanRoots.find(root => {
+        const normalizedRoot = normalizeForCompare(root.path);
+        return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
     });
+    return matchedRoot?.id ?? 'manual';
+}
+
+export function Toolbar() {
+    const { search, view, scanProgress, config } = useAppState();
+    const actions = useAppActions();
+    const scanning = !!scanProgress?.running;
+    const [addOpen, setAddOpen] = useState(false);
+    const [scanRootDraftPath, setScanRootDraftPath] = useState<string | null>(null);
+    const [form, setForm] = useState<ProjectFormValue>(createEmptyProjectForm());
     const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
     const [validation, setValidation] = useState<ManualProjectValidationResult>({ valid: false, conflicts: [] });
+    const [draftSyncRules, setDraftSyncRules] = useState<Partial<Record<string, SyncProjectRule>>>({});
     const [busy, setBusy] = useState(false);
+    const draftProjectRootId = resolveDraftRootId(form.path, config.scanRoots);
 
     const openScanRootDialog = async () => {
         const dir = await actions.pickDirectory();
@@ -49,6 +69,7 @@ export function Toolbar() {
             name: override?.name ?? (form.name.trim() || undefined),
             description: override?.description ?? (form.description.trim() || undefined),
             tags: override?.tags ?? form.tags,
+            ignore: override?.ignore ?? form.ignore,
             syncRespectGitignore: override?.syncRespectGitignore ?? form.syncRespectGitignore,
             fingerprint: override?.fingerprint ?? form.fingerprint,
         };
@@ -59,8 +80,8 @@ export function Toolbar() {
         setValidation(await window.fm.projects.validateNew(payload));
     };
 
-    const inspectAndSync = async (dir: string, forceName = false) => {
-        const next = await window.fm.projects.inspectDirectory(dir);
+    const inspectAndSync = async (dir: string, forceName = false, projectIgnore: string[] = form.ignore) => {
+        const next = await window.fm.projects.inspectDirectory(dir, projectIgnore);
         setInspection(next);
         setForm(prev => ({
             ...prev,
@@ -90,12 +111,17 @@ export function Toolbar() {
     }, [inspection]);
 
     const openAddProject = async () => {
+        setForm(createEmptyProjectForm());
+        setInspection(null);
+        setValidation({ valid: false, conflicts: [] });
+        setDraftSyncRules({});
         const dir = await actions.pickProjectDirectory();
         if (!dir) return;
-        const next = await inspectAndSync(dir, true);
+        const next = await inspectAndSync(dir, true, []);
         await validate({
             path: next.path,
             name: next.suggestedName,
+            ignore: [],
             fingerprint: next.hasMetaFile ? { kind: 'metadata' } : { kind: 'folder-name', folderName: next.suggestedName },
         });
         setAddOpen(true);
@@ -105,7 +131,7 @@ export function Toolbar() {
         const dir = await actions.pickProjectDirectory();
         if (!dir) return;
         const next = await inspectAndSync(dir, true);
-        await validate({ path: next.path, name: next.suggestedName });
+        await validate({ path: next.path, name: next.suggestedName, ignore: form.ignore });
     };
 
     const commitProjectPath = async () => {
@@ -113,7 +139,7 @@ export function Toolbar() {
         if (!path) return;
         try {
             const next = await inspectAndSync(path, !form.name.trim());
-            await validate({ path: next.path });
+            await validate({ path: next.path, ignore: form.ignore });
         } catch {
             setInspection(null);
             setValidation({ valid: false, conflicts: [] });
@@ -129,11 +155,35 @@ export function Toolbar() {
                 name: form.name.trim() || undefined,
                 description: form.description.trim() || undefined,
                 tags: form.tags,
+                ignore: form.ignore,
                 syncRespectGitignore: form.syncRespectGitignore,
                 fingerprint: form.fingerprint,
             });
+            const explicitSyncRules = Object.entries(draftSyncRules).flatMap(([configId, rule]) =>
+                rule && rule !== 'default' ? [[configId, rule] as const] : [],
+            );
+            if (explicitSyncRules.length > 0) {
+                try {
+                    for (const [configId, rule] of explicitSyncRules) {
+                        await window.fm.sync.setProjectRule(configId, project.id, rule);
+                    }
+                    await actions.loadConfig();
+                } catch (error) {
+                    actions.toast('error', `项目已添加，但同步规则保存失败：${error instanceof Error ? error.message : '未知错误'}`);
+                    setAddOpen(false);
+                    setForm(createEmptyProjectForm());
+                    setInspection(null);
+                    setValidation({ valid: false, conflicts: [] });
+                    setDraftSyncRules({});
+                    return;
+                }
+            }
             actions.toast('success', `已添加项目：${project.name}`);
             setAddOpen(false);
+            setForm(createEmptyProjectForm());
+            setInspection(null);
+            setValidation({ valid: false, conflicts: [] });
+            setDraftSyncRules({});
         } catch (error) {
             actions.toast('error', error instanceof Error ? error.message : '添加失败');
         } finally {
@@ -141,11 +191,10 @@ export function Toolbar() {
         }
     };
 
-    const addDisabled =
-        busy ||
-        !form.path.trim() ||
-        !validation.valid ||
-        (form.fingerprint.kind === 'file-paths' && form.fingerprint.paths.length === 0);
+    useEffect(() => {
+        if (!addOpen || !form.path.trim()) return;
+        void window.fm.projects.inspectDirectory(form.path.trim(), form.ignore).then(setInspection).catch(() => setInspection(null));
+    }, [addOpen, form.path, form.ignore]);
 
     useEffect(() => {
         if (!addOpen || !form.path.trim()) return;
@@ -218,80 +267,39 @@ export function Toolbar() {
                 </div>
             </div>
 
-            {addOpen ? (
-                <DrawerPanelShell
-                    title="添加文件夹"
-                    onClose={() => setAddOpen(false)}
-                    headerActions={
-                        <Button size="icon-xs" variant="ghost" onClick={() => setAddOpen(false)}>
-                            <X className="size-3.5" />
-                        </Button>
-                    }
-                    footer={
-                        <div className="flex items-center justify-end gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setAddOpen(false)}>
-                                取消
-                            </Button>
-                            <Button size="sm" disabled={addDisabled} onClick={() => void submitProject()}>
-                                添加
-                            </Button>
-                        </div>
-                    }
-                >
-                    <ProjectInfoForm
-                        form={form}
-                        onFormChange={setForm}
-                        tagDefs={config.tags}
-                        inspection={inspection}
-                        pathEditable
-                        pathHint={
-                            inspection ? (
-                                <p className="text-note text-muted-foreground">
-                                    {inspection.hasMetaFile
-                                        ? `检测到 .meta-data${inspection.metaProjectId ? `（projectId: ${inspection.metaProjectId}）` : ''}`
-                                        : `共发现 ${inspection.files.length} 个文件，可用于文件列表指纹。`}
-                                </p>
-                            ) : null
-                        }
-                        validation={
-                            !validation.valid && validation.conflicts.length > 0 ? (
-                                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-note text-amber-700 dark:text-amber-300">
-                                    <p className="font-medium">当前配置与现有项目冲突，无法添加：</p>
-                                    <ul className="mt-2 list-disc space-y-1 pl-5">
-                                        {validation.conflicts.map(conflict => (
-                                            <li key={`${conflict.projectId}-${conflict.reason}`}>
-                                                {conflict.projectName}：{conflict.reason}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            ) : null
-                        }
-                        extraSections={(
-                            <div>
-                                <label className="mb-2 block text-subheading text-muted-foreground">同步</label>
-                                <CheckboxField
-                                    checked={form.syncRespectGitignore}
-                                    onCheckedChange={checked => setForm(prev => ({ ...prev, syncRespectGitignore: checked }))}
-                                    label="同步时遵循项目目录中的 .gitignore"
-                                    className="items-center"
-                                    checkboxClassName="mt-0"
-                                    contentClassName="pt-0"
-                                />
-                            </div>
-                        )}
-                        onPickPath={() => void browseProjectDir()}
-                        onPathCommit={() => void commitProjectPath()}
-                        onAddTag={tag =>
-                            setForm(prev => ({
-                                ...prev,
-                                tags: prev.tags.includes(tag) ? prev.tags : [...prev.tags, tag],
-                            }))
-                        }
-                        onRemoveTag={tag => setForm(prev => ({ ...prev, tags: prev.tags.filter(item => item !== tag) }))}
-                    />
-                </DrawerPanelShell>
-            ) : null}
+            <AddProjectInfoPanel
+                open={addOpen}
+                form={form}
+                onFormChange={setForm}
+                tagDefs={config.tags}
+                inspection={inspection}
+                validation={validation}
+                allProjects={config.projects}
+                syncConfigs={config.syncConfigs ?? []}
+                draftProjectRootId={draftProjectRootId}
+                syncRuleOverrides={draftSyncRules}
+                busy={busy}
+                onClose={() => {
+                    setAddOpen(false);
+                    setDraftSyncRules({});
+                }}
+                onSubmit={() => void submitProject()}
+                onPickPath={() => void browseProjectDir()}
+                onPathCommit={() => void commitProjectPath()}
+                onSyncRuleChange={(configId, rule) => {
+                    setDraftSyncRules(current => ({
+                        ...current,
+                        [configId]: rule,
+                    }));
+                }}
+                onAddTag={tag =>
+                    setForm(prev => ({
+                        ...prev,
+                        tags: prev.tags.includes(tag) ? prev.tags : [...prev.tags, tag],
+                    }))
+                }
+                onRemoveTag={tag => setForm(prev => ({ ...prev, tags: prev.tags.filter(item => item !== tag) }))}
+            />
 
             {scanRootDraftPath ? (
                 <AddScanRootDialog

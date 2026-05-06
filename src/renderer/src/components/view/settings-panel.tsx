@@ -5,14 +5,14 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, FolderPlus, FolderRoot, PenLine, Plus, Trash2 } from 'lucide-react';
 import type { CustomCommand } from '@shared/bridge.js';
+import { IgnoreRulesEditor } from '@/components/basic/ignore-rules-editor.js';
 import { AddableList, AddableListEmpty, AddableListItem } from '@/components/ui/addable-list';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox-field';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import { SegmentedToggleGroup } from '@/components/ui/segmented-toggle-group';
 import { SettingSection } from '@/components/ui/setting-section';
-import { useAppActions, useAppState } from '../store/app-store.js';
-import { IgnoreRulesEditor } from './ignore-rules-editor';
+import { useAppActions, useAppState } from '../../store/app-store.js';
 import { AddScanRootDialog } from './scan-root-dialog.js';
 import { SyncConfigPanel } from './sync-config-panel.js';
 

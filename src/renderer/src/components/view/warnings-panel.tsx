@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, FolderOpen, GitCompareArrows, RefreshCw } 
 import type { FingerprintConflictWarning, ScanWarning } from '@shared/types.js';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useAppActions, useAppState } from '../store/app-store.js';
+import { useAppActions, useAppState } from '../../store/app-store.js';
 
 function fingerprintLabel(warning: FingerprintConflictWarning): string {
     switch (warning.fingerprint.kind) {

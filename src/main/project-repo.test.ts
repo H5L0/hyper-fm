@@ -83,6 +83,7 @@ describe('project-repo / manual add', () => {
                 path: 'D:/p/demo',
                 name: 'Demo',
                 tags: ['ts'],
+                ignore: ['dist/', ' README.md ', 'dist/'],
                 syncRespectGitignore: true,
                 fingerprint: { kind: 'folder-name', folderName: 'demo' },
             },
@@ -91,7 +92,7 @@ describe('project-repo / manual add', () => {
         expect(result.nextShared.projects).toHaveLength(1);
         expect(result.nextLocal.bindings).toHaveLength(1);
         expect(result.project.id).toMatch(/^pj-[a-z0-9]{6}$/);
-        expect(result.project.ignore).toEqual([]);
+        expect(result.project.ignore).toEqual(['README.md', 'dist/']);
         expect(result.project.syncRespectGitignore).toBe(true);
         expect(result.project.fingerprint.kind).toBe('folder-name');
     });

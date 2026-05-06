@@ -702,7 +702,7 @@ function createProjectFromInput(input: ManualProjectInput): Project {
         name: input.name?.trim() || lastSegment(input.path),
         description: input.description?.trim() || undefined,
         tags: input.tags?.map(tag => tag.trim()).filter(Boolean) ?? [],
-        ignore: [],
+        ignore: [...new Set((input.ignore ?? []).map(item => item.replace(/\\/g, '/').trim()).filter(Boolean))].sort(),
         syncRespectGitignore: input.syncRespectGitignore,
         fingerprint: normalizeFingerprint(input.fingerprint),
         hasMetaFile: input.fingerprint.kind === 'metadata',

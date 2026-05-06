@@ -4,7 +4,7 @@
 
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAppActions, useAppState } from '../store/app-store.js';
+import { useAppActions, useAppState } from '../../store/app-store.js';
 
 export function Toaster() {
   const { toasts } = useAppState();
@@ -24,7 +24,7 @@ export function Toaster() {
                 : 'border-border text-muted-foreground',
           )}
         >
-          <span className="mt-0.5 flex-1 break-words">{t.text}</span>
+          <span className="mt-0.5 flex-1 wrap-break-word">{t.text}</span>
           <button
             type="button"
             onClick={() => actions.dismissToast(t.id)}

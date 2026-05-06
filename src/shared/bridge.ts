@@ -145,6 +145,7 @@ export interface ManualProjectInput {
   name?: string;
   description?: string;
   tags?: string[];
+  ignore?: string[];
   syncRespectGitignore?: boolean;
   fingerprint: ProjectFingerprint;
 }

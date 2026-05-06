@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Minus, Plus, FolderEdit, FolderRoot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
-import { useAppActions } from '../store/app-store.js';
+import { useAppActions } from '../../store/app-store.js';
 
 export function DepthStepper({
     value,
