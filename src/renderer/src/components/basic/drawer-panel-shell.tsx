@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 export function DrawerPanelShell({
@@ -11,6 +11,10 @@ export function DrawerPanelShell({
     children,
     footer,
     onClose,
+    showBackdrop = true,
+    panelOffsetRight = 0,
+    backdropZIndex = 30,
+    panelZIndex = 40,
 }: {
     title?: string;
     banner?: ReactNode;
@@ -21,20 +25,33 @@ export function DrawerPanelShell({
     children: ReactNode;
     footer: ReactNode;
     onClose: () => void;
+    showBackdrop?: boolean;
+    panelOffsetRight?: number;
+    backdropZIndex?: number;
+    panelZIndex?: number;
 }) {
+    const panelStyle: CSSProperties = {
+        zIndex: panelZIndex,
+        right: `${panelOffsetRight}px`,
+    };
+
     return (
         <>
-            <button
-                type="button"
-                aria-label="关闭"
-                onClick={onClose}
-                className="fixed inset-0 z-30 bg-black/18 backdrop-blur-[1px] dark:bg-black/42"
-            />
+            {showBackdrop ? (
+                <button
+                    type="button"
+                    aria-label="关闭"
+                    onClick={onClose}
+                    className="fixed inset-0 bg-black/18 dark:bg-black/42"
+                    style={{ zIndex: backdropZIndex }}
+                />
+            ) : null}
             <aside
                 className={cn(
-                    'fixed top-0 right-0 z-40 flex h-full w-140 max-w-[calc(100vw-1rem)] flex-col border-l border-border bg-card shadow-2xl',
-                    'animate-in slide-in-from-right duration-150',
+                    'fixed top-0 flex h-full w-140 max-w-[calc(100vw-1rem)] flex-col border-l border-border bg-card shadow-2xl transition-[right] duration-150',
+                    'animate-in slide-in-from-right-20 fade-in-20 duration-100',
                 )}
+                style={panelStyle}
             >
                 <div className="shrink-0 border-b border-border px-4 py-3">
                     <div className="flex items-center justify-between gap-3">

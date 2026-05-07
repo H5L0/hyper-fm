@@ -41,6 +41,7 @@ export interface ToastMessage {
 
 export interface AppState {
   ready: boolean;
+  hasLoadedConfig: boolean;
   configPaths: ConfigPaths;
   config: AppConfig;
   tagFilter: TagFilter;
@@ -54,6 +55,7 @@ export interface AppState {
 
 const INITIAL_STATE: AppState = {
   ready: false,
+  hasLoadedConfig: false,
   configPaths: { sharedPath: '', localPath: '' },
   config: {
     version: 2,
@@ -80,7 +82,7 @@ const INITIAL_STATE: AppState = {
 // ---------------------------------------------------------------------------
 
 type Action =
-  | { type: 'init'; configPaths: ConfigPaths; config: AppConfig }
+  | { type: 'init'; configPaths: ConfigPaths; config: AppConfig; hasLoadedConfig: boolean }
   | { type: 'config'; config: AppConfig }
   | { type: 'configPaths'; configPaths: ConfigPaths }
   | { type: 'projects'; projects: Project[] }
@@ -101,6 +103,7 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         ready: true,
+        hasLoadedConfig: action.hasLoadedConfig,
         configPaths: action.configPaths,
         config: action.config,
         view: action.config.ui.view,
@@ -167,6 +170,7 @@ interface AppActions {
   addProject(input: ManualProjectInput): Promise<Project>;
   removeProject(id: string): Promise<void>;
   pickProjectDirectory(): Promise<string | null>;
+  pickProjectDirectories(): Promise<string[]>;
   addScanRoot(input: { path: string; label?: string; maxDepth?: number }): Promise<ScanRoot>;
   updateScanRoot(id: string, patch: Partial<Omit<ScanRoot, 'id'>>): Promise<void>;
   removeScanRoot(id: string): Promise<void>;
@@ -214,8 +218,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
-  const applySnapshot = useCallback((snapshot: { paths: ConfigPaths; data: AppConfig }) => {
-    dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data });
+  const applySnapshot = useCallback((snapshot: { paths: ConfigPaths; data: AppConfig; hasLoadedConfig: boolean }) => {
+    dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data, hasLoadedConfig: snapshot.hasLoadedConfig });
   }, []);
 
   const loadConfig = useCallback(
@@ -264,9 +268,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const pickAndCreateConfig = useCallback(async () => {
     try {
-      const filePath = await window.fm.config.pick('save');
-      if (filePath) {
-        const snapshot = await window.fm.config.create(filePath);
+      const directoryPath = await window.fm.config.pickDirectory();
+      if (directoryPath) {
+        const snapshot = await window.fm.config.createInDirectory(directoryPath);
         applySnapshot(snapshot);
         toast('success', '已创建新配置');
       }
@@ -408,6 +412,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const pickProjectDirectoriesAction = useCallback(
+    () => window.fm.projects.pickDirectories(),
+    [],
+  );
+
   const addScanRootAction = useCallback(
     async (input: { path: string; label?: string; maxDepth?: number }) => {
       const root = await window.fm.scanRoots.add(input);
@@ -485,14 +494,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       const activeGroup = activeFilter !== 'ALL' && activeFilter.kind === 'group'
         ? (stateRef.current.config.tagGroups ?? []).find(group => group.name === activeFilter.group)
         : undefined;
+      const shouldResetTagFilter = activeFilter !== 'ALL' && activeFilter.kind === 'tag' && activeFilter.tag === name;
       const shouldResetGroupFilter = Boolean(activeGroup && activeGroup.tags.includes(name) && activeGroup.tags.length === 1);
       await window.fm.tags.remove(name);
       await reloadCurrent();
-      if (shouldResetGroupFilter) {
+      if (shouldResetTagFilter || shouldResetGroupFilter) {
         dispatch({ type: 'tagFilter', value: 'ALL' });
       }
     } catch (error) {
       handleError(error, '删除标签失败');
+      throw error;
     }
   }, [handleError, reloadCurrent]);
 
@@ -597,6 +608,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       addProject: addProjectAction,
       removeProject: removeProjectAction,
       pickProjectDirectory: pickProjectDirectoryAction,
+      pickProjectDirectories: pickProjectDirectoriesAction,
       addScanRoot: addScanRootAction,
       updateScanRoot: updateScanRootAction,
       removeScanRoot: removeScanRootAction,
@@ -621,6 +633,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       pickAndLoadConfig,
       pickDirectory,
       pickProjectDirectoryAction,
+      pickProjectDirectoriesAction,
       refreshProjects,
       ignorePathAction,
       removeMetaFile,

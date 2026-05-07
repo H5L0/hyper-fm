@@ -8,11 +8,11 @@ import { useAppActions, useAppState } from '../../store/app-store.js';
 import { ConfigMetaDialog } from './config-meta-dialog.js';
 
 export function TitleBar() {
-  const { config, configPaths } = useAppState();
+  const { config, configPaths, hasLoadedConfig } = useAppState();
   const actions = useAppActions();
   const [metaDialogOpen, setMetaDialogOpen] = useState(false);
 
-  const configName = config.name?.trim() || '未命名配置';
+  const configName = hasLoadedConfig ? (config.name?.trim() || '未命名配置') : '未加载配置';
 
   return (
     <header className="flex h-8 shrink-0 items-center justify-between border-b border-border bg-card/60 px-3 text-muted-foreground select-none">
@@ -22,11 +22,11 @@ export function TitleBar() {
         <div className="group relative min-w-0">
           <button
             type="button"
-            className="max-w-[360px] truncate rounded px-1 py-0.5 text-note text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            className="max-w-90 truncate rounded px-1 py-0.5 text-note text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
           >
             {configName}
           </button>
-          <div className="pointer-events-none absolute top-full left-0 z-50 mt-2 hidden w-[520px] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover px-3 py-3 text-left shadow-lg group-hover:block group-focus-within:block">
+          <div className="pointer-events-none absolute top-full left-0 z-50 mt-2 hidden w-130 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover px-3 py-3 text-left shadow-lg group-hover:block group-focus-within:block">
             <p className="text-subheading text-foreground">{configName}</p>
             {config.description ? (
               <p className="mt-1 text-note text-muted-foreground">{config.description}</p>
@@ -51,12 +51,12 @@ export function TitleBar() {
         <Button size="xs" variant="ghost" onClick={() => void actions.pickAndCreateConfig()}>
           新建…
         </Button>
-        <Button size="xs" variant="ghost" onClick={() => setMetaDialogOpen(true)}>
+        <Button size="xs" variant="ghost" disabled={!hasLoadedConfig} onClick={() => setMetaDialogOpen(true)}>
           编辑…
         </Button>
       </div>
 
-      {metaDialogOpen ? (
+      {metaDialogOpen && hasLoadedConfig ? (
         <ConfigMetaDialog
           initialName={config.name}
           initialDescription={config.description ?? ''}

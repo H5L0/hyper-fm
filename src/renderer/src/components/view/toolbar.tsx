@@ -2,204 +2,28 @@
 // 工具栏：搜索、视图切换、扫描、添加项目
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState } from 'react';
-import { FolderPlus, LayoutGrid, List, RefreshCw } from 'lucide-react';
-import type {
-    ManualProjectInput,
-    ManualProjectValidationResult,
-    ProjectDirectoryInspection,
-    SyncProjectRule,
-} from '@shared/bridge.js';
-import { Button } from '@/components/ui/button';
+import { useState } from 'react';
+import { Files, FolderPlus, LayoutGrid, List, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '../../store/app-store.js';
+import { useProjectImportController } from '@/project-import/use-project-import-controller.js';
 import { AddScanRootDialog } from './scan-root-dialog.js';
-import { ProjectFormValue } from './project-info-panel/project-details-view.js';
 import { AddProjectInfoPanel } from './project-info-panel/project-info-panel.js';
+import { BatchImportOverridePanel, BatchImportPanel } from './project-info-panel/batch-import-panel.js';
 import { SplitMenuButton, SplitMenuEntry } from '../ui/split-menu-button.js';
-
-function createEmptyProjectForm(): ProjectFormValue {
-    return {
-        path: '',
-        name: '',
-        description: '',
-        tags: [],
-        ignore: [],
-        syncRespectGitignore: false,
-        fingerprint: { kind: 'folder-name', folderName: '' },
-    };
-}
-
-function normalizeForCompare(path: string): string {
-    return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-}
-
-function resolveDraftRootId(projectPath: string, scanRoots: readonly { id: string; path: string }[]): string {
-    const normalizedPath = normalizeForCompare(projectPath.trim());
-    if (!normalizedPath) return 'manual';
-    const matchedRoot = scanRoots.find(root => {
-        const normalizedRoot = normalizeForCompare(root.path);
-        return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
-    });
-    return matchedRoot?.id ?? 'manual';
-}
 
 export function Toolbar() {
     const { search, view, scanProgress, config } = useAppState();
     const actions = useAppActions();
     const scanning = !!scanProgress?.running;
-    const [addOpen, setAddOpen] = useState(false);
+    const projectImport = useProjectImportController();
     const [scanRootDraftPath, setScanRootDraftPath] = useState<string | null>(null);
-    const [form, setForm] = useState<ProjectFormValue>(createEmptyProjectForm());
-    const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
-    const [validation, setValidation] = useState<ManualProjectValidationResult>({ valid: false, conflicts: [] });
-    const [draftSyncRules, setDraftSyncRules] = useState<Partial<Record<string, SyncProjectRule>>>({});
-    const [busy, setBusy] = useState(false);
-    const draftProjectRootId = resolveDraftRootId(form.path, config.scanRoots);
 
     const openScanRootDialog = async () => {
         const dir = await actions.pickDirectory();
         if (!dir) return;
         setScanRootDraftPath(dir);
     };
-
-    const validate = async (override?: Partial<ManualProjectInput>) => {
-        const payload: ManualProjectInput = {
-            path: override?.path ?? form.path.trim(),
-            name: override?.name ?? (form.name.trim() || undefined),
-            description: override?.description ?? (form.description.trim() || undefined),
-            tags: override?.tags ?? form.tags,
-            ignore: override?.ignore ?? form.ignore,
-            syncRespectGitignore: override?.syncRespectGitignore ?? form.syncRespectGitignore,
-            fingerprint: override?.fingerprint ?? form.fingerprint,
-        };
-        if (!payload.path) {
-            setValidation({ valid: false, conflicts: [] });
-            return;
-        }
-        setValidation(await window.fm.projects.validateNew(payload));
-    };
-
-    const inspectAndSync = async (dir: string, forceName = false, projectIgnore: string[] = form.ignore) => {
-        const next = await window.fm.projects.inspectDirectory(dir, projectIgnore);
-        setInspection(next);
-        setForm(prev => ({
-            ...prev,
-            path: next.path,
-            name: forceName || !prev.name.trim() ? next.suggestedName : prev.name,
-            fingerprint:
-                next.hasMetaFile
-                    ? { kind: 'metadata' }
-                    : prev.fingerprint.kind === 'file-paths'
-                        ? prev.fingerprint
-                        : { kind: 'folder-name', folderName: next.suggestedName },
-        }));
-        return next;
-    };
-
-    useEffect(() => {
-        if (!inspection) return;
-        setForm(current => {
-            if (current.fingerprint.kind !== 'file-paths') return current;
-            const nextPaths = current.fingerprint.paths.filter(item => inspection.files.includes(item));
-            if (nextPaths.length === current.fingerprint.paths.length) return current;
-            return {
-                ...current,
-                fingerprint: { kind: 'file-paths', paths: nextPaths },
-            };
-        });
-    }, [inspection]);
-
-    const openAddProject = async () => {
-        setForm(createEmptyProjectForm());
-        setInspection(null);
-        setValidation({ valid: false, conflicts: [] });
-        setDraftSyncRules({});
-        const dir = await actions.pickProjectDirectory();
-        if (!dir) return;
-        const next = await inspectAndSync(dir, true, []);
-        await validate({
-            path: next.path,
-            name: next.suggestedName,
-            ignore: [],
-            fingerprint: next.hasMetaFile ? { kind: 'metadata' } : { kind: 'folder-name', folderName: next.suggestedName },
-        });
-        setAddOpen(true);
-    };
-
-    const browseProjectDir = async () => {
-        const dir = await actions.pickProjectDirectory();
-        if (!dir) return;
-        const next = await inspectAndSync(dir, true);
-        await validate({ path: next.path, name: next.suggestedName, ignore: form.ignore });
-    };
-
-    const commitProjectPath = async () => {
-        const path = form.path.trim();
-        if (!path) return;
-        try {
-            const next = await inspectAndSync(path, !form.name.trim());
-            await validate({ path: next.path, ignore: form.ignore });
-        } catch {
-            setInspection(null);
-            setValidation({ valid: false, conflicts: [] });
-        }
-    };
-
-    const submitProject = async () => {
-        if (busy) return;
-        setBusy(true);
-        try {
-            const project = await actions.addProject({
-                path: form.path.trim(),
-                name: form.name.trim() || undefined,
-                description: form.description.trim() || undefined,
-                tags: form.tags,
-                ignore: form.ignore,
-                syncRespectGitignore: form.syncRespectGitignore,
-                fingerprint: form.fingerprint,
-            });
-            const explicitSyncRules = Object.entries(draftSyncRules).flatMap(([configId, rule]) =>
-                rule && rule !== 'default' ? [[configId, rule] as const] : [],
-            );
-            if (explicitSyncRules.length > 0) {
-                try {
-                    for (const [configId, rule] of explicitSyncRules) {
-                        await window.fm.sync.setProjectRule(configId, project.id, rule);
-                    }
-                    await actions.loadConfig();
-                } catch (error) {
-                    actions.toast('error', `项目已添加，但同步规则保存失败：${error instanceof Error ? error.message : '未知错误'}`);
-                    setAddOpen(false);
-                    setForm(createEmptyProjectForm());
-                    setInspection(null);
-                    setValidation({ valid: false, conflicts: [] });
-                    setDraftSyncRules({});
-                    return;
-                }
-            }
-            actions.toast('success', `已添加项目：${project.name}`);
-            setAddOpen(false);
-            setForm(createEmptyProjectForm());
-            setInspection(null);
-            setValidation({ valid: false, conflicts: [] });
-            setDraftSyncRules({});
-        } catch (error) {
-            actions.toast('error', error instanceof Error ? error.message : '添加失败');
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    useEffect(() => {
-        if (!addOpen || !form.path.trim()) return;
-        void window.fm.projects.inspectDirectory(form.path.trim(), form.ignore).then(setInspection).catch(() => setInspection(null));
-    }, [addOpen, form.path, form.ignore]);
-
-    useEffect(() => {
-        if (!addOpen || !form.path.trim()) return;
-        void validate();
-    }, [addOpen, form]);
 
     const scanMenuItems: SplitMenuEntry[] = [
         {
@@ -222,6 +46,17 @@ export function Toolbar() {
         //            onSelect: () => void actions.runScanOne(root.id),
         //        })),
         //    ] : []),
+    ];
+
+    const addProjectMenuItems: SplitMenuEntry[] = [
+        {
+            type: 'item' as const,
+            key: 'batch-import-projects',
+            label: '批量添加项目',
+            icon: <Files className="size-3.5" />,
+            onSelect: () => void projectImport.batchProject.open(),
+            disabled: projectImport.batchProject.busy,
+        },
     ];
 
     return (
@@ -251,9 +86,16 @@ export function Toolbar() {
                 </div>
 
                 <div className="ml-auto flex shrink-0 items-center gap-2">
-                    <Button size="default" variant="outline" onClick={() => void openAddProject()}>
-                        <FolderPlus className="size-3.5" /> 添加项目
-                    </Button>
+                    <SplitMenuButton
+                        label="添加项目"
+                        icon={<FolderPlus className="size-3.5" />}
+                        primaryDisabled={projectImport.addProject.busy || projectImport.batchProject.busy}
+                        menuDisabled={projectImport.batchProject.busy}
+                        onPrimaryClick={() => void projectImport.addProject.open()}
+                        items={addProjectMenuItems}
+                        align="right"
+                        menuLabel="打开添加项目菜单"
+                    />
 
                     <SplitMenuButton
                         label={scanning ? '扫描中…' : '重新扫描'}
@@ -268,37 +110,52 @@ export function Toolbar() {
             </div>
 
             <AddProjectInfoPanel
-                open={addOpen}
-                form={form}
-                onFormChange={setForm}
+                open={projectImport.addProject.isOpen}
+                form={projectImport.addProject.form}
+                onFormChange={projectImport.addProject.setForm}
                 tagDefs={config.tags}
-                inspection={inspection}
-                validation={validation}
+                inspection={projectImport.addProject.inspection}
+                validation={projectImport.addProject.validation}
                 allProjects={config.projects}
                 syncConfigs={config.syncConfigs ?? []}
-                draftProjectRootId={draftProjectRootId}
-                syncRuleOverrides={draftSyncRules}
-                busy={busy}
-                onClose={() => {
-                    setAddOpen(false);
-                    setDraftSyncRules({});
-                }}
-                onSubmit={() => void submitProject()}
-                onPickPath={() => void browseProjectDir()}
-                onPathCommit={() => void commitProjectPath()}
-                onSyncRuleChange={(configId, rule) => {
-                    setDraftSyncRules(current => ({
-                        ...current,
-                        [configId]: rule,
-                    }));
-                }}
-                onAddTag={tag =>
-                    setForm(prev => ({
-                        ...prev,
-                        tags: prev.tags.includes(tag) ? prev.tags : [...prev.tags, tag],
-                    }))
-                }
-                onRemoveTag={tag => setForm(prev => ({ ...prev, tags: prev.tags.filter(item => item !== tag) }))}
+                draftProjectRootId={projectImport.addProject.draftProjectRootId}
+                syncRuleOverrides={projectImport.addProject.draftSyncRules}
+                busy={projectImport.addProject.busy}
+                onClose={projectImport.addProject.close}
+                onSubmit={() => void projectImport.addProject.submit()}
+                onPickPath={() => void projectImport.addProject.browsePath()}
+                onPathCommit={() => void projectImport.addProject.commitPath()}
+                onSyncRuleChange={projectImport.addProject.setSyncRule}
+                onAddTag={projectImport.addProject.addTag}
+                onRemoveTag={projectImport.addProject.removeTag}
+            />
+
+            <BatchImportPanel
+                open={projectImport.batchProject.isOpen}
+                items={projectImport.batchProject.items}
+                busy={projectImport.batchProject.busy}
+                tagDefs={config.tags}
+                templateTags={projectImport.batchProject.templateTags}
+                templateIgnoreText={projectImport.batchProject.templateIgnoreText}
+                onTemplateIgnoreTextChange={projectImport.batchProject.setTemplateIgnoreText}
+                onAddTemplateTag={projectImport.batchProject.addTemplateTag}
+                onRemoveTemplateTag={projectImport.batchProject.removeTemplateTag}
+                onApplyTemplate={() => void projectImport.batchProject.applyTemplate()}
+                onClose={projectImport.batchProject.close}
+                onImportAll={() => void projectImport.batchProject.importAll()}
+                onImportOne={itemId => void projectImport.batchProject.importOne(itemId)}
+                onRemoveOne={projectImport.batchProject.removeOne}
+                onOpenOverride={projectImport.batchProject.openOverride}
+                stacked={projectImport.batchProject.editingItem !== null}
+            />
+
+            <BatchImportOverridePanel
+                item={projectImport.batchProject.editingItem}
+                tagDefs={config.tags}
+                busy={projectImport.batchProject.busy}
+                onClose={projectImport.batchProject.closeOverride}
+                onSubmit={() => projectImport.batchProject.editingItem ? void projectImport.batchProject.importOne(projectImport.batchProject.editingItem.id) : undefined}
+                onFormChange={projectImport.batchProject.updateOverrideForm}
             />
 
             {scanRootDraftPath ? (

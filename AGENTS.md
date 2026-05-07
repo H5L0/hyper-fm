@@ -49,6 +49,7 @@
 ### `src/main/`
 
 - `config-store.ts`：shared/local 双配置原子读写。
+- `app-config-store.ts`：通用应用级持久化存储，当前使用 Windows 注册表保存最近打开配置等偏好。
 - `meta-file.ts`：项目根 `.meta-data` 读写。
 - `ignore-matcher.ts` + `scanner.ts`：递归扫描与忽略规则。
 - `project-matcher.ts`：项目目录检查、指纹匹配、冲突检测。
@@ -93,6 +94,9 @@
 
 - `shared` 关注“这个项目是谁”：项目 ID、名称、标签、描述、指纹、共享忽略规则等。
 - `local` 关注“这个项目在这台机器上在哪里”：扫描根、本地路径 binding、warning、ignoredPaths、UI 偏好、同步状态等。
+- 默认运行时配置位于工作目录 `.local/` 下的 `fm.shared.json` / `fm.local.json`，不应提交到 Git。
+- 最近一次成功打开的 shared 配置路径等应用偏好保存在 Windows 注册表 `HKCU\Software\hyper-fm\Prefs`，启动时优先恢复。
+- 若最近配置和工作目录 `.local/` 下的默认配置都不存在，应用应进入欢迎页等待用户显式打开或创建配置，而不是自动创建文件。
 - `.meta-data` 是项目根目录中的自描述文件；存在时，展示层优先使用其中的名称、描述、标签与 `projectId`。
 - 项目身份通过 `projectId` + 指纹识别，当前支持：
   - `metadata`

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pencil, Plus } from 'lucide-react';
 import type { TagDefinition } from '@shared/bridge.js';
 import { cn } from '@/lib/utils';
@@ -46,6 +46,12 @@ export function TagSelector({
 }) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editing, setEditing] = useState(mode === 'alwaysEdit');
+
+    useEffect(() => {
+        if (mode === 'alwaysEdit') {
+            setEditing(true);
+        }
+    }, [mode]);
 
     const selectedSet = useMemo(() => new Set(selectedTags), [selectedTags]);
     const available = useMemo(

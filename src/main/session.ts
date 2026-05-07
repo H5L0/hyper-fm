@@ -3,7 +3,7 @@
 // 串行化所有改动以避免竞态写盘
 // ---------------------------------------------------------------------------
 
-import { composeAppConfig, mergeAppConfigIntoLocal, mergeAppConfigIntoShared } from '../shared/schema.js';
+import { composeAppConfig, createDefaultConfig, mergeAppConfigIntoLocal, mergeAppConfigIntoShared } from '../shared/schema.js';
 import { createLogger } from '../shared/logger.js';
 import type { AppConfig, ConfigSnapshot, LocalConfig, SharedConfig } from '../shared/types.js';
 import { loadConfig, loadLocalConfig, loadOrInitConfig, loadSharedConfig, saveConfig } from './config-store.js';
@@ -60,10 +60,18 @@ export function requireSession(): SessionState {
 }
 
 export function getSnapshot(): ConfigSnapshot {
-    const s = requireSession();
+    const s = state;
+    if (!s) {
+        return {
+            paths: { sharedPath: '', localPath: '' },
+            data: createDefaultConfig(),
+            hasLoadedConfig: false,
+        };
+    }
     return {
         paths: { sharedPath: s.sharedPath, localPath: s.localPath },
         data: s.config,
+        hasLoadedConfig: true,
     };
 }
 

@@ -3,9 +3,12 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { AlertTriangle, FolderRoot, GitCompareArrows, Inbox, Pencil, Plus, Settings, Tag } from 'lucide-react';
+import { AlertTriangle, FolderRoot, GitCompareArrows, Inbox, Pencil, Plus, Settings, Tag, Trash2 } from 'lucide-react';
+import { collectTagReferences, type TagReferenceSummary } from '@shared/tag-utils.js';
 import { cn } from '@/lib/utils';
-import { resolveTagColor } from '@/components/basic/tag-pill.js';
+import { Button } from '@/components/ui/button';
+import { TagPill, resolveTagColor } from '@/components/basic/tag-pill.js';
+import { EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import {
   useAppActions,
   useAppState,
@@ -32,6 +35,11 @@ export function Sidebar() {
   const [tagGroupDialogOpen, setTagGroupDialogOpen] = useState(false);
   const [editTag, setEditTag] = useState<{ name: string; color: string } | null>(null);
   const [editTagGroup, setEditTagGroup] = useState<{ name: string; tags: string[] } | null>(null);
+  const [deleteTagTarget, setDeleteTagTarget] = useState<{
+    name: string;
+    color: string;
+    references: TagReferenceSummary;
+  } | null>(null);
   const [menu, setMenu] = useState<
     | { kind: 'tag'; x: number; y: number; tag: string; color: string }
     | { kind: 'group'; x: number; y: number; group: string; tags: string[] }
@@ -226,6 +234,7 @@ export function Sidebar() {
           x={menu.x}
           y={menu.y}
           editLabel={menu.kind === 'tag' ? '修改标签' : '修改标签组'}
+          deleteLabel={menu.kind === 'tag' ? '删除标签' : undefined}
           onClose={() => setMenu(null)}
           onEdit={() => {
             if (menu.kind === 'tag') {
@@ -235,6 +244,24 @@ export function Sidebar() {
             }
             setMenu(null);
           }}
+          onDelete={menu.kind === 'tag'
+            ? () => {
+              setDeleteTagTarget({
+                name: menu.tag,
+                color: menu.color,
+                references: collectTagReferences(config, menu.tag),
+              });
+              setMenu(null);
+            }
+            : undefined}
+        />
+      ) : null}
+      {deleteTagTarget ? (
+        <DeleteTagDialog
+          name={deleteTagTarget.name}
+          color={deleteTagTarget.color}
+          references={deleteTagTarget.references}
+          onClose={() => setDeleteTagTarget(null)}
         />
       ) : null}
     </aside>
@@ -311,14 +338,18 @@ function SidebarContextMenu({
   x,
   y,
   editLabel,
+  deleteLabel,
   onClose,
   onEdit,
+  onDelete,
 }: {
   x: number;
   y: number;
   editLabel: string;
+  deleteLabel?: string;
   onClose: () => void;
   onEdit: () => void;
+  onDelete?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -345,14 +376,15 @@ function SidebarContextMenu({
   if (typeof window !== 'undefined') {
     const margin = 8;
     if (x + 180 + margin > window.innerWidth) style.left = window.innerWidth - 180 - margin;
-    if (y + 80 + margin > window.innerHeight) style.top = window.innerHeight - 80 - margin;
+    const menuHeight = onDelete ? 120 : 80;
+    if (y + menuHeight + margin > window.innerHeight) style.top = window.innerHeight - menuHeight - margin;
   }
 
   return (
     <div
       ref={ref}
       role="menu"
-      className="fixed z-50 min-w-[180px] overflow-hidden rounded-md border border-border bg-popover py-1 shadow-md"
+      className="fixed z-50 min-w-45 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-md"
       style={style}
     >
       <button
@@ -364,6 +396,102 @@ function SidebarContextMenu({
         <Pencil className="size-4 text-muted-foreground" />
         {editLabel}
       </button>
+      {onDelete && deleteLabel ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onDelete}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-destructive hover:bg-muted"
+        >
+          <Trash2 className="size-4" />
+          {deleteLabel}
+        </button>
+      ) : null}
     </div>
+  );
+}
+
+function DeleteTagDialog({
+  name,
+  color,
+  references,
+  onClose,
+}: {
+  name: string;
+  color: string;
+  references: TagReferenceSummary;
+  onClose: () => void;
+}) {
+  const actions = useAppActions();
+  const [busy, setBusy] = useState(false);
+  const referenceCount = references.projects.length + references.tagGroups.length;
+
+  const confirmDelete = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await actions.removeTag(name);
+      actions.toast('success', `已删除标签 ${name}`);
+      onClose();
+    } catch {
+      // 错误提示已由 store 统一处理
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <EditDialogShell
+      title="删除标签"
+      note={referenceCount > 0
+        ? '删除时也会移除项目和标签组中的引用，并删除因此为空的标签组。'
+        : undefined}
+      onClose={onClose}
+      panelClassName="w-[min(560px,calc(100vw-2rem))]"
+      bodyClassName="space-y-5"
+      footerEnd={(
+        <>
+          <Button size="sm" variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button size="sm" variant="destructive" disabled={busy} onClick={() => void confirmDelete()}>
+            确认删除
+          </Button>
+        </>
+      )}
+    >
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-3">
+        <span className="text-note text-muted-foreground">即将删除：</span>
+        <TagPill name={name} color={color} />
+      </div>
+
+      {referenceCount > 0 ? (
+        <div className="space-y-4">
+          {references.projects.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-subheading text-foreground">项目（{references.projects.length}）</p>
+              <ul className="space-y-1 rounded-xl border border-border bg-background px-3 py-3 text-note text-foreground">
+                {references.projects.map(project => (
+                  <li key={project.id} className="break-all">{project.name}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {references.tagGroups.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-subheading text-foreground">标签组（{references.tagGroups.length}）</p>
+              <ul className="space-y-1 rounded-xl border border-border bg-background px-3 py-3 text-note text-foreground">
+                {references.tagGroups.map(group => (
+                  <li key={group.name} className="break-all">{group.name}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-note leading-6 text-muted-foreground">当前没有项目或标签组引用这个标签。</p>
+      )}
+    </EditDialogShell>
   );
 }

@@ -25,11 +25,13 @@ import {
   type CustomCommand,
   getSyncConfigTypeLabel,
 } from '../shared/sync-types.js';
+import { removeTagFromSharedConfig } from '../shared/tag-utils.js';
 import {
   normalizeSyncConfig,
   resolveSyncProjectIds,
   setProjectSyncRule,
 } from '../shared/sync-config.js';
+import { finalizeManualProjectValidation as finalizeProjectValidation } from '../shared/manual-project-validation.js';
 import {
   addIgnoredPath,
   addProjectManual,
@@ -46,10 +48,12 @@ import {
 } from './project-repo.js';
 import { switchConfigFile, getSnapshot, mutate, requireSession } from './session.js';
 import {
+  createConfigInDirectory,
   createConfig as createConfigFile,
   createLocalConfigForShared,
   inspectOpenConfig,
 } from './config-store.js';
+import { createAppConfigStore, resolveAppConfigRegistryPath, saveLastSharedConfigPath } from './app-config-store.js';
 import { scanRoot } from './scanner.js';
 import { readMetaFile, removeMetaFile, writeMetaFile } from './meta-file.js';
 import { FmError, toFmError } from './fm-error.js';
@@ -151,6 +155,15 @@ function senderWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender);
 }
 
+async function rememberRecentConfig(sharedPath: string): Promise<void> {
+  try {
+    const appConfigStore = createAppConfigStore({ registryPath: resolveAppConfigRegistryPath(app.getName()) });
+    await saveLastSharedConfigPath(appConfigStore, sharedPath);
+  } catch (error) {
+    logger.warn('记录最近打开的配置失败', { sharedPath, error });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 注册
 // ---------------------------------------------------------------------------
@@ -191,6 +204,7 @@ export function registerIpcHandlers(): void {
     wrap('fm:config:load', async (_e, filePath: unknown): Promise<ConfigSnapshot> => {
       assertString(filePath, 'filePath');
       const snapshot = await switchConfigFile(filePath);
+      await rememberRecentConfig(snapshot.paths.sharedPath);
       refreshAutoSyncSchedules();
       return snapshot;
     }),
@@ -202,6 +216,19 @@ export function registerIpcHandlers(): void {
       assertString(filePath, 'filePath');
       const snapshot = await createConfigFile(filePath);
       const next = await switchConfigFile(snapshot.paths.sharedPath);
+      await rememberRecentConfig(next.paths.sharedPath);
+      refreshAutoSyncSchedules();
+      return next;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:config:createInDirectory',
+    wrap('fm:config:createInDirectory', async (_e, directoryPath: unknown): Promise<ConfigSnapshot> => {
+      assertString(directoryPath, 'directoryPath');
+      const snapshot = await createConfigInDirectory(directoryPath);
+      const next = await switchConfigFile(snapshot.paths.sharedPath);
+      await rememberRecentConfig(next.paths.sharedPath);
       refreshAutoSyncSchedules();
       return next;
     }),
@@ -213,6 +240,7 @@ export function registerIpcHandlers(): void {
       assertString(sharedPath, 'sharedPath');
       const snapshot = await createLocalConfigForShared(sharedPath);
       const next = await switchConfigFile(snapshot.paths.sharedPath);
+      await rememberRecentConfig(next.paths.sharedPath);
       refreshAutoSyncSchedules();
       return next;
     }),
@@ -234,8 +262,10 @@ export function registerIpcHandlers(): void {
       if (mode !== 'open' && mode !== 'save') {
         throw new FmError('INTERNAL', `非法 pick mode: ${String(mode)}`);
       }
-      const session = requireSession();
-      const defaultPath = session.sharedPath;
+      const snapshot = getSnapshot();
+      const defaultPath = snapshot.hasLoadedConfig && snapshot.paths.sharedPath
+        ? snapshot.paths.sharedPath
+        : process.cwd();
       if (mode === 'open') {
         const res = window
           ? await dialog.showOpenDialog(window, {
@@ -264,6 +294,23 @@ export function registerIpcHandlers(): void {
           filters: [{ name: 'fm 配置', extensions: ['json'] }],
         });
       return res.canceled || !res.filePath ? null : res.filePath;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:config:pickDirectory',
+    wrap('fm:config:pickDirectory', async (event): Promise<string | null> => {
+      const window = senderWindow(event);
+      const res = window
+        ? await dialog.showOpenDialog(window, {
+          title: '选择配置目录',
+          properties: ['openDirectory', 'createDirectory'],
+        })
+        : await dialog.showOpenDialog({
+          title: '选择配置目录',
+          properties: ['openDirectory', 'createDirectory'],
+        });
+      return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]!;
     }),
   );
 
@@ -463,30 +510,30 @@ export function registerIpcHandlers(): void {
       const duplicatePath = findProjectByPath(session.shared, session.local, inspection.path, process.platform);
       if (duplicatePath) {
         conflicts.push({
+          kind: 'duplicate-path',
           projectId: duplicatePath.id,
           projectName: duplicatePath.name,
-          reason: '该目录已绑定到现有项目。',
         });
       }
       const fingerprint = normalizeFingerprint(i.fingerprint);
       const exactConflicts = findFingerprintConflicts(session.shared.projects, fingerprint);
       for (const project of exactConflicts) {
         conflicts.push({
+          kind: 'conflict-fingerprint',
           projectId: project.id,
           projectName: project.name,
-          reason: '该指纹与现有项目完全相同。',
         });
       }
       const runtimeMatches = await findMatchingProjectsForDirectory(session.shared.projects, inspection);
       for (const project of runtimeMatches) {
-        if (conflicts.some(item => item.projectId === project.id)) continue;
+        if (conflicts.some(item => item.projectId === project.id && item.kind === 'conflict-fingerprint')) continue;
         conflicts.push({
+          kind: 'conflict-fingerprint',
           projectId: project.id,
           projectName: project.name,
-          reason: '当前目录会被现有项目指纹命中，添加后将产生冲突。',
         });
       }
-      return { valid: conflicts.length === 0, conflicts };
+      return finalizeProjectValidation(conflicts);
     }),
   );
 
@@ -498,7 +545,7 @@ export function registerIpcHandlers(): void {
       return mutate(async ({ shared, local }) => {
         const validation = await validateManualProject(i, shared, local);
         if (!validation.valid) {
-          throw new FmError('FINGERPRINT_CONFLICT', validation.conflicts[0]?.reason ?? '项目指纹冲突', validation.conflicts);
+          throw new FmError('FINGERPRINT_CONFLICT', '项目存在冲突，无法添加', validation.conflicts);
         }
         const inspection = await inspectProjectDirectory(i.path, {
           globalIgnore: requireSession().config.ignore.globs,
@@ -506,17 +553,20 @@ export function registerIpcHandlers(): void {
         });
         const baseName = i.name?.trim() || inspection.name;
         const meta = inspection.hasMetaFile ? await readMetaFile(inspection.path) : null;
+        const preferMetadataDefaults = i.fingerprint.kind === 'metadata';
         const { nextShared, nextLocal, project } = addProjectManual(
           shared,
           local,
           {
             ...i,
             path: inspection.path,
-            name: meta?.name ?? baseName,
-            description: meta?.description ?? i.description,
-            tags: meta?.tags ?? i.tags,
-            ignore: meta?.ignore ?? i.ignore,
-            syncRespectGitignore: meta?.syncRespectGitignore ?? i.syncRespectGitignore,
+            name: preferMetadataDefaults ? (meta?.name ?? baseName) : baseName,
+            description: preferMetadataDefaults ? (meta?.description ?? i.description) : i.description,
+            tags: preferMetadataDefaults ? (meta?.tags ?? i.tags) : i.tags,
+            ignore: preferMetadataDefaults ? (meta?.ignore ?? i.ignore) : i.ignore,
+            syncRespectGitignore: preferMetadataDefaults
+              ? (meta?.syncRespectGitignore ?? i.syncRespectGitignore)
+              : i.syncRespectGitignore,
             hasMetaFile: inspection.hasMetaFile || i.fingerprint.kind === 'metadata',
           },
           process.platform,
@@ -574,6 +624,23 @@ export function registerIpcHandlers(): void {
     }),
   );
 
+  ipcMain.handle(
+    'fm:projects:pickDirectories',
+    wrap('fm:projects:pickDirectories', async (event): Promise<string[]> => {
+      const window = senderWindow(event);
+      const res = window
+        ? await dialog.showOpenDialog(window, {
+          title: '选择要批量添加的项目目录',
+          properties: ['openDirectory', 'multiSelections'],
+        })
+        : await dialog.showOpenDialog({
+          title: '选择要批量添加的项目目录',
+          properties: ['openDirectory', 'multiSelections'],
+        });
+      return res.canceled || res.filePaths.length === 0 ? [] : res.filePaths;
+    }),
+  );
+
   // ── 同步 ──
   registerSyncHandlers();
   registerCommandHandlers();
@@ -615,17 +682,34 @@ function registerTagHandlers(): void {
     'fm:tags:remove',
     wrap('fm:tags:remove', async (_e, name: unknown) => {
       if (typeof name !== 'string') throw new FmError('CONFIG_INVALID', 'name 必须为字符串');
-      return mutate(({ shared }) => {
-        const nextShared = {
-          ...shared,
-          tags: (shared.tags ?? []).filter(t => t.name !== name),
-          tagGroups: (shared.tagGroups ?? [])
-            .map(group => ({
-              ...group,
-              tags: group.tags.filter(tag => tag !== name),
-            }))
-            .filter(group => group.tags.length > 0),
-        };
+      const targetName = name.trim();
+      if (!targetName) throw new FmError('CONFIG_INVALID', 'name 不可为空');
+      return mutate(async ({ shared, local }) => {
+        const referencedProjectIds = new Set(
+          shared.projects.filter(project => project.tags.includes(targetName)).map(project => project.id),
+        );
+        const nextShared = removeTagFromSharedConfig(shared, targetName);
+        const boundProjects = buildProjects(nextShared, local);
+
+        for (const project of boundProjects) {
+          if (!project.hasMetaFile) continue;
+          if (!referencedProjectIds.has(project.id)) continue;
+          try {
+            await writeMetaFile(project.path, {
+              projectId: project.id,
+              name: project.name,
+              description: project.description,
+              tags: project.tags,
+              ignore: project.ignore,
+              syncRespectGitignore: project.syncRespectGitignore,
+            });
+          } catch (err) {
+            logger.warn(
+              `删除标签时同步 .meta-data 失败：${project.path} ${(err as Error).message}`,
+            );
+          }
+        }
+
         return { nextShared, result: nextShared.tags };
       });
     }),
@@ -672,6 +756,7 @@ function registerTagHandlers(): void {
               description: p.description,
               tags: p.tags,
               ignore: p.ignore,
+              syncRespectGitignore: p.syncRespectGitignore,
             });
           } catch (err) {
             logger.warn(
@@ -1454,28 +1539,28 @@ async function validateManualProject(
   const duplicatePath = findProjectByPath(shared, local, inspection.path, process.platform);
   if (duplicatePath) {
     conflicts.push({
+      kind: 'duplicate-path',
       projectId: duplicatePath.id,
       projectName: duplicatePath.name,
-      reason: '该目录已绑定到现有项目。',
     });
   }
   const fingerprint = normalizeFingerprint(input.fingerprint);
   for (const project of findFingerprintConflicts(shared.projects, fingerprint)) {
     conflicts.push({
+      kind: 'conflict-fingerprint',
       projectId: project.id,
       projectName: project.name,
-      reason: '该指纹与现有项目完全相同。',
     });
   }
   for (const project of await findMatchingProjectsForDirectory(shared.projects, inspection)) {
-    if (conflicts.some(item => item.projectId === project.id)) continue;
+    if (conflicts.some(item => item.projectId === project.id && item.kind === 'conflict-fingerprint')) continue;
     conflicts.push({
+      kind: 'conflict-fingerprint',
       projectId: project.id,
       projectName: project.name,
-      reason: '当前目录会被现有项目指纹命中，添加后将产生冲突。',
     });
   }
-  return { valid: conflicts.length === 0, conflicts };
+  return finalizeProjectValidation(conflicts);
 }
 
 function assertString(v: unknown, name: string): asserts v is string {

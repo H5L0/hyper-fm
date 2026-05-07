@@ -10,6 +10,7 @@ import {
     type ConfigOpenInspection,
     type ConfigPaths,
     type ConfigSnapshot,
+    DEFAULT_CONFIG_DIRECTORYNAME,
     type LocalConfig,
     type SharedConfig,
     DEFAULT_LOCAL_CONFIG_FILENAME,
@@ -76,9 +77,18 @@ export function deriveSharedConfigPath(localConfigPath: string): string {
 }
 
 export function resolveDefaultConfigPaths(execDir: string): ConfigPaths {
+    const configDir = path.resolve(execDir, DEFAULT_CONFIG_DIRECTORYNAME);
     return {
-        sharedPath: normalizePath(path.resolve(execDir, DEFAULT_SHARED_CONFIG_FILENAME)),
-        localPath: normalizePath(path.resolve(execDir, DEFAULT_LOCAL_CONFIG_FILENAME)),
+        sharedPath: normalizePath(path.resolve(configDir, DEFAULT_SHARED_CONFIG_FILENAME)),
+        localPath: normalizePath(path.resolve(configDir, DEFAULT_LOCAL_CONFIG_FILENAME)),
+    };
+}
+
+export function resolveConfigPathsInDirectory(directoryPath: string): ConfigPaths {
+    const normalizedDirectoryPath = normalizePath(path.resolve(directoryPath));
+    return {
+        sharedPath: normalizePath(path.resolve(normalizedDirectoryPath, DEFAULT_SHARED_CONFIG_FILENAME)),
+        localPath: normalizePath(path.resolve(normalizedDirectoryPath, DEFAULT_LOCAL_CONFIG_FILENAME)),
     };
 }
 
@@ -207,6 +217,7 @@ export async function loadConfig(filePath: string): Promise<ConfigSnapshot> {
     return {
         paths: { sharedPath: inspection.sharedPath, localPath: inspection.localPath },
         data: composeAppConfig(shared, { ...local, sharedConfigPath: inspection.sharedPath }),
+        hasLoadedConfig: true,
     };
 }
 
@@ -234,7 +245,12 @@ export async function createConfig(sharedPath: string): Promise<ConfigSnapshot> 
     const shared = createDefaultSharedConfig({ name: deriveDefaultSharedName(paths.sharedPath) });
     const local = createDefaultLocalConfig(paths.sharedPath);
     await saveConfig(paths, shared, local);
-    return { paths, data: composeAppConfig(shared, local) };
+    return { paths, data: composeAppConfig(shared, local), hasLoadedConfig: true };
+}
+
+export async function createConfigInDirectory(directoryPath: string): Promise<ConfigSnapshot> {
+    const paths = resolveConfigPathsInDirectory(directoryPath);
+    return createConfig(paths.sharedPath);
 }
 
 export async function createLocalConfigForShared(sharedPath: string): Promise<ConfigSnapshot> {

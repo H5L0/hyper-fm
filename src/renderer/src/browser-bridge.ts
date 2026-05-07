@@ -42,6 +42,8 @@ import {
     type SyncProjectEntry,
 } from '@shared/sync-types.js';
 import { normalizeSyncConfig, setProjectSyncRule } from '@shared/sync-config.js';
+import { finalizeManualProjectValidation } from '@shared/manual-project-validation.js';
+import { describeManualProjectValidationConflict } from '@/project-import/validation-text.js';
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -510,6 +512,21 @@ function normalizeFingerprint(fingerprint: ProjectFingerprint): ProjectFingerpri
     };
 }
 
+function matchesExistingProjectFingerprint(
+    fingerprint: ProjectFingerprint,
+    inspection: ProjectDirectoryInspection,
+    projectId: string,
+): boolean {
+    if (fingerprint.kind === 'metadata') {
+        return inspection.metaProjectId === projectId;
+    }
+    if (fingerprint.kind === 'folder-name') {
+        return inspection.suggestedName.trim().toLowerCase() === fingerprint.folderName.trim().toLowerCase();
+    }
+    const fileSet = new Set(inspection.files);
+    return fingerprint.paths.every(rel => fileSet.has(rel));
+}
+
 function createSampleConfig(): AppConfig {
     const baseTags: TagDefinition[] = [
         { name: 'electron', color: '#60a5fa' },
@@ -635,6 +652,7 @@ const browserState: {
             localPath: 'browser://fm.local.json',
         },
         data: createSampleConfig(),
+        hasLoadedConfig: true,
     },
     runningServers: [],
     nextProjectPick: 1,
@@ -675,21 +693,27 @@ function updateProject(id: string, patch: Partial<Project>): Project {
 function validateNewProject(input: ManualProjectInput): ManualProjectValidationResult {
     const path = normalizePath(input.path);
     const fingerprint = normalizeFingerprint(input.fingerprint);
+    const inspection = buildMockInspection(input.path, input.ignore ?? []);
     const conflicts = browserState.snapshot.data.projects.flatMap(project => {
-        const reasons: string[] = [];
+        const items: ManualProjectValidationResult['conflicts'] = [];
         if (normalizePath(project.path).toLowerCase() === path.toLowerCase()) {
-            reasons.push('该目录已绑定到现有项目。');
+            items.push({
+                kind: 'duplicate-path',
+                projectId: project.id,
+                projectName: project.name,
+            });
         }
-        if (sameFingerprint(project.fingerprint, fingerprint)) {
-            reasons.push('该指纹与现有项目完全相同。');
+        if (sameFingerprint(project.fingerprint, fingerprint)
+            || matchesExistingProjectFingerprint(project.fingerprint, inspection, project.id)) {
+            items.push({
+                kind: 'conflict-fingerprint',
+                projectId: project.id,
+                projectName: project.name,
+            });
         }
-        return reasons.map(reason => ({
-            projectId: project.id,
-            projectName: project.name,
-            reason,
-        }));
+        return items;
     });
-    return { valid: conflicts.length === 0, conflicts };
+    return finalizeManualProjectValidation(conflicts);
 }
 
 function createProjectFromInput(input: ManualProjectInput): Project {
@@ -778,6 +802,10 @@ function pickMockProjectDirectory(): string {
     return path;
 }
 
+function pickMockProjectDirectories(): string[] {
+    return [pickMockProjectDirectory(), pickMockProjectDirectory()];
+}
+
 function pickMockScanRootDirectory(): string {
     const path = `D:/scan-roots/browser-root-${browserState.nextScanRootPick}`;
     browserState.nextScanRootPick += 1;
@@ -813,6 +841,7 @@ export function ensureBrowserBridge(): void {
                     sharedPath: filePath.endsWith('.local.json') ? filePath.replace(/\.local\.json$/iu, '.shared.json') : filePath,
                     localPath: filePath.endsWith('.local.json') ? filePath : deriveLocalPath(filePath),
                 };
+                browserState.snapshot.hasLoadedConfig = true;
                 return getSnapshot();
             },
             create: async (filePath: string) => {
@@ -825,6 +854,22 @@ export function ensureBrowserBridge(): void {
                         ...createSampleConfig(),
                         name: lastSegment(filePath).replace(/\.shared\.json$/iu, '').replace(/\.json$/iu, ''),
                     },
+                    hasLoadedConfig: true,
+                };
+                return getSnapshot();
+            },
+            createInDirectory: async (directoryPath: string) => {
+                const normalizedPath = normalizePath(directoryPath);
+                browserState.snapshot = {
+                    paths: {
+                        sharedPath: `${normalizedPath}/fm.shared.json`,
+                        localPath: `${normalizedPath}/fm.local.json`,
+                    },
+                    data: {
+                        ...createSampleConfig(),
+                        name: lastSegment(normalizedPath) || 'fm',
+                    },
+                    hasLoadedConfig: true,
                 };
                 return getSnapshot();
             },
@@ -833,12 +878,14 @@ export function ensureBrowserBridge(): void {
                     sharedPath,
                     localPath: deriveLocalPath(sharedPath),
                 };
+                browserState.snapshot.hasLoadedConfig = true;
                 return getSnapshot();
             },
             save: async (data: AppConfig) => {
                 updateConfig(data);
             },
             pick: async () => null,
+            pickDirectory: async () => 'D:/configs',
         },
         scanRoots: {
             add: async input => {
@@ -951,7 +998,7 @@ export function ensureBrowserBridge(): void {
             add: async (input: ManualProjectInput) => {
                 const validation = validateNewProject(input);
                 if (!validation.valid) {
-                    throw new Error(validation.conflicts[0]?.reason ?? '项目指纹冲突');
+                    throw new Error(validation.conflicts[0] ? describeManualProjectValidationConflict(validation.conflicts[0]) : '项目存在冲突');
                 }
                 const project = createProjectFromInput(input);
                 updateConfig({
@@ -967,6 +1014,7 @@ export function ensureBrowserBridge(): void {
                 });
             },
             pickDirectory: async () => pickMockProjectDirectory(),
+            pickDirectories: async () => pickMockProjectDirectories(),
         },
         tags: {
             list: async () => clone(browserState.snapshot.data.tags ?? []),

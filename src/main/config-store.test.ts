@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+    createConfigInDirectory,
     createLocalConfigForShared,
     createConfig,
     deriveLocalConfigPath,
@@ -23,8 +24,8 @@ async function tmpDir(): Promise<string> {
 describe('config-store', () => {
     test('[resolveDefaultConfigPaths] 应在指定目录拼接 shared/local 默认文件名', () => {
         const paths = resolveDefaultConfigPaths('/tmp');
-        expect(paths.sharedPath).toMatch(/fm\.shared\.json$/);
-        expect(paths.localPath).toMatch(/fm\.local\.json$/);
+        expect(paths.sharedPath).toMatch(/\.local\/fm\.shared\.json$/);
+        expect(paths.localPath).toMatch(/\.local\/fm\.local\.json$/);
     });
 
     test('[deriveLocalConfigPath] 应从 shared 路径推导同目录 local 路径', () => {
@@ -57,6 +58,13 @@ describe('config-store', () => {
         } catch (error) {
             expect(isFmError(error)).toBe(true);
         }
+    });
+
+    test('[createConfigInDirectory] 应在指定目录创建默认命名的 shared/local', async () => {
+        const dir = await tmpDir();
+        const snapshot = await createConfigInDirectory(dir);
+        expect(snapshot.paths.sharedPath.replace(/\\/g, '/')).toBe(path.join(dir, 'fm.shared.json').replace(/\\/g, '/'));
+        expect(snapshot.paths.localPath.replace(/\\/g, '/')).toBe(path.join(dir, 'fm.local.json').replace(/\\/g, '/'));
     });
 
     test('[saveConfig + loadConfig] 应写回 shared/local 并能重新加载', async () => {

@@ -12,10 +12,11 @@ import { ProjectInfoPanel } from './view/project-info-panel/project-info-panel.j
 import { Toaster } from './view/toaster.js';
 import { ThemeEffect } from './theme-effect.js';
 import { WarningsPanel } from './view/warnings-panel.js';
+import { WelcomeScreen } from './view/welcome-screen.js';
 import { useAppActions, useAppState } from '../store/app-store.js';
 
 export function AppShell() {
-  const { route, ready } = useAppState();
+  const { route, ready, hasLoadedConfig } = useAppState();
   const actions = useAppActions();
 
   // 全局快捷键
@@ -40,30 +41,34 @@ export function AppShell() {
     <div className="flex h-screen flex-col bg-background text-foreground">
       <ThemeEffect />
       <TitleBar />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <main className="flex flex-1 flex-col overflow-hidden">
-          {!ready ? (
-            <div className="flex flex-1 items-center justify-center text-muted-foreground">
-              加载中…
-            </div>
-          ) : route === 'warnings' ? (
-            <WarningsPanel />
-          ) : route === 'scan-settings' ? (
-            <ScanSettingsPanel />
-          ) : route === 'sync-settings' ? (
-            <SyncSettingsPanel />
-          ) : route === 'settings' ? (
-            <SettingsPanel />
-          ) : (
-            <>
-              <Toolbar />
-              <ProjectBrowserView />
-            </>
-          )}
-        </main>
-      </div>
-      <ProjectInfoPanel />
+      {!ready ? (
+        <div className="flex flex-1 items-center justify-center text-muted-foreground">
+          加载中…
+        </div>
+      ) : !hasLoadedConfig ? (
+        <WelcomeScreen />
+      ) : (
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar />
+          <main className="flex flex-1 flex-col overflow-hidden">
+            {route === 'warnings' ? (
+              <WarningsPanel />
+            ) : route === 'scan-settings' ? (
+              <ScanSettingsPanel />
+            ) : route === 'sync-settings' ? (
+              <SyncSettingsPanel />
+            ) : route === 'settings' ? (
+              <SettingsPanel />
+            ) : (
+              <>
+                <Toolbar />
+                <ProjectBrowserView />
+              </>
+            )}
+          </main>
+        </div>
+      )}
+      {hasLoadedConfig ? <ProjectInfoPanel /> : null}
       <Toaster />
     </div>
   );

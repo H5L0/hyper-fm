@@ -11,6 +11,8 @@ import { ReactNode, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { filterTree } from './project-files-view';
 
+type TagSelectorMode = 'alwaysEdit' | 'editable' | 'readonly';
+
 
 export interface ProjectFormValue {
     path: string;
@@ -37,6 +39,7 @@ export function ProjectInfoForm({
     pathHint,
     validation,
     extraSections,
+    tagSelectorMode = 'editable',
     onPickPath,
     onPathCommit,
     onAddTag,
@@ -51,6 +54,7 @@ export function ProjectInfoForm({
     pathHint?: ReactNode;
     validation?: ReactNode;
     extraSections?: ReactNode;
+    tagSelectorMode?: TagSelectorMode;
     onPickPath?: () => void;
     onPathCommit?: () => void;
     onAddTag: (tag: string) => void;
@@ -100,7 +104,7 @@ export function ProjectInfoForm({
 
                 <Field label="标签">
                     <TagSelector
-                        mode="editable"
+                        mode={tagSelectorMode}
                         selectedTags={form.tags}
                         tagDefs={tagDefs}
                         onAdd={onAddTag}
@@ -381,6 +385,7 @@ export function ProjectDetailsView({
     pathEditable = false,
     pathHint,
     validation,
+    tagSelectorMode = 'editable',
     onPickPath,
     onPathCommit,
     onAddTag,
@@ -393,6 +398,7 @@ export function ProjectDetailsView({
     pathEditable?: boolean;
     pathHint?: React.ReactNode;
     validation?: React.ReactNode;
+    tagSelectorMode?: TagSelectorMode;
     onPickPath?: () => void;
     onPathCommit?: () => void;
     onAddTag: (tag: string) => void;
@@ -407,6 +413,7 @@ export function ProjectDetailsView({
             pathEditable={pathEditable}
             pathHint={pathHint}
             validation={validation}
+            tagSelectorMode={tagSelectorMode}
             onPickPath={onPickPath}
             onPathCommit={onPathCommit}
             onAddTag={onAddTag}

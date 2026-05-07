@@ -98,9 +98,11 @@ export interface FmConfigBridge {
   inspectOpen(filePath: string): Promise<ConfigOpenInspection>;
   load(filePath: string): Promise<ConfigSnapshot>;
   create(filePath: string): Promise<ConfigSnapshot>;
+  createInDirectory(directoryPath: string): Promise<ConfigSnapshot>;
   createLocalForShared(sharedPath: string): Promise<ConfigSnapshot>;
   save(data: AppConfig): Promise<void>;
   pick(mode: 'open' | 'save'): Promise<string | null>;
+  pickDirectory(): Promise<string | null>;
 }
 
 export interface FmScanRootsBridge {
@@ -131,6 +133,7 @@ export interface FmProjectsBridge {
   add(input: ManualProjectInput): Promise<Project>;
   remove(id: string): Promise<void>;
   pickDirectory(): Promise<string | null>;
+  pickDirectories(): Promise<string[]>;
 }
 
 export interface FmTagsBridge {
@@ -169,10 +172,18 @@ export interface ProjectDirectoryInspection {
   files: string[];
 }
 
+export type ManualProjectValidationConflictKind =
+  | 'duplicate-path'
+  | 'conflict-fingerprint'
+  | 'batch-duplicate-path'
+  | 'batch-duplicate-fingerprint'
+  | 'validation-failed';
+
 export interface ManualProjectValidationConflict {
+  kind: ManualProjectValidationConflictKind;
   projectId: string;
   projectName: string;
-  reason: string;
+  detail?: string;
 }
 
 export interface ManualProjectValidationResult {

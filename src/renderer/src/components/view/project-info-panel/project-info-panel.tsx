@@ -14,6 +14,10 @@ import type {
 import { explainMatch, matchProject, parseSearchQuery } from '@shared/search.js';
 import { Button } from '@/components/ui/button';
 import { DrawerPanelShell } from '@/components/basic/drawer-panel-shell.js';
+import {
+    describeManualProjectValidationConflict,
+    getManualProjectValidationTitle,
+} from '@/project-import/validation-text.js';
 import { useAppActions, useAppState } from '@/store/app-store.js';
 import { ProjectFormValue, ProjectDetailsView } from './project-details-view.js';
 import { ProjectFilesView } from './project-files-view.js';
@@ -79,11 +83,11 @@ function renderConflictValidation(validation: ManualProjectValidationResult) {
     if (validation.valid || validation.conflicts.length === 0) return null;
     return (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-note text-amber-700 dark:text-amber-300">
-            <p className="font-medium">当前配置与现有项目冲突，无法添加：</p>
+            <p className="font-medium">{getManualProjectValidationTitle(validation, 'single')}</p>
             <ul className="mt-2 list-disc space-y-1 pl-5">
                 {validation.conflicts.map(conflict => (
-                    <li key={`${conflict.projectId}-${conflict.reason}`}>
-                        {conflict.projectName}：{conflict.reason}
+                    <li key={`${conflict.projectId}-${conflict.kind}-${conflict.detail ?? ''}`}>
+                        {conflict.projectName}：{describeManualProjectValidationConflict(conflict)}
                     </li>
                 ))}
             </ul>
@@ -212,7 +216,7 @@ export function AddProjectInfoPanel({
 
     return (
         <DrawerPanelShell
-            title="添加文件夹"
+            title="添加项目"
             headerTabs={PROJECT_INFO_PANEL_VIEWS}
             activeTabId={activeView}
             onTabChange={tabId => setActiveView(tabId as ProjectInfoPanelViewId)}
@@ -558,6 +562,7 @@ export function ProjectInfoPanel() {
                         tagDefs={config.tags}
                         inspection={effectiveInspection}
                         validation={saveDisabled ? renderEmptyFingerprintValidation() : null}
+                        tagSelectorMode={form.tags.length === 0 ? 'alwaysEdit' : 'editable'}
                         onAddTag={addTag}
                         onRemoveTag={removeTag}
                     />
