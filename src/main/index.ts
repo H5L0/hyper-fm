@@ -1,18 +1,22 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow } from 'electron';
+import type { AppPreferences } from '../shared/types.js';
 import { createLogger } from '../shared/logger.js';
 import { registerIpcHandlers } from './ipc.js';
 import { initSession } from './session.js';
 import { resolveDefaultConfigPaths } from './config-store.js';
 import {
   createAppConfigStore,
+  DEFAULT_APP_PREFERENCES,
+  loadAppPreferences,
   pathExists,
-  resolveAppConfigRegistryPath,
+  resolveAppConfigFilePath,
   resolveStartupSharedConfigPath,
   saveLastSharedConfigPath,
 } from './app-config-store.js';
 import { disposeAutoSyncSchedules, refreshAutoSyncSchedules } from './sync/auto-sync.js';
+import { createTrayController, type TrayController } from './tray-controller.js';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -21,6 +25,10 @@ import { disposeAutoSyncSchedules, refreshAutoSyncSchedules } from './sync/auto-
 const logger = createLogger('main');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+let mainWindow: BrowserWindow | null = null;
+let trayController: TrayController | null = null;
+let isQuitting = false;
+let currentAppPreferences: AppPreferences = DEFAULT_APP_PREFERENCES;
 
 function createWindow(preloadPath: string): BrowserWindow {
   const window = new BrowserWindow({
@@ -64,8 +72,10 @@ function defaultConfigDir(): string {
   return process.cwd();
 }
 
-async function initializeConfigSession(defaultSharedPath: string): Promise<void> {
-  const appConfigStore = createAppConfigStore({ registryPath: resolveAppConfigRegistryPath(app.getName()) });
+async function initializeConfigSession(
+  appConfigStore: ReturnType<typeof createAppConfigStore>,
+  defaultSharedPath: string,
+): Promise<void> {
   const startupSharedPath = await resolveStartupSharedConfigPath(appConfigStore, defaultSharedPath);
 
   if (!startupSharedPath) {
@@ -95,27 +105,72 @@ async function initializeConfigSession(defaultSharedPath: string): Promise<void>
   }
 }
 
+function showMainWindow(preloadPath: string): BrowserWindow {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    return mainWindow;
+  }
+
+  const window = createWindow(preloadPath);
+  window.on('close', event => {
+    if (isQuitting || !currentAppPreferences.trayEnabled || !trayController?.hasTray()) {
+      return;
+    }
+    event.preventDefault();
+    logger.info('主窗口关闭时保留托盘');
+    window.hide();
+    trayController.handleWindowHidden();
+  });
+  window.on('closed', () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+  });
+
+  mainWindow = window;
+  return window;
+}
+
 async function bootstrap(): Promise<void> {
   logger.info('Electron 主进程启动');
   await app.whenReady();
 
+  const appConfigStore = createAppConfigStore({ filePath: resolveAppConfigFilePath(app.getPath('home')) });
+  currentAppPreferences = await loadAppPreferences(appConfigStore);
+
   const defaultPaths = resolveDefaultConfigPaths(defaultConfigDir());
   try {
-    await initializeConfigSession(defaultPaths.sharedPath);
+    await initializeConfigSession(appConfigStore, defaultPaths.sharedPath);
   } catch (error) {
     logger.error('初始化配置失败', error);
   }
 
   const preloadPath = path.resolve(__dirname, '../preload/index.js');
-  createWindow(preloadPath);
-  registerIpcHandlers();
+  trayController = createTrayController({
+    showMainWindow: () => showMainWindow(preloadPath),
+    requestQuit: () => {
+      isQuitting = true;
+      app.quit();
+    },
+  });
+  await trayController.applyPreferences(currentAppPreferences);
+  showMainWindow(preloadPath);
+  registerIpcHandlers({
+    appConfigStore,
+    onAppPreferencesChanged: preferences => {
+      currentAppPreferences = preferences;
+      void trayController?.applyPreferences(preferences);
+    },
+  });
   logger.info('主进程初始化完成');
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      logger.info('activate 事件触发，重建窗口');
-      createWindow(preloadPath);
-    }
+    logger.info('activate 事件触发，显示主窗口');
+    showMainWindow(preloadPath);
   });
 }
 
@@ -126,8 +181,17 @@ void bootstrap().catch(error => {
 
 app.on('window-all-closed', () => {
   logger.info('所有窗口关闭');
-  disposeAutoSyncSchedules();
+  if (currentAppPreferences.trayEnabled && !isQuitting && trayController?.hasTray()) {
+    logger.info('托盘模式下保留后台运行');
+    return;
+  }
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
+  trayController?.destroy();
+  disposeAutoSyncSchedules();
 });

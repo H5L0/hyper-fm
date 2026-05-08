@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import type {
+  AppPreferences,
   AppConfig,
   ConfigOpenInspection,
   ConfigPaths,
@@ -40,6 +41,7 @@ import type {
 import type { SyncProjectRule } from './sync-config.js';
 
 export type {
+  AppPreferences,
   AppConfig,
   ConfigOpenInspection,
   ConfigPaths,
@@ -103,6 +105,11 @@ export interface FmConfigBridge {
   save(data: AppConfig): Promise<void>;
   pick(mode: 'open' | 'save'): Promise<string | null>;
   pickDirectory(): Promise<string | null>;
+}
+
+export interface FmAppBridge {
+  getPreferences(): Promise<AppPreferences>;
+  updatePreferences(patch: Partial<AppPreferences>): Promise<AppPreferences>;
 }
 
 export interface FmScanRootsBridge {
@@ -192,6 +199,7 @@ export interface ManualProjectValidationResult {
 }
 
 export interface FmBridge {
+  app: FmAppBridge;
   config: FmConfigBridge;
   scanRoots: FmScanRootsBridge;
   scan: FmScanBridge;

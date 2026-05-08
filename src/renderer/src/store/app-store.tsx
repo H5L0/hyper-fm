@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from 'react';
 import type {
+  AppPreferences,
   AppConfig,
   ConfigPaths,
   ManualProjectInput,
@@ -42,6 +43,7 @@ export interface ToastMessage {
 export interface AppState {
   ready: boolean;
   hasLoadedConfig: boolean;
+  appPreferences: AppPreferences;
   configPaths: ConfigPaths;
   config: AppConfig;
   tagFilter: TagFilter;
@@ -56,6 +58,9 @@ export interface AppState {
 const INITIAL_STATE: AppState = {
   ready: false,
   hasLoadedConfig: false,
+  appPreferences: {
+    trayEnabled: true,
+  },
   configPaths: { sharedPath: '', localPath: '' },
   config: {
     version: 2,
@@ -82,8 +87,9 @@ const INITIAL_STATE: AppState = {
 // ---------------------------------------------------------------------------
 
 type Action =
-  | { type: 'init'; configPaths: ConfigPaths; config: AppConfig; hasLoadedConfig: boolean }
+  | { type: 'init'; configPaths: ConfigPaths; config: AppConfig; hasLoadedConfig: boolean; appPreferences: AppPreferences }
   | { type: 'config'; config: AppConfig }
+  | { type: 'appPreferences'; value: AppPreferences }
   | { type: 'configPaths'; configPaths: ConfigPaths }
   | { type: 'projects'; projects: Project[] }
   | { type: 'updateProject'; project: Project }
@@ -104,12 +110,15 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         ready: true,
         hasLoadedConfig: action.hasLoadedConfig,
+        appPreferences: action.appPreferences,
         configPaths: action.configPaths,
         config: action.config,
         view: action.config.ui.view,
       };
     case 'config':
       return { ...state, config: action.config };
+    case 'appPreferences':
+      return { ...state, appPreferences: action.value };
     case 'configPaths':
       return { ...state, configPaths: action.configPaths };
     case 'projects':
@@ -176,6 +185,7 @@ interface AppActions {
   removeScanRoot(id: string): Promise<void>;
   pickDirectory(): Promise<string | null>;
   saveConfigMeta(name: string, description: string): Promise<void>;
+  saveAppPreferences(patch: Partial<AppPreferences>): Promise<void>;
   saveIgnore(patch: Partial<AppConfig['ignore']>): Promise<void>;
   saveTheme(theme: AppConfig['ui']['theme']): Promise<void>;
   upsertTag(tag: TagDefinition): Promise<void>;
@@ -218,17 +228,29 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [toast],
   );
 
-  const applySnapshot = useCallback((snapshot: { paths: ConfigPaths; data: AppConfig; hasLoadedConfig: boolean }) => {
-    dispatch({ type: 'init', configPaths: snapshot.paths, config: snapshot.data, hasLoadedConfig: snapshot.hasLoadedConfig });
+  const applySnapshot = useCallback((
+    snapshot: { paths: ConfigPaths; data: AppConfig; hasLoadedConfig: boolean },
+    appPreferences = stateRef.current.appPreferences,
+  ) => {
+    dispatch({
+      type: 'init',
+      configPaths: snapshot.paths,
+      config: snapshot.data,
+      hasLoadedConfig: snapshot.hasLoadedConfig,
+      appPreferences,
+    });
   }, []);
 
   const loadConfig = useCallback(
     async (filePath?: string) => {
       try {
-        const snapshot = filePath
-          ? await window.fm.config.load(filePath)
-          : await window.fm.config.current();
-        applySnapshot(snapshot);
+        const [snapshot, appPreferences] = await Promise.all([
+          filePath
+            ? window.fm.config.load(filePath)
+            : window.fm.config.current(),
+          window.fm.app.getPreferences(),
+        ]);
+        applySnapshot(snapshot, appPreferences);
       } catch (error) {
         handleError(error, '加载配置失败');
       }
@@ -457,6 +479,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const saveAppPreferences = useCallback(
+    async (patch: Partial<AppPreferences>) => {
+      const next = await window.fm.app.updatePreferences(patch);
+      dispatch({ type: 'appPreferences', value: next });
+    },
+    [],
+  );
+
   const saveIgnore = useCallback(
     async (patch: Partial<AppConfig['ignore']>) => {
       const next: AppConfig = {
@@ -614,6 +644,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       removeScanRoot: removeScanRootAction,
       pickDirectory,
       saveConfigMeta,
+      saveAppPreferences,
       saveIgnore,
       saveTheme,
       upsertTag,
@@ -646,6 +677,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       runScanAll,
       runScanOne,
       saveConfigMeta,
+      saveAppPreferences,
       saveIgnore,
       saveProject,
       saveTheme,

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
   AppBridge,
+  AppPreferences,
   CommandRunResult,
   ConfigOpenInspection,
   ConfigSnapshot,
@@ -53,6 +54,10 @@ contextBridge.exposeInMainWorld('app', appApi);
 // ---------------------------------------------------------------------------
 
 const fmApi: FmBridge = {
+  app: {
+    getPreferences: () => ipcRenderer.invoke('fm:app:getPreferences') as Promise<AppPreferences>,
+    updatePreferences: patch => ipcRenderer.invoke('fm:app:updatePreferences', patch) as Promise<AppPreferences>,
+  },
   config: {
     current: () => ipcRenderer.invoke('fm:config:current') as Promise<ConfigSnapshot>,
     inspectOpen: filePath => ipcRenderer.invoke('fm:config:inspectOpen', filePath) as Promise<ConfigOpenInspection>,

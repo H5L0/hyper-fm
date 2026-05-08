@@ -1,5 +1,6 @@
 import type {
     AppBridge,
+    AppPreferences,
     AppConfig,
     ConfigOpenInspection,
     ConfigSnapshot,
@@ -641,11 +642,15 @@ function createSampleConfig(): AppConfig {
 }
 
 const browserState: {
+    appPreferences: AppPreferences;
     snapshot: ConfigSnapshot;
     runningServers: string[];
     nextProjectPick: number;
     nextScanRootPick: number;
 } = {
+    appPreferences: {
+        trayEnabled: true,
+    },
     snapshot: {
         paths: {
             sharedPath: 'browser://fm.shared.json',
@@ -827,6 +832,16 @@ export function ensureBrowserBridge(): void {
     };
 
     const fmApi: FmBridge = {
+        app: {
+            getPreferences: async (): Promise<AppPreferences> => clone(browserState.appPreferences),
+            updatePreferences: async (patch: Partial<AppPreferences>): Promise<AppPreferences> => {
+                browserState.appPreferences = {
+                    ...browserState.appPreferences,
+                    ...patch,
+                };
+                return clone(browserState.appPreferences);
+            },
+        },
         config: {
             current: async () => getSnapshot(),
             inspectOpen: async (filePath: string): Promise<ConfigOpenInspection> => ({

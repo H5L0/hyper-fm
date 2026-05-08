@@ -4,11 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import {
     APP_CONFIG_PREF_KEYS,
+    DEFAULT_APP_PREFERENCES,
     createAppConfigStore,
+    loadAppPreferences,
     loadLastSharedConfigPath,
     pathExists,
-    resolveAppConfigRegistryPath,
+    resolveAppConfigFilePath,
     resolveStartupSharedConfigPath,
+    saveAppPreferences,
     saveLastSharedConfigPath,
     type AppConfigStoreBackend,
 } from './app-config-store.js';
@@ -31,8 +34,9 @@ function createMemoryBackend(): AppConfigStoreBackend {
 }
 
 describe('app-config-store', () => {
-    test('[resolveAppConfigRegistryPath] 应生成 Prefs 注册表路径', () => {
-        expect(resolveAppConfigRegistryPath('hyper-fm')).toBe('HKCU\\Software\\hyper-fm\\Prefs');
+    test('[resolveAppConfigFilePath] 应生成用户目录下的 .fm.json 路径', async () => {
+        const dir = await tmpDir();
+        expect(resolveAppConfigFilePath(dir)).toBe(path.join(dir, '.fm.json').replace(/\\/g, '/'));
     });
 
     test('[createAppConfigStore] 应支持读写字符串值', async () => {
@@ -52,6 +56,28 @@ describe('app-config-store', () => {
         await store.setString('language', 'zh-CN');
         await store.deleteKey('language');
         expect(await store.getString('language')).toBeNull();
+    });
+
+    test('[createAppConfigStore] 应支持写入用户目录 .fm.json 文件', async () => {
+        const dir = await tmpDir();
+        const filePath = path.join(dir, '.fm.json');
+        const store = createAppConfigStore({ filePath });
+        await store.setString('theme', 'dark');
+        expect(await store.getString('theme')).toBe('dark');
+        const raw = JSON.parse(await fs.readFile(filePath, 'utf8')) as { values?: Record<string, string> };
+        expect(raw.values?.theme).toBe('dark');
+    });
+
+    test('[loadAppPreferences] 未保存时应返回默认应用偏好', async () => {
+        const store = createAppConfigStore({ backend: createMemoryBackend() });
+        expect(await loadAppPreferences(store)).toEqual(DEFAULT_APP_PREFERENCES);
+    });
+
+    test('[saveAppPreferences + loadAppPreferences] 应保存并读取托盘偏好', async () => {
+        const store = createAppConfigStore({ backend: createMemoryBackend() });
+        await saveAppPreferences(store, { trayEnabled: false });
+        expect(await loadAppPreferences(store)).toEqual({ trayEnabled: false });
+        expect(await store.getJson(APP_CONFIG_PREF_KEYS.appPreferences)).toEqual({ trayEnabled: false });
     });
 
     test('[saveLastSharedConfigPath + loadLastSharedConfigPath] 应保存并读取最近一次 shared 配置路径', async () => {

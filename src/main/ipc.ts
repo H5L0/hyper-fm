@@ -53,7 +53,14 @@ import {
   createLocalConfigForShared,
   inspectOpenConfig,
 } from './config-store.js';
-import { createAppConfigStore, resolveAppConfigRegistryPath, saveLastSharedConfigPath } from './app-config-store.js';
+import {
+  createAppConfigStore,
+  loadAppPreferences,
+  resolveAppConfigFilePath,
+  saveAppPreferences,
+  saveLastSharedConfigPath,
+  type AppConfigStore,
+} from './app-config-store.js';
 import { scanRoot } from './scanner.js';
 import { readMetaFile, removeMetaFile, writeMetaFile } from './meta-file.js';
 import { FmError, toFmError } from './fm-error.js';
@@ -155,20 +162,27 @@ function senderWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender);
 }
 
-async function rememberRecentConfig(sharedPath: string): Promise<void> {
+async function rememberRecentConfig(store: AppConfigStore, sharedPath: string): Promise<void> {
   try {
-    const appConfigStore = createAppConfigStore({ registryPath: resolveAppConfigRegistryPath(app.getName()) });
-    await saveLastSharedConfigPath(appConfigStore, sharedPath);
+    await saveLastSharedConfigPath(store, sharedPath);
   } catch (error) {
     logger.warn('记录最近打开的配置失败', { sharedPath, error });
   }
+}
+
+export interface RegisterIpcHandlersOptions {
+  appConfigStore?: AppConfigStore;
+  onAppPreferencesChanged?: (preferences: import('../shared/types.js').AppPreferences) => void;
 }
 
 // ---------------------------------------------------------------------------
 // 注册
 // ---------------------------------------------------------------------------
 
-export function registerIpcHandlers(): void {
+export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): void {
+  const appConfigStore = options.appConfigStore
+    ?? createAppConfigStore({ filePath: resolveAppConfigFilePath(app.getPath('home')) });
+
   // ── 兼容原模板 ──
   ipcMain.handle(
     'app:get-info',
@@ -183,6 +197,27 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'app:ping',
     wrap('app:ping', async (_e, message: unknown) => `pong: ${String(message)}`),
+  );
+
+  ipcMain.handle(
+    'fm:app:getPreferences',
+    wrap('fm:app:getPreferences', async () => loadAppPreferences(appConfigStore)),
+  );
+
+  ipcMain.handle(
+    'fm:app:updatePreferences',
+    wrap('fm:app:updatePreferences', async (_e, patch: unknown) => {
+      if (!patch || typeof patch !== 'object') {
+        throw new FmError('CONFIG_INVALID', '应用偏好必须为对象');
+      }
+      const current = await loadAppPreferences(appConfigStore);
+      const next = await saveAppPreferences(appConfigStore, {
+        ...current,
+        ...(patch as Partial<import('../shared/types.js').AppPreferences>),
+      });
+      options.onAppPreferencesChanged?.(next);
+      return next;
+    }),
   );
 
   // ── 配置 ──
@@ -204,7 +239,7 @@ export function registerIpcHandlers(): void {
     wrap('fm:config:load', async (_e, filePath: unknown): Promise<ConfigSnapshot> => {
       assertString(filePath, 'filePath');
       const snapshot = await switchConfigFile(filePath);
-      await rememberRecentConfig(snapshot.paths.sharedPath);
+      await rememberRecentConfig(appConfigStore, snapshot.paths.sharedPath);
       refreshAutoSyncSchedules();
       return snapshot;
     }),
@@ -216,7 +251,7 @@ export function registerIpcHandlers(): void {
       assertString(filePath, 'filePath');
       const snapshot = await createConfigFile(filePath);
       const next = await switchConfigFile(snapshot.paths.sharedPath);
-      await rememberRecentConfig(next.paths.sharedPath);
+      await rememberRecentConfig(appConfigStore, next.paths.sharedPath);
       refreshAutoSyncSchedules();
       return next;
     }),
@@ -228,7 +263,7 @@ export function registerIpcHandlers(): void {
       assertString(directoryPath, 'directoryPath');
       const snapshot = await createConfigInDirectory(directoryPath);
       const next = await switchConfigFile(snapshot.paths.sharedPath);
-      await rememberRecentConfig(next.paths.sharedPath);
+      await rememberRecentConfig(appConfigStore, next.paths.sharedPath);
       refreshAutoSyncSchedules();
       return next;
     }),
@@ -240,7 +275,7 @@ export function registerIpcHandlers(): void {
       assertString(sharedPath, 'sharedPath');
       const snapshot = await createLocalConfigForShared(sharedPath);
       const next = await switchConfigFile(snapshot.paths.sharedPath);
-      await rememberRecentConfig(next.paths.sharedPath);
+      await rememberRecentConfig(appConfigStore, next.paths.sharedPath);
       refreshAutoSyncSchedules();
       return next;
     }),

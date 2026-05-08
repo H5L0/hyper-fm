@@ -198,7 +198,7 @@ export function SyncSettingsPanel() {
 }
 
 export function SettingsPanel() {
-  const { config } = useAppState();
+  const { appPreferences, config } = useAppState();
   const actions = useAppActions();
 
   return (
@@ -217,6 +217,15 @@ export function SettingsPanel() {
               { value: 'dark', label: '深色' },
             ]}
             optionMinWidth={112}
+          />
+        </SettingSection>
+
+        <SettingSection title="托盘">
+          <CheckboxField
+            checked={appPreferences.trayEnabled}
+            onCheckedChange={checked => void actions.saveAppPreferences({ trayEnabled: checked })}
+            label="关闭窗口后显示托盘"
+            className="items-center"
           />
         </SettingSection>
 

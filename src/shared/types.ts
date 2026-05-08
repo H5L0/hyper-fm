@@ -147,6 +147,10 @@ export interface UiPreferences {
   view: ViewMode;
 }
 
+export interface AppPreferences {
+  trayEnabled: boolean;
+}
+
 export interface SharedConfig {
   version: number;
   name: string;

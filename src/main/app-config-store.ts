@@ -1,11 +1,17 @@
-import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { normalizePath } from '../shared/path-utils.js';
+import type { AppPreferences } from '../shared/types.js';
 
 export const APP_CONFIG_PREF_KEYS = {
+    appPreferences: 'appPreferences',
     lastSharedConfigPath: 'lastSharedConfigPath',
 } as const;
+
+export const DEFAULT_APP_PREFERENCES: AppPreferences = {
+    trayEnabled: true,
+};
 
 export interface AppConfigStoreBackend {
     readValue(key: string): Promise<string | null>;
@@ -23,7 +29,12 @@ export interface AppConfigStore {
 
 interface AppConfigStoreOptions {
     backend?: AppConfigStoreBackend;
-    registryPath?: string;
+    filePath?: string;
+}
+
+interface AppConfigFileShape {
+    version: 1;
+    values: Record<string, string>;
 }
 
 function assertAppConfigKey(key: string): string {
@@ -34,102 +45,128 @@ function assertAppConfigKey(key: string): string {
     return normalizedKey;
 }
 
-function encodeRegistryValueName(key: string): string {
-    return `pref_${Buffer.from(assertAppConfigKey(key), 'utf8').toString('base64url')}`;
-}
-
-function runRegistryCommand(args: string[]): Promise<{ stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-        execFile('reg.exe', args, {
-            windowsHide: true,
-            encoding: 'utf8',
-        }, (error, stdout, stderr) => {
-            if (error) {
-                reject(Object.assign(error, { stdout, stderr }));
-                return;
-            }
-            resolve({ stdout, stderr });
-        });
-    });
-}
-
-function isRegistryValueMissing(error: unknown): boolean {
-    const commandError = error as { code?: unknown; stdout?: string; stderr?: string; message?: string };
-    const output = `${commandError.stderr ?? ''}\n${commandError.stdout ?? ''}\n${commandError.message ?? ''}`.toLowerCase();
-    return commandError.code === 1
-        || output.includes('unable to find')
-        || output.includes('无法找到');
-}
-
-function escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function parseRegistryQueryValue(stdout: string, valueName: string): string | null {
-    const pattern = new RegExp(`^\\s*${escapeRegExp(valueName)}\\s+REG_\\w+\\s+(.*)$`, 'imu');
-    const match = stdout.match(pattern);
-    if (!match) {
-        return null;
+function normalizeAppConfigFilePath(filePath: string): string {
+    const normalizedFilePath = filePath.trim();
+    if (!normalizedFilePath) {
+        throw new Error('应用配置文件路径不能为空');
     }
-    return match[1] ?? '';
+    return normalizePath(path.resolve(normalizedFilePath));
 }
 
-function createRegistryAppConfigStoreBackend(registryPath: string): AppConfigStoreBackend {
-    const normalizedRegistryPath = registryPath.trim();
-    if (!normalizedRegistryPath) {
-        throw new Error('注册表路径不能为空');
+function isFileMissing(error: unknown): boolean {
+    return typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as { code?: unknown }).code === 'ENOENT';
+}
+
+function isRenameReplaceError(error: unknown): boolean {
+    const code = typeof error === 'object' && error !== null && 'code' in error
+        ? (error as { code?: unknown }).code
+        : undefined;
+    return code === 'EPERM' || code === 'EEXIST';
+}
+
+function normalizeStoredValues(input: unknown): Record<string, string> {
+    if (!input || typeof input !== 'object') {
+        return {};
     }
-    if (process.platform !== 'win32') {
-        throw new Error('Windows 注册表存储仅支持 win32 平台');
+
+    const container = 'values' in input
+        && input.values
+        && typeof input.values === 'object'
+        ? input.values
+        : input;
+
+    return Object.fromEntries(
+        Object.entries(container as Record<string, unknown>)
+            .filter(([key, value]) => key !== 'version' && typeof value === 'string')
+            .map(([key, value]) => [key, value as string] as const),
+    );
+}
+
+async function readAppConfigFile(filePath: string): Promise<AppConfigFileShape> {
+    try {
+        const raw = await fs.readFile(filePath, 'utf8');
+        const parsed = JSON.parse(raw) as unknown;
+        return {
+            version: 1,
+            values: normalizeStoredValues(parsed),
+        };
+    } catch (error) {
+        if (isFileMissing(error)) {
+            return { version: 1, values: {} };
+        }
+        throw error;
     }
+}
+
+async function writeAppConfigFile(filePath: string, data: AppConfigFileShape): Promise<void> {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const content = `${JSON.stringify(data, null, 2)}\n`;
+    const tempPath = `${filePath}.tmp`;
+    await fs.writeFile(tempPath, content, 'utf8');
+    try {
+        await fs.rename(tempPath, filePath);
+    } catch (error) {
+        if (!isRenameReplaceError(error)) {
+            throw error;
+        }
+        await fs.copyFile(tempPath, filePath);
+        await fs.unlink(tempPath);
+    }
+}
+
+function createFileAppConfigStoreBackend(filePath: string): AppConfigStoreBackend {
+    const normalizedFilePath = normalizeAppConfigFilePath(filePath);
 
     return {
         readValue: async key => {
-            const valueName = encodeRegistryValueName(key);
-            try {
-                const { stdout } = await runRegistryCommand(['query', normalizedRegistryPath, '/v', valueName]);
-                return parseRegistryQueryValue(stdout, valueName);
-            } catch (error) {
-                if (isRegistryValueMissing(error)) {
-                    return null;
-                }
-                throw error;
-            }
+            const data = await readAppConfigFile(normalizedFilePath);
+            return data.values[assertAppConfigKey(key)] ?? null;
         },
         writeValue: async (key, value) => {
-            await runRegistryCommand([
-                'add',
-                normalizedRegistryPath,
-                '/v',
-                encodeRegistryValueName(key),
-                '/t',
-                'REG_SZ',
-                '/d',
-                value,
-                '/f',
-            ]);
+            const data = await readAppConfigFile(normalizedFilePath);
+            const next: AppConfigFileShape = {
+                version: 1,
+                values: {
+                    ...data.values,
+                    [assertAppConfigKey(key)]: value,
+                },
+            };
+            await writeAppConfigFile(normalizedFilePath, next);
         },
         deleteValue: async key => {
-            try {
-                await runRegistryCommand(['delete', normalizedRegistryPath, '/v', encodeRegistryValueName(key), '/f']);
-            } catch (error) {
-                if (isRegistryValueMissing(error)) {
-                    return;
-                }
-                throw error;
+            const data = await readAppConfigFile(normalizedFilePath);
+            const normalizedKey = assertAppConfigKey(key);
+            if (!(normalizedKey in data.values)) {
+                return;
             }
+            const nextValues = { ...data.values };
+            delete nextValues[normalizedKey];
+            if (Object.keys(nextValues).length === 0) {
+                await fs.rm(normalizedFilePath, { force: true });
+                return;
+            }
+            await writeAppConfigFile(normalizedFilePath, {
+                version: 1,
+                values: nextValues,
+            });
         },
     };
 }
 
-export function resolveAppConfigRegistryPath(appName: string): string {
-    const normalizedAppName = appName.trim() || 'hyper-fm';
-    return `HKCU\\Software\\${normalizedAppName}\\Prefs`;
+export function resolveAppConfigFilePath(homeDir = os.homedir()): string {
+    const normalizedHomeDir = homeDir.trim();
+    if (!normalizedHomeDir) {
+        throw new Error('用户目录不能为空');
+    }
+    return normalizePath(path.resolve(normalizedHomeDir, '.fm.json'));
 }
 
 export function createAppConfigStore(options: AppConfigStoreOptions = {}): AppConfigStore {
     const backend = options.backend
-        ?? createRegistryAppConfigStoreBackend(options.registryPath ?? resolveAppConfigRegistryPath('hyper-fm'));
+        ?? createFileAppConfigStoreBackend(options.filePath ?? resolveAppConfigFilePath());
 
     return {
         getString: async key => {
@@ -157,6 +194,28 @@ export function createAppConfigStore(options: AppConfigStoreOptions = {}): AppCo
 
 function normalizeStoredPath(filePath: string): string {
     return normalizePath(path.resolve(filePath));
+}
+
+function normalizeAppPreferences(value: Partial<AppPreferences> | null | undefined): AppPreferences {
+    return {
+        trayEnabled: typeof value?.trayEnabled === 'boolean'
+            ? value.trayEnabled
+            : DEFAULT_APP_PREFERENCES.trayEnabled,
+    };
+}
+
+export async function loadAppPreferences(store: AppConfigStore): Promise<AppPreferences> {
+    const value = await store.getJson<Partial<AppPreferences>>(APP_CONFIG_PREF_KEYS.appPreferences);
+    return normalizeAppPreferences(value);
+}
+
+export async function saveAppPreferences(
+    store: AppConfigStore,
+    value: Partial<AppPreferences> | AppPreferences,
+): Promise<AppPreferences> {
+    const normalizedValue = normalizeAppPreferences(value);
+    await store.setJson(APP_CONFIG_PREF_KEYS.appPreferences, normalizedValue);
+    return normalizedValue;
 }
 
 export async function loadLastSharedConfigPath(store: AppConfigStore): Promise<string | null> {
