@@ -42,14 +42,14 @@ export function DrawerPanelShell({
                     type="button"
                     aria-label="关闭"
                     onClick={onClose}
-                    className="fixed inset-0 bg-black/18 dark:bg-black/42"
+                    className="fixed inset-0 bg-black/15 dark:bg-black/45 animate-in fade-in duration-100"
                     style={{ zIndex: backdropZIndex }}
                 />
             ) : null}
             <aside
                 className={cn(
                     'fixed top-0 flex h-full w-140 max-w-[calc(100vw-1rem)] flex-col border-l border-border bg-card shadow-2xl transition-[right] duration-150',
-                    'animate-in slide-in-from-right-20 fade-in-20 duration-100',
+                    'animate-in slide-in-from-right-20 fade-in duration-100',
                 )}
                 style={panelStyle}
             >

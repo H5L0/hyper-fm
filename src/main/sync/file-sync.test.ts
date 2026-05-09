@@ -65,7 +65,6 @@ function createProject(projectPath: string, overrides: Partial<Project> = {}): P
         rootId: '__manual__',
         hasMetaFile: false,
         lastScannedAt: '2026-01-01T00:00:00Z',
-        lastModifiedAt: undefined,
         syncedAt: undefined,
         syncedHash: undefined,
         syncedFrom: undefined,

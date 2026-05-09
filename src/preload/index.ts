@@ -13,6 +13,7 @@ import type {
   PresetCommandDescriptor,
   ProjectDirectoryInspection,
   Project,
+  ProjectRuntimeInfo,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanReport,
@@ -91,6 +92,7 @@ const fmApi: FmBridge = {
   },
   projects: {
     list: () => ipcRenderer.invoke('fm:projects:list') as Promise<Project[]>,
+    listRuntimeInfo: projectIds => ipcRenderer.invoke('fm:projects:listRuntimeInfo', projectIds) as Promise<ProjectRuntimeInfo[]>,
     get: id => ipcRenderer.invoke('fm:projects:get', id) as Promise<Project>,
     updateMeta: (id, patch: ProjectMetaPatch) =>
       ipcRenderer.invoke('fm:projects:updateMeta', id, patch) as Promise<Project>,

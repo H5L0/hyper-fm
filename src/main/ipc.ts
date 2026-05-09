@@ -46,6 +46,7 @@ import {
   setProjectMetaFlag,
   updateScanRoot,
 } from './project-repo.js';
+import { listProjectRuntimeInfo } from './project-runtime.js';
 import { switchConfigFile, getSnapshot, mutate, requireSession } from './session.js';
 import {
   createConfigInDirectory,
@@ -117,6 +118,7 @@ import { unpackProjectZip } from './sync/zip-bundle.js';
 import {
   PRESET_COMMANDS,
 } from '../shared/sync-types.js';
+import { isDynamicTagLabel as isReservedDynamicTagLabel } from '../shared/dynamic-tags.js';
 import {
   addCustomCommand,
   removeCustomCommand,
@@ -443,6 +445,21 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
   );
 
   ipcMain.handle(
+    'fm:projects:listRuntimeInfo',
+    wrap('fm:projects:listRuntimeInfo', async (_e, projectIds: unknown) => {
+      const session = requireSession();
+      const projectsById = new Map(session.config.projects.map(project => [project.id, project]));
+      const ids = Array.isArray(projectIds)
+        ? projectIds.filter((id): id is string => typeof id === 'string')
+        : session.config.projects.map(project => project.id);
+      const projects = ids
+        .map(id => projectsById.get(id))
+        .filter((project): project is Project => Boolean(project));
+      return listProjectRuntimeInfo(projects);
+    }),
+  );
+
+  ipcMain.handle(
     'fm:projects:get',
     wrap('fm:projects:get', (_e, id: unknown) => {
       assertString(id, 'id');
@@ -704,6 +721,9 @@ function registerTagHandlers(): void {
       const name = typeof obj.name === 'string' ? obj.name.trim() : '';
       const color = typeof obj.color === 'string' && obj.color ? obj.color : '#94a3b8';
       if (!name) throw new FmError('CONFIG_INVALID', 'tag.name 不可为空');
+      if (isReservedDynamicTagLabel(name)) {
+        throw new FmError('CONFIG_INVALID', `标签名为系统保留：${name}`);
+      }
       return mutate(({ shared }) => {
         const existing = shared.tags ?? [];
         const others = existing.filter(t => t.name !== name);
@@ -759,6 +779,9 @@ function registerTagHandlers(): void {
       const to = newName.trim().replace(/^#/, '');
       if (!from) throw new FmError('CONFIG_INVALID', 'oldName 不可为空');
       if (!to) throw new FmError('CONFIG_INVALID', 'newName 不可为空');
+      if (isReservedDynamicTagLabel(to)) {
+        throw new FmError('CONFIG_INVALID', `标签名为系统保留：${to}`);
+      }
       if (from === to) {
         return (requireSession().config.tags ?? []) as readonly { name: string; color: string }[];
       }

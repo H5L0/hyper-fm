@@ -223,7 +223,6 @@ export function addProjectManual(
         rootId: resolveRootId(local, normalizedPath),
         hasMetaFile: input.hasMetaFile ?? false,
         lastScannedAt: new Date().toISOString(),
-        lastModifiedAt: input.mtime ?? new Date().toISOString(),
     };
     const nextShared: SharedConfig = { ...shared, projects: [...shared.projects, sharedProject] };
     const nextLocal: LocalConfig = { ...local, bindings: [...local.bindings, binding] };

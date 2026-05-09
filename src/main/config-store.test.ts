@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { FAVORITE_TAG_GROUP_NAME, getDynamicTagDefinition } from '../shared/dynamic-tags.js';
 import {
     createConfigInDirectory,
     createLocalConfigForShared,
@@ -51,6 +52,9 @@ describe('config-store', () => {
         expect(snapshot.data.version).toBe(2);
         expect(snapshot.data.name).toBe('fm');
         expect(snapshot.data.scanRoots).toEqual([]);
+        expect(snapshot.data.tagGroups).toEqual([
+            { name: FAVORITE_TAG_GROUP_NAME, tags: [getDynamicTagDefinition('recent-month').label] },
+        ]);
 
         try {
             await createConfig(file);
@@ -110,7 +114,10 @@ describe('config-store', () => {
         expect(reloaded.data.scanRoots).toHaveLength(1);
         expect(reloaded.data.projects).toHaveLength(1);
         expect(reloaded.data.projects[0]?.path).toBe('D:/p/demo');
-        expect(reloaded.data.tagGroups).toEqual([{ name: '示例组', tags: ['demo'] }]);
+        expect(reloaded.data.tagGroups).toEqual([
+            { name: FAVORITE_TAG_GROUP_NAME, tags: [getDynamicTagDefinition('recent-month').label] },
+            { name: '示例组', tags: ['demo'] },
+        ]);
         expect(reloaded.data.syncConfigs).toHaveLength(2);
         expect(reloaded.paths.localPath.replace(/\\/g, '/')).toBe(localPath.replace(/\\/g, '/'));
     });

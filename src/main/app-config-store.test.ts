@@ -73,11 +73,23 @@ describe('app-config-store', () => {
         expect(await loadAppPreferences(store)).toEqual(DEFAULT_APP_PREFERENCES);
     });
 
-    test('[saveAppPreferences + loadAppPreferences] 应保存并读取托盘偏好', async () => {
+    test('[saveAppPreferences + loadAppPreferences] 应保存并读取应用偏好', async () => {
         const store = createAppConfigStore({ backend: createMemoryBackend() });
-        await saveAppPreferences(store, { trayEnabled: false });
-        expect(await loadAppPreferences(store)).toEqual({ trayEnabled: false });
-        expect(await store.getJson(APP_CONFIG_PREF_KEYS.appPreferences)).toEqual({ trayEnabled: false });
+        await saveAppPreferences(store, {
+            trayEnabled: false,
+            autoLaunchEnabled: true,
+            ui: { theme: 'dark', view: 'list' },
+        });
+        expect(await loadAppPreferences(store)).toEqual({
+            trayEnabled: false,
+            autoLaunchEnabled: true,
+            ui: { theme: 'dark', view: 'list' },
+        });
+        expect(await store.getJson(APP_CONFIG_PREF_KEYS.appPreferences)).toEqual({
+            trayEnabled: false,
+            autoLaunchEnabled: true,
+            ui: { theme: 'dark', view: 'list' },
+        });
     });
 
     test('[saveLastSharedConfigPath + loadLastSharedConfigPath] 应保存并读取最近一次 shared 配置路径', async () => {

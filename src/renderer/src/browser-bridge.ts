@@ -11,6 +11,7 @@ import type {
     ProjectDirectoryEntry,
     ProjectDirectoryInspection,
     ProjectFingerprint,
+    ProjectRuntimeInfo,
     ProjectMetaPatch,
     ScanReport,
     ScanRoot,
@@ -29,6 +30,7 @@ import type {
     SyncPullResult,
     TagDefinition,
 } from '@shared/bridge.js';
+import { createDefaultDynamicTagGroups } from '@shared/dynamic-tags.js';
 import {
     PRESET_COMMANDS,
     createDefaultSyncConfig,
@@ -548,7 +550,6 @@ function createSampleConfig(): AppConfig {
             fingerprint: { kind: 'metadata' },
             hasMetaFile: true,
             lastScannedAt: nowIso(),
-            lastModifiedAt: nowIso(),
         },
         {
             projectId: 'pj-demo02',
@@ -562,7 +563,6 @@ function createSampleConfig(): AppConfig {
             fingerprint: { kind: 'folder-name', folderName: 'fm-sync-playground' },
             hasMetaFile: false,
             lastScannedAt: nowIso(),
-            lastModifiedAt: nowIso(),
         },
     ];
 
@@ -601,6 +601,7 @@ function createSampleConfig(): AppConfig {
         ignoredPaths: [],
         tags: baseTags,
         tagGroups: [
+            ...createDefaultDynamicTagGroups(),
             { name: '桌面工具', tags: ['electron', 'tooling'] },
             { name: '同步相关', tags: ['sync'] },
         ],
@@ -647,9 +648,15 @@ const browserState: {
     runningServers: string[];
     nextProjectPick: number;
     nextScanRootPick: number;
+    projectDirectoryModifiedAt: Record<string, string | undefined>;
 } = {
     appPreferences: {
         trayEnabled: true,
+        autoLaunchEnabled: false,
+        ui: {
+            theme: 'system',
+            view: 'grid',
+        },
     },
     snapshot: {
         paths: {
@@ -662,6 +669,10 @@ const browserState: {
     runningServers: [],
     nextProjectPick: 1,
     nextScanRootPick: 1,
+    projectDirectoryModifiedAt: {
+        'pj-demo01': nowIso(),
+        'pj-demo02': nowIso(),
+    },
 };
 
 function upsertSyncConfig(syncConfig: SyncConfig): SyncConfig {
@@ -683,6 +694,11 @@ function updateConfig(next: AppConfig): void {
         ...browserState.snapshot,
         data: clone(next),
     };
+
+    const validIds = new Set(next.projects.map(project => project.id));
+    browserState.projectDirectoryModifiedAt = Object.fromEntries(
+        Object.entries(browserState.projectDirectoryModifiedAt).filter(([projectId]) => validIds.has(projectId)),
+    );
 }
 
 function updateProject(id: string, patch: Partial<Project>): Project {
@@ -693,6 +709,16 @@ function updateProject(id: string, patch: Partial<Project>): Project {
     const project = projects.find(item => item.id === id);
     if (!project) throw new Error(`项目不存在：${id}`);
     return clone(project);
+}
+
+function listMockProjectRuntimeInfo(projectIds?: string[]): ProjectRuntimeInfo[] {
+    const ids = projectIds && projectIds.length > 0
+        ? projectIds
+        : browserState.snapshot.data.projects.map(project => project.id);
+    return ids.map(projectId => ({
+        projectId,
+        directoryModifiedAt: browserState.projectDirectoryModifiedAt[projectId],
+    }));
 }
 
 function validateNewProject(input: ManualProjectInput): ManualProjectValidationResult {
@@ -736,7 +762,6 @@ function createProjectFromInput(input: ManualProjectInput): Project {
         fingerprint: normalizeFingerprint(input.fingerprint),
         hasMetaFile: input.fingerprint.kind === 'metadata',
         lastScannedAt: nowIso(),
-        lastModifiedAt: nowIso(),
     };
 }
 
@@ -979,6 +1004,7 @@ export function ensureBrowserBridge(): void {
         },
         projects: {
             list: async () => clone(browserState.snapshot.data.projects),
+            listRuntimeInfo: async (projectIds?: string[]) => clone(listMockProjectRuntimeInfo(projectIds)),
             get: async id => {
                 const project = browserState.snapshot.data.projects.find(item => item.id === id);
                 if (!project) throw new Error(`项目不存在：${id}`);
@@ -1020,6 +1046,7 @@ export function ensureBrowserBridge(): void {
                     ...browserState.snapshot.data,
                     projects: [...browserState.snapshot.data.projects, project],
                 });
+                browserState.projectDirectoryModifiedAt[project.id] = nowIso();
                 return clone(project);
             },
             remove: async id => {
@@ -1027,6 +1054,7 @@ export function ensureBrowserBridge(): void {
                     ...browserState.snapshot.data,
                     projects: browserState.snapshot.data.projects.filter(project => project.id !== id),
                 });
+                delete browserState.projectDirectoryModifiedAt[id];
             },
             pickDirectory: async () => pickMockProjectDirectory(),
             pickDirectories: async () => pickMockProjectDirectories(),

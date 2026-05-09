@@ -3,24 +3,33 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { AlertTriangle, FolderRoot, GitCompareArrows, Inbox, Pencil, Plus, Settings, Tag, Trash2 } from 'lucide-react';
+import { AlertTriangle, Clock3, FolderRoot, GitCompareArrows, Inbox, Pencil, Plus, Settings, Star, Tag, Trash2 } from 'lucide-react';
+import {
+  countProjectsForDynamicTag,
+  countProjectsForTagGroup,
+  DYNAMIC_TAG_DEFINITIONS,
+  FAVORITE_TAG_GROUP_NAME,
+  isRequiredTagGroupName,
+  isDynamicTagLabel,
+} from '@shared/dynamic-tags.js';
 import { collectTagReferences, type TagReferenceSummary } from '@shared/tag-utils.js';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { TagPill, resolveTagColor } from '@/components/basic/tag-pill.js';
-import { EditDialogShell } from '@/components/ui/edit-dialog-shell';
+import { resolveTagColor } from '@/components/basic/tag-pill.js';
 import {
   useAppActions,
   useAppState,
   type TagFilter,
 } from '../../store/app-store.js';
+import { DeleteTagDialog } from './delete-tag-dialog.js';
+import { DeleteTagGroupDialog } from './delete-tag-group-dialog.js';
 import { NewTagDialog } from './new-tag-dialog.js';
-import { TagGroupDialog } from './tag-group-dialog.js';
+import { TagGroupDialog } from './new-tag-group-dialog.js';
 
 function isSameFilter(a: TagFilter, b: TagFilter): boolean {
   if (a === b) return true;
   if (typeof a === 'object' && typeof b === 'object') {
     if (a.kind !== b.kind) return false;
+    if (a.kind === 'dynamic' && b.kind === 'dynamic') return a.id === b.id;
     if (a.kind === 'tag' && b.kind === 'tag') return a.tag === b.tag;
     if (a.kind === 'group' && b.kind === 'group') return a.group === b.group;
     return false;
@@ -29,7 +38,7 @@ function isSameFilter(a: TagFilter, b: TagFilter): boolean {
 }
 
 export function Sidebar() {
-  const { config, tagFilter, route } = useAppState();
+  const { config, projectRuntimeInfo, tagFilter, route } = useAppState();
   const actions = useAppActions();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [tagGroupDialogOpen, setTagGroupDialogOpen] = useState(false);
@@ -40,6 +49,10 @@ export function Sidebar() {
     color: string;
     references: TagReferenceSummary;
   } | null>(null);
+  const [deleteTagGroupTarget, setDeleteTagGroupTarget] = useState<{
+    name: string;
+    tags: string[];
+  } | null>(null);
   const [menu, setMenu] = useState<
     | { kind: 'tag'; x: number; y: number; tag: string; color: string }
     | { kind: 'group'; x: number; y: number; group: string; tags: string[] }
@@ -47,28 +60,47 @@ export function Sidebar() {
   >(null);
   const warningCount = config.warnings.length;
 
-  const { allCount, tagCounts, tagGroupCounts } = useMemo(() => {
+  const { allCount, dynamicTagCounts, tagCounts, tagGroupCounts } = useMemo(() => {
     let all = 0;
     const counts = new Map<string, number>();
+    const runtimeProjects = config.projects.map(project => ({
+      modifiedAt: projectRuntimeInfo[project.id]?.directoryModifiedAt,
+    }));
     for (const p of config.projects) {
       all += 1;
-      for (const t of p.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+      for (const t of p.tags) {
+        if (isDynamicTagLabel(t)) continue;
+        counts.set(t, (counts.get(t) ?? 0) + 1);
+      }
     }
     // 合并已注册但项目中暂无的标签
     for (const def of config.tags ?? []) {
+      if (isDynamicTagLabel(def.name)) continue;
       if (!counts.has(def.name)) counts.set(def.name, 0);
     }
+    const dynamicCounts = DYNAMIC_TAG_DEFINITIONS.map(def => [
+      def,
+      countProjectsForDynamicTag(runtimeProjects, def.id),
+    ] as const);
     const sorted = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
     const groupCounts = (config.tagGroups ?? [])
       .map(group => [
         group,
-        group.tags.length === 0
-          ? 0
-          : config.projects.filter(project => group.tags.every(tag => project.tags.includes(tag))).length,
+        countProjectsForTagGroup(
+          config.projects.map(project => ({
+            tags: project.tags,
+            modifiedAt: projectRuntimeInfo[project.id]?.directoryModifiedAt,
+          })),
+          group.tags,
+        ),
       ] as const)
-      .sort((a, b) => a[0].name.localeCompare(b[0].name));
-    return { allCount: all, tagCounts: sorted, tagGroupCounts: groupCounts };
-  }, [config.projects, config.tags, config.tagGroups]);
+      .sort((a, b) => {
+        if (a[0].name === FAVORITE_TAG_GROUP_NAME && b[0].name !== FAVORITE_TAG_GROUP_NAME) return -1;
+        if (a[0].name !== FAVORITE_TAG_GROUP_NAME && b[0].name === FAVORITE_TAG_GROUP_NAME) return 1;
+        return a[0].name.localeCompare(b[0].name, 'zh-CN');
+      });
+    return { allCount: all, dynamicTagCounts: dynamicCounts, tagCounts: sorted, tagGroupCounts: groupCounts };
+  }, [config.projects, config.tags, config.tagGroups, projectRuntimeInfo]);
 
   const isActive = (filter: TagFilter) =>
     route === 'browse' && isSameFilter(tagFilter, filter);
@@ -111,6 +143,42 @@ export function Sidebar() {
 
         <div className="mt-5 mb-1.5 flex items-center justify-between px-2">
           <span className="text-subheading text-muted-foreground/80">
+            标签组
+          </span>
+          <button
+            type="button"
+            aria-label="新建标签组"
+            onClick={() => setTagGroupDialogOpen(true)}
+            className="inline-flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Plus className="size-3.5" />
+          </button>
+        </div>
+
+        {tagGroupCounts.length === 0 ? (
+          <p className="px-2 py-3 text-note text-muted-foreground">尚无标签组</p>
+        ) : (
+          tagGroupCounts.map(([group, count]) => (
+            <SidebarItem
+              key={group.name}
+              icon={group.name === FAVORITE_TAG_GROUP_NAME
+                ? <Star className="size-4 text-amber-500" />
+                : <Tag className="size-4 text-muted-foreground" />}
+              label={group.name}
+              count={count}
+              title={group.tags.join(' · ')}
+              active={isActive({ kind: 'group', group: group.name })}
+              onClick={() => {
+                actions.setRoute('browse');
+                actions.setTagFilter({ kind: 'group', group: group.name });
+              }}
+              onContextMenu={e => openTagGroupMenu(e, group)}
+            />
+          ))
+        )}
+
+        <div className="mt-5 mb-1.5 flex items-center justify-between px-2">
+          <span className="text-subheading text-muted-foreground/80">
             标签
           </span>
           <button
@@ -123,9 +191,26 @@ export function Sidebar() {
           </button>
         </div>
 
-        {tagCounts.length === 0 ? (
-          <p className="px-2 py-3 text-note text-muted-foreground">尚无标签</p>
-        ) : (
+        {dynamicTagCounts.map(([dynamicTag, count]) => (
+          <SidebarItem
+            key={dynamicTag.id}
+            icon={<Clock3 className="size-4 text-muted-foreground" />}
+            label={dynamicTag.label}
+            count={count}
+            title={dynamicTag.description}
+            active={isActive({ kind: 'dynamic', id: dynamicTag.id })}
+            onClick={() => {
+              actions.setRoute('browse');
+              actions.setTagFilter({ kind: 'dynamic', id: dynamicTag.id });
+            }}
+          />
+        ))}
+
+        {/*{dynamicTagCounts.length > 0 && tagCounts.length > 0 ? (
+          <div className="my-1.5 h-px bg-border/60" />
+        ) : null}*/}
+
+        {tagCounts.length > 0 ? (
           tagCounts.map(([tag, count]) => (
             <SidebarItem
               key={tag}
@@ -145,41 +230,8 @@ export function Sidebar() {
               onContextMenu={e => openTagMenu(e, tag)}
             />
           ))
-        )}
+        ) : null}
 
-        <div className="mt-5 mb-1.5 flex items-center justify-between px-2">
-          <span className="text-subheading text-muted-foreground/80">
-            标签组
-          </span>
-          <button
-            type="button"
-            aria-label="新建标签组"
-            onClick={() => setTagGroupDialogOpen(true)}
-            className="inline-flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Plus className="size-3.5" />
-          </button>
-        </div>
-
-        {tagGroupCounts.length === 0 ? (
-          <p className="px-2 py-3 text-note text-muted-foreground">尚无标签组</p>
-        ) : (
-          tagGroupCounts.map(([group, count]) => (
-            <SidebarItem
-              key={group.name}
-              icon={<Tag className="size-4 text-muted-foreground" />}
-              label={group.name}
-              count={count}
-              title={group.tags.join(' · ')}
-              active={isActive({ kind: 'group', group: group.name })}
-              onClick={() => {
-                actions.setRoute('browse');
-                actions.setTagFilter({ kind: 'group', group: group.name });
-              }}
-              onContextMenu={e => openTagGroupMenu(e, group)}
-            />
-          ))
-        )}
       </div>
 
       <div className="flex flex-col gap-1.5 border-t border-border p-2">
@@ -234,7 +286,9 @@ export function Sidebar() {
           x={menu.x}
           y={menu.y}
           editLabel={menu.kind === 'tag' ? '修改标签' : '修改标签组'}
-          deleteLabel={menu.kind === 'tag' ? '删除标签' : undefined}
+          deleteLabel={menu.kind === 'tag'
+            ? '删除标签'
+            : (menu.kind === 'group' && !isRequiredTagGroupName(menu.group) ? '删除标签组' : undefined)}
           onClose={() => setMenu(null)}
           onEdit={() => {
             if (menu.kind === 'tag') {
@@ -253,7 +307,15 @@ export function Sidebar() {
               });
               setMenu(null);
             }
-            : undefined}
+            : menu.kind === 'group' && !isRequiredTagGroupName(menu.group)
+              ? () => {
+                setDeleteTagGroupTarget({
+                  name: menu.group,
+                  tags: [...menu.tags],
+                });
+                setMenu(null);
+              }
+              : undefined}
         />
       ) : null}
       {deleteTagTarget ? (
@@ -262,6 +324,13 @@ export function Sidebar() {
           color={deleteTagTarget.color}
           references={deleteTagTarget.references}
           onClose={() => setDeleteTagTarget(null)}
+        />
+      ) : null}
+      {deleteTagGroupTarget ? (
+        <DeleteTagGroupDialog
+          name={deleteTagGroupTarget.name}
+          tags={deleteTagGroupTarget.tags}
+          onClose={() => setDeleteTagGroupTarget(null)}
         />
       ) : null}
     </aside>
@@ -286,7 +355,7 @@ function SidebarItem({ icon, label, count, active, onClick, onContextMenu, title
       onContextMenu={onContextMenu}
       title={title}
       className={cn(
-        'group flex h-8 items-center gap-2 rounded-md px-2 text-left transition-colors',
+        'group flex min-h-7 items-center gap-2 rounded-md px-2 text-left transition-colors',
         active
           ? 'bg-secondary text-foreground'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -411,87 +480,3 @@ function SidebarContextMenu({
   );
 }
 
-function DeleteTagDialog({
-  name,
-  color,
-  references,
-  onClose,
-}: {
-  name: string;
-  color: string;
-  references: TagReferenceSummary;
-  onClose: () => void;
-}) {
-  const actions = useAppActions();
-  const [busy, setBusy] = useState(false);
-  const referenceCount = references.projects.length + references.tagGroups.length;
-
-  const confirmDelete = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await actions.removeTag(name);
-      actions.toast('success', `已删除标签 ${name}`);
-      onClose();
-    } catch {
-      // 错误提示已由 store 统一处理
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <EditDialogShell
-      title="删除标签"
-      note={referenceCount > 0
-        ? '删除时也会移除项目和标签组中的引用，并删除因此为空的标签组。'
-        : undefined}
-      onClose={onClose}
-      panelClassName="w-[min(560px,calc(100vw-2rem))]"
-      bodyClassName="space-y-5"
-      footerEnd={(
-        <>
-          <Button size="sm" variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button size="sm" variant="destructive" disabled={busy} onClick={() => void confirmDelete()}>
-            确认删除
-          </Button>
-        </>
-      )}
-    >
-      <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-3">
-        <span className="text-note text-muted-foreground">即将删除：</span>
-        <TagPill name={name} color={color} />
-      </div>
-
-      {referenceCount > 0 ? (
-        <div className="space-y-4">
-          {references.projects.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-subheading text-foreground">项目（{references.projects.length}）</p>
-              <ul className="space-y-1 rounded-xl border border-border bg-background px-3 py-3 text-note text-foreground">
-                {references.projects.map(project => (
-                  <li key={project.id} className="break-all">{project.name}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {references.tagGroups.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-subheading text-foreground">标签组（{references.tagGroups.length}）</p>
-              <ul className="space-y-1 rounded-xl border border-border bg-background px-3 py-3 text-note text-foreground">
-                {references.tagGroups.map(group => (
-                  <li key={group.name} className="break-all">{group.name}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <p className="text-note leading-6 text-muted-foreground">当前没有项目或标签组引用这个标签。</p>
-      )}
-    </EditDialogShell>
-  );
-}

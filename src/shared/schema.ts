@@ -43,6 +43,7 @@ import {
     createDefaultZipSyncSettings,
 } from './sync-types.js';
 import { normalizeSyncConfig, normalizeSyncTargeting } from './sync-config.js';
+import { createDefaultDynamicTagGroups, ensureRequiredTagGroups } from './dynamic-tags.js';
 
 // ---------------------------------------------------------------------------
 // 默认值
@@ -66,6 +67,7 @@ export function createDefaultSharedConfig(meta?: { name?: string; description?: 
         description: meta?.description?.trim() || undefined,
         ignore: createDefaultIgnore(),
         projects: [],
+        tagGroups: createDefaultDynamicTagGroups(),
     };
 }
 
@@ -238,7 +240,6 @@ function validateProjectBinding(value: unknown, idx: number, errors: ValidationE
         rootId: value.rootId,
         hasMetaFile: value.hasMetaFile,
         lastScannedAt: value.lastScannedAt,
-        lastModifiedAt: isString(value.lastModifiedAt) ? value.lastModifiedAt : undefined,
         syncedAt: isString(value.syncedAt) ? value.syncedAt : undefined,
         syncedHash: isString(value.syncedHash) ? value.syncedHash : undefined,
         syncedFrom: isString(value.syncedFrom) ? value.syncedFrom : undefined,
@@ -753,7 +754,7 @@ export function validateSharedConfig(input: unknown): ValidationResult<SharedCon
         .map((p, i) => validateSharedProject(p, i, errors))
         .filter((p): p is SharedProject => p !== null);
     const tags = validateTags(input.tags, errors);
-    const tagGroups = validateTagGroups(input.tagGroups, errors);
+    const tagGroups = ensureRequiredTagGroups(validateTagGroups(input.tagGroups, errors));
     const syncConfigs = validateSyncConfigs(input.syncConfigs, 'shared', errors);
     const config: SharedConfig = {
         version: CONFIG_SCHEMA_VERSION,
@@ -762,7 +763,7 @@ export function validateSharedConfig(input: unknown): ValidationResult<SharedCon
         ignore,
         projects,
         ...(tags ? { tags } : {}),
-        ...(tagGroups ? { tagGroups } : {}),
+        tagGroups,
         ...(syncConfigs ? { syncConfigs } : {}),
     };
     return { config, errors };
@@ -850,7 +851,6 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
                     isObject(project) && isString(project.lastScannedAt)
                         ? project.lastScannedAt
                         : new Date(0).toISOString(),
-                lastModifiedAt: isObject(project) && isString(project.lastModifiedAt) ? project.lastModifiedAt : undefined,
                 syncedAt: isObject(project) && isString(project.syncedAt) ? project.syncedAt : undefined,
                 syncedHash: isObject(project) && isString(project.syncedHash) ? project.syncedHash : undefined,
                 syncedFrom: isObject(project) && isString(project.syncedFrom) ? project.syncedFrom : undefined,
@@ -907,9 +907,9 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
         warnings: [...(local.warnings ?? [])],
         ignoredPaths: [...(local.ignoredPaths ?? [])],
         ...(shared.tags ? { tags: [...shared.tags] } : {}),
-        ...(shared.tagGroups
+        ...(ensureRequiredTagGroups(shared.tagGroups)
             ? {
-                tagGroups: shared.tagGroups.map(group => ({
+                tagGroups: ensureRequiredTagGroups(shared.tagGroups).map(group => ({
                     ...group,
                     tags: [...group.tags],
                 })),
@@ -973,11 +973,7 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
         },
         projects: [...updatedProjects.values()],
         ...(appConfig.tags ? { tags: [...appConfig.tags] } : {}),
-        ...(appConfig.tagGroups
-            ? {
-                tagGroups: appConfig.tagGroups.map(group => cloneTagGroup(group)),
-            }
-            : {}),
+        tagGroups: ensureRequiredTagGroups(appConfig.tagGroups).map(group => cloneTagGroup(group)),
         ...(appConfig.syncConfigs
             ? {
                 syncConfigs: appConfig.syncConfigs
@@ -1000,7 +996,6 @@ export function mergeAppConfigIntoLocal(appConfig: AppConfig, sharedConfigPath =
             rootId: project.rootId,
             hasMetaFile: project.hasMetaFile,
             lastScannedAt: project.lastScannedAt,
-            lastModifiedAt: project.lastModifiedAt,
             syncedAt: project.syncedAt,
             syncedHash: project.syncedHash,
             syncedFrom: project.syncedFrom,

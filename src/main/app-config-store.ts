@@ -11,6 +11,11 @@ export const APP_CONFIG_PREF_KEYS = {
 
 export const DEFAULT_APP_PREFERENCES: AppPreferences = {
     trayEnabled: true,
+    autoLaunchEnabled: false,
+    ui: {
+        theme: 'system',
+        view: 'grid',
+    },
 };
 
 export interface AppConfigStoreBackend {
@@ -197,10 +202,22 @@ function normalizeStoredPath(filePath: string): string {
 }
 
 function normalizeAppPreferences(value: Partial<AppPreferences> | null | undefined): AppPreferences {
+    const uiValue = value?.ui;
     return {
         trayEnabled: typeof value?.trayEnabled === 'boolean'
             ? value.trayEnabled
             : DEFAULT_APP_PREFERENCES.trayEnabled,
+        autoLaunchEnabled: typeof value?.autoLaunchEnabled === 'boolean'
+            ? value.autoLaunchEnabled
+            : DEFAULT_APP_PREFERENCES.autoLaunchEnabled,
+        ui: {
+            theme: uiValue?.theme === 'light' || uiValue?.theme === 'dark' || uiValue?.theme === 'system'
+                ? uiValue.theme
+                : DEFAULT_APP_PREFERENCES.ui.theme,
+            view: uiValue?.view === 'grid' || uiValue?.view === 'list'
+                ? uiValue.view
+                : DEFAULT_APP_PREFERENCES.ui.view,
+        },
     };
 }
 

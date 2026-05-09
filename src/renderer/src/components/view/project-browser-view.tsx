@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { Copy, Ellipsis, FileText, FolderOpen, Pencil, Terminal, Trash2 } from 'lucide-react';
 import type { PresetCommandDescriptor, Project } from '@shared/bridge.js';
+import { matchesDynamicTag, matchesTagGroup } from '@shared/dynamic-tags.js';
 import {
     type HighlightSegment,
     type MatchExplain,
@@ -15,14 +16,16 @@ import { TagPill, resolveTagColor } from '@/components/basic/tag-pill.js';
 
 function matchesTagFilter(
     project: Project,
+    directoryModifiedAt: string | undefined,
     filter: ReturnType<typeof useAppState>['tagFilter'],
     tagGroups: readonly import('@shared/bridge.js').TagGroupDefinition[] | undefined,
 ): boolean {
     if (filter === 'ALL') return true;
     if (filter.kind === 'tag') return project.tags.includes(filter.tag);
+    if (filter.kind === 'dynamic') return matchesDynamicTag({ modifiedAt: directoryModifiedAt }, filter.id);
     const group = tagGroups?.find(item => item.name === filter.group);
     if (!group || group.tags.length === 0) return false;
-    return group.tags.every(tag => project.tags.includes(tag));
+    return matchesTagGroup({ tags: project.tags, modifiedAt: directoryModifiedAt }, group.tags);
 }
 
 function relativeTime(iso?: string): string {
@@ -66,7 +69,7 @@ function HighlightedText({
 }
 
 export function ProjectBrowserView() {
-    const { config, tagFilter, search, view, selectedProjectId } = useAppState();
+    const { config, projectRuntimeInfo, tagFilter, search, view, selectedProjectId } = useAppState();
     const actions = useAppActions();
     const [menu, setMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
     const [presets, setPresets] = useState<PresetCommandDescriptor[]>([]);
@@ -87,19 +90,20 @@ export function ProjectBrowserView() {
     const query: SearchQuery = useMemo(() => parseSearchQuery(search), [search]);
 
     const filtered = useMemo(() => {
-        type Row = { project: Project; explain: MatchExplain };
+        type Row = { project: Project; explain: MatchExplain; directoryModifiedAt?: string };
         const rows: Row[] = [];
         for (const project of config.projects) {
-            if (!matchesTagFilter(project, tagFilter, config.tagGroups)) continue;
+            const directoryModifiedAt = projectRuntimeInfo[project.id]?.directoryModifiedAt;
+            if (!matchesTagFilter(project, directoryModifiedAt, tagFilter, config.tagGroups)) continue;
             const explain = matchProject(project, query);
             if (!explain) continue;
-            rows.push({ project, explain });
+            rows.push({ project, explain, directoryModifiedAt });
         }
         rows.sort((a, b) =>
-            (b.project.lastModifiedAt ?? '').localeCompare(a.project.lastModifiedAt ?? ''),
+            (b.directoryModifiedAt ?? '').localeCompare(a.directoryModifiedAt ?? ''),
         );
         return rows;
-    }, [config.projects, config.tagGroups, tagFilter, query]);
+    }, [config.projects, config.tagGroups, projectRuntimeInfo, tagFilter, query]);
 
     if (config.scanRoots.length === 0 && config.projects.length === 0) {
         return (
@@ -146,7 +150,7 @@ export function ProjectBrowserView() {
                         </tr>
                     </thead>
                     <tbody>
-                        {filtered.map(({ project, explain }) => (
+                        {filtered.map(({ project, explain, directoryModifiedAt }) => (
                             <tr
                                 key={project.id}
                                 onClick={() => actions.selectProject(project.id)}
@@ -186,7 +190,7 @@ export function ProjectBrowserView() {
                                     <HighlightedText text={project.path} values={explain.values} className="truncate" />
                                 </td>
                                 <td className="py-2.5 pr-4 text-right text-note tabular-nums text-muted-foreground">
-                                    {relativeTime(project.lastModifiedAt)}
+                                    {relativeTime(directoryModifiedAt)}
                                 </td>
                             </tr>
                         ))}
@@ -200,10 +204,11 @@ export function ProjectBrowserView() {
     return (
         <div className="flex-1 overflow-y-auto p-4">
             <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
-                {filtered.map(({ project, explain }) => (
+                {filtered.map(({ project, explain, directoryModifiedAt }) => (
                     <ProjectCard
                         key={project.id}
                         project={project}
+                        directoryModifiedAt={directoryModifiedAt}
                         tagDefs={config.tags}
                         selected={selectedProjectId === project.id}
                         onSelect={() => actions.selectProject(project.id)}
@@ -220,6 +225,7 @@ export function ProjectBrowserView() {
 
 function ProjectCard({
     project,
+    directoryModifiedAt,
     tagDefs,
     selected,
     onSelect,
@@ -228,6 +234,7 @@ function ProjectCard({
     highlightValues,
 }: {
     project: Project;
+    directoryModifiedAt?: string;
     tagDefs: readonly import('@shared/bridge.js').TagDefinition[] | undefined;
     selected: boolean;
     onSelect: () => void;
@@ -248,7 +255,7 @@ function ProjectCard({
                 }
             }}
             className={cn(
-                'group relative flex min-h-[9.5rem] flex-col rounded-lg border bg-card px-3.5 py-3 text-left transition-all',
+                'group relative flex min-h-38 flex-col rounded-lg border bg-card px-3.5 py-3 text-left transition-all',
                 'hover:border-foreground/20 hover:shadow-sm',
                 selected ? 'border-foreground/30 ring-1 ring-foreground/10' : 'border-border',
             )}
@@ -314,7 +321,7 @@ function ProjectCard({
             )}
             <div className="mt-2 flex items-center justify-between gap-2 text-note text-muted-foreground/80">
                 <HighlightedText text={project.path} values={highlightValues} className="truncate" />
-                <span className="shrink-0 tabular-nums">{relativeTime(project.lastModifiedAt)}</span>
+                <span className="shrink-0 tabular-nums">{relativeTime(directoryModifiedAt)}</span>
             </div>
         </div>
     );
@@ -390,7 +397,7 @@ function ProjectContextMenu({
         <div
             ref={ref}
             role="menu"
-            className="fixed z-50 min-w-[220px] overflow-hidden rounded-md border border-border bg-popover py-1 shadow-md"
+            className="fixed z-50 min-w-55 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-md"
             style={style}
         >
             <MenuItem

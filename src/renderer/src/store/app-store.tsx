@@ -17,20 +17,48 @@ import type {
   AppPreferences,
   AppConfig,
   ConfigPaths,
+  DynamicTagId,
   ManualProjectInput,
   Project,
+  ProjectRuntimeInfo,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanRoot,
   TagDefinition,
   TagGroupDefinition,
 } from '@shared/bridge.js';
+import { ensureRequiredTagGroups, isRequiredTagGroupName } from '@shared/dynamic-tags.js';
+
+const PROJECT_RUNTIME_CACHE_TTL_MS = 60 * 1000;
+const DEFAULT_UI_PREFERENCES: AppPreferences['ui'] = {
+  theme: 'system',
+  view: 'grid',
+};
+
+export interface CachedProjectRuntimeInfo {
+  directoryModifiedAt?: string;
+  fetchedAt: number;
+}
+
+function pruneProjectRuntimeInfo(
+  projectRuntimeInfo: Record<string, CachedProjectRuntimeInfo>,
+  projects: readonly Project[],
+): Record<string, CachedProjectRuntimeInfo> {
+  const ids = new Set(projects.map(project => project.id));
+  return Object.fromEntries(
+    Object.entries(projectRuntimeInfo).filter(([projectId]) => ids.has(projectId)),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-export type TagFilter = 'ALL' | { kind: 'tag'; tag: string } | { kind: 'group'; group: string };
+export type TagFilter =
+  | 'ALL'
+  | { kind: 'tag'; tag: string }
+  | { kind: 'group'; group: string }
+  | { kind: 'dynamic'; id: DynamicTagId };
 export type View = 'grid' | 'list';
 export type Route = 'browse' | 'scan-settings' | 'sync-settings' | 'settings' | 'warnings';
 
@@ -46,6 +74,7 @@ export interface AppState {
   appPreferences: AppPreferences;
   configPaths: ConfigPaths;
   config: AppConfig;
+  projectRuntimeInfo: Record<string, CachedProjectRuntimeInfo>;
   tagFilter: TagFilter;
   search: string;
   view: View;
@@ -60,6 +89,8 @@ const INITIAL_STATE: AppState = {
   hasLoadedConfig: false,
   appPreferences: {
     trayEnabled: true,
+    autoLaunchEnabled: false,
+    ui: DEFAULT_UI_PREFERENCES,
   },
   configPaths: { sharedPath: '', localPath: '' },
   config: {
@@ -73,8 +104,9 @@ const INITIAL_STATE: AppState = {
     warnings: [],
     ignoredPaths: [],
     tags: [],
-    tagGroups: [],
+    tagGroups: ensureRequiredTagGroups(),
   },
+  projectRuntimeInfo: {},
   tagFilter: 'ALL',
   search: '',
   view: 'grid',
@@ -93,6 +125,7 @@ type Action =
   | { type: 'configPaths'; configPaths: ConfigPaths }
   | { type: 'projects'; projects: Project[] }
   | { type: 'updateProject'; project: Project }
+  | { type: 'projectRuntimeInfo'; value: Record<string, CachedProjectRuntimeInfo> }
   | { type: 'scanRoot'; root: ScanRoot }
   | { type: 'tagFilter'; value: TagFilter }
   | { type: 'search'; value: string }
@@ -113,22 +146,40 @@ function reducer(state: AppState, action: Action): AppState {
         appPreferences: action.appPreferences,
         configPaths: action.configPaths,
         config: action.config,
-        view: action.config.ui.view,
+        projectRuntimeInfo: pruneProjectRuntimeInfo(state.projectRuntimeInfo, action.config.projects),
+        view: action.appPreferences.ui.view,
       };
     case 'config':
-      return { ...state, config: action.config };
+      return {
+        ...state,
+        config: action.config,
+        projectRuntimeInfo: pruneProjectRuntimeInfo(state.projectRuntimeInfo, action.config.projects),
+      };
     case 'appPreferences':
-      return { ...state, appPreferences: action.value };
+      return { ...state, appPreferences: action.value, view: action.value.ui.view };
     case 'configPaths':
       return { ...state, configPaths: action.configPaths };
     case 'projects':
-      return { ...state, config: { ...state.config, projects: action.projects } };
+      return {
+        ...state,
+        config: { ...state.config, projects: action.projects },
+        projectRuntimeInfo: pruneProjectRuntimeInfo(state.projectRuntimeInfo, action.projects),
+      };
     case 'updateProject': {
       const projects = state.config.projects.map(p =>
         p.id === action.project.id ? action.project : p,
       );
-      return { ...state, config: { ...state.config, projects } };
+      return {
+        ...state,
+        config: { ...state.config, projects },
+        projectRuntimeInfo: pruneProjectRuntimeInfo(state.projectRuntimeInfo, projects),
+      };
     }
+    case 'projectRuntimeInfo':
+      return {
+        ...state,
+        projectRuntimeInfo: { ...state.projectRuntimeInfo, ...action.value },
+      };
     case 'scanRoot': {
       const roots = state.config.scanRoots.some(r => r.id === action.root.id)
         ? state.config.scanRoots.map(r => (r.id === action.root.id ? action.root : r))
@@ -167,6 +218,7 @@ interface AppActions {
   refreshProjects(): Promise<void>;
   runScanAll(): Promise<void>;
   runScanOne(rootId: string): Promise<void>;
+  refreshProjectRuntimeInfo(projectIds?: string[], force?: boolean): Promise<void>;
   ignorePath(path: string): Promise<void>;
   setTagFilter(value: TagFilter): void;
   setSearch(value: string): void;
@@ -241,21 +293,45 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const migrateLegacyUiPreferences = useCallback(async (
+    snapshot: { data: AppConfig },
+    appPreferences: AppPreferences,
+  ): Promise<AppPreferences> => {
+    const currentUi = appPreferences.ui;
+    const legacyUi = snapshot.data.ui;
+    const appUiIsDefault = currentUi.theme === DEFAULT_UI_PREFERENCES.theme
+      && currentUi.view === DEFAULT_UI_PREFERENCES.view;
+    const legacyUiDiffers = legacyUi.theme !== DEFAULT_UI_PREFERENCES.theme
+      || legacyUi.view !== DEFAULT_UI_PREFERENCES.view;
+
+    if (!appUiIsDefault || !legacyUiDiffers) {
+      return appPreferences;
+    }
+
+    return window.fm.app.updatePreferences({
+      ui: {
+        theme: legacyUi.theme,
+        view: legacyUi.view,
+      },
+    });
+  }, []);
+
   const loadConfig = useCallback(
     async (filePath?: string) => {
       try {
-        const [snapshot, appPreferences] = await Promise.all([
+        const [snapshot, loadedAppPreferences] = await Promise.all([
           filePath
             ? window.fm.config.load(filePath)
             : window.fm.config.current(),
           window.fm.app.getPreferences(),
         ]);
+        const appPreferences = await migrateLegacyUiPreferences(snapshot, loadedAppPreferences);
         applySnapshot(snapshot, appPreferences);
       } catch (error) {
         handleError(error, '加载配置失败');
       }
     },
-    [applySnapshot, handleError],
+    [applySnapshot, handleError, migrateLegacyUiPreferences],
   );
 
   const pickAndLoadConfig = useCallback(async () => {
@@ -314,6 +390,39 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const snap = await window.fm.config.current();
     applySnapshot(snap);
   }, [applySnapshot]);
+
+  const refreshProjectRuntimeInfo = useCallback(async (projectIds?: string[], force = false) => {
+    const allProjectIds = stateRef.current.config.projects.map(project => project.id);
+    const targetIds = [...new Set((projectIds && projectIds.length > 0 ? projectIds : allProjectIds)
+      .filter(projectId => allProjectIds.includes(projectId)))];
+    if (targetIds.length === 0) return;
+
+    const now = Date.now();
+    const staleIds = force
+      ? targetIds
+      : targetIds.filter(projectId => {
+        const cached = stateRef.current.projectRuntimeInfo[projectId];
+        return !cached || now - cached.fetchedAt >= PROJECT_RUNTIME_CACHE_TTL_MS;
+      });
+
+    if (staleIds.length === 0) return;
+
+    try {
+      const runtimeInfos = await window.fm.projects.listRuntimeInfo(staleIds);
+      dispatch({
+        type: 'projectRuntimeInfo',
+        value: Object.fromEntries(runtimeInfos.map((info: ProjectRuntimeInfo) => [
+          info.projectId,
+          {
+            directoryModifiedAt: info.directoryModifiedAt,
+            fetchedAt: now,
+          } satisfies CachedProjectRuntimeInfo,
+        ])),
+      });
+    } catch (error) {
+      console.error('读取项目目录修改时间失败', error);
+    }
+  }, []);
 
   const runScanAll = useCallback(async () => {
     try {
@@ -500,13 +609,28 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   );
 
   const saveTheme = useCallback(async (theme: AppConfig['ui']['theme']) => {
-    const next: AppConfig = {
-      ...stateRef.current.config,
-      ui: { ...stateRef.current.config.ui, theme },
-    };
-    await window.fm.config.save(next);
-    dispatch({ type: 'config', config: next });
+    const next = await window.fm.app.updatePreferences({
+      ui: {
+        ...stateRef.current.appPreferences.ui,
+        theme,
+      },
+    });
+    dispatch({ type: 'appPreferences', value: next });
   }, []);
+
+  const setView = useCallback((value: View) => {
+    dispatch({ type: 'view', value });
+    void window.fm.app.updatePreferences({
+      ui: {
+        ...stateRef.current.appPreferences.ui,
+        view: value,
+      },
+    }).then(next => {
+      dispatch({ type: 'appPreferences', value: next });
+    }).catch(error => {
+      handleError(error, '保存视图偏好失败');
+    });
+  }, [handleError]);
 
   const upsertTag = useCallback(async (tag: TagDefinition) => {
     try {
@@ -557,6 +681,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     try {
       const normalizedName = group.name.trim();
       const normalizedTags = [...new Set(group.tags.map(tag => tag.trim()).filter(Boolean))];
+      if (previousName && isRequiredTagGroupName(previousName) && previousName !== normalizedName) {
+        throw new Error(`${previousName} 是系统必备标签组，不能改名`);
+      }
       const groups = stateRef.current.config.tagGroups ?? [];
       const nextGroups = [
         ...groups.filter(item => item.name !== (previousName ?? normalizedName) && item.name !== normalizedName),
@@ -564,7 +691,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       ];
       const nextConfig: AppConfig = {
         ...stateRef.current.config,
-        tagGroups: nextGroups,
+        tagGroups: ensureRequiredTagGroups(nextGroups),
       };
       await window.fm.config.save(nextConfig);
       dispatch({ type: 'config', config: nextConfig });
@@ -584,9 +711,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const removeTagGroup = useCallback(async (name: string) => {
     try {
+      if (isRequiredTagGroupName(name)) {
+        throw new Error(`${name} 是系统必备标签组，不能删除`);
+      }
       const nextConfig: AppConfig = {
         ...stateRef.current.config,
-        tagGroups: (stateRef.current.config.tagGroups ?? []).filter(group => group.name !== name),
+        tagGroups: ensureRequiredTagGroups(
+          (stateRef.current.config.tagGroups ?? []).filter(group => group.name !== name),
+        ),
       };
       await window.fm.config.save(nextConfig);
       dispatch({ type: 'config', config: nextConfig });
@@ -618,6 +750,17 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return off;
   }, []);
 
+  useEffect(() => {
+    if (!state.ready || state.config.projects.length === 0) return undefined;
+    void refreshProjectRuntimeInfo(undefined, true);
+    const timer = window.setInterval(() => {
+      void refreshProjectRuntimeInfo();
+    }, PROJECT_RUNTIME_CACHE_TTL_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [refreshProjectRuntimeInfo, state.ready, state.config.projects.length]);
+
   const actions = useMemo<AppActions>(
     () => ({
       loadConfig,
@@ -626,10 +769,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       refreshProjects,
       runScanAll,
       runScanOne,
+      refreshProjectRuntimeInfo,
       ignorePath: ignorePathAction,
       setTagFilter: value => dispatch({ type: 'tagFilter', value }),
       setSearch: value => dispatch({ type: 'search', value }),
-      setView: value => dispatch({ type: 'view', value }),
+      setView,
       setRoute: value => dispatch({ type: 'route', value }),
       selectProject: id => dispatch({ type: 'select', id }),
       saveProject,
@@ -666,6 +810,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       pickProjectDirectoryAction,
       pickProjectDirectoriesAction,
       refreshProjects,
+      refreshProjectRuntimeInfo,
       ignorePathAction,
       removeMetaFile,
       removeProjectAction,
@@ -681,6 +826,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       saveIgnore,
       saveProject,
       saveTheme,
+      setView,
       toast,
       updateScanRootAction,
       upsertTag,

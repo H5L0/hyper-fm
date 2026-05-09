@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { FAVORITE_TAG_GROUP_NAME, getDynamicTagDefinition } from './dynamic-tags.js';
 import {
     composeAppConfig,
     createDefaultConfig,
@@ -22,6 +23,17 @@ describe('schema', () => {
         expect(config.ui.theme).toBe('system');
         expect(config.warnings).toEqual([]);
         expect(config.ignoredPaths).toEqual([]);
+        expect(config.tagGroups).toEqual([{ name: FAVORITE_TAG_GROUP_NAME, tags: [getDynamicTagDefinition('recent-month').label] }]);
+    });
+
+    test('[createDefaultSharedConfig] 应预置收藏标签组并默认包含最近一月', () => {
+        const config = createDefaultSharedConfig();
+        expect(config.tagGroups).toEqual([
+            {
+                name: FAVORITE_TAG_GROUP_NAME,
+                tags: [getDynamicTagDefinition('recent-month').label],
+            },
+        ]);
     });
 
     test('[validateSharedConfig] 缺失字段应回退默认值', () => {
@@ -30,6 +42,7 @@ describe('schema', () => {
         expect(config.name).toBe('fm');
         expect(config.projects).toEqual([]);
         expect(config.ignore.globs.length).toBeGreaterThan(0);
+        expect(config.tagGroups).toEqual([{ name: FAVORITE_TAG_GROUP_NAME, tags: [getDynamicTagDefinition('recent-month').label] }]);
         expect(errors).toEqual([]);
     });
 
@@ -41,6 +54,24 @@ describe('schema', () => {
         expect(config.bindings).toEqual([]);
         expect(config.ui.view).toBe('grid');
         expect(errors).toEqual([]);
+    });
+
+    test('[validateLocalConfig] 应忽略 local.bindings 中的 lastModifiedAt 持久化字段', () => {
+        const { config } = validateLocalConfig({
+            bindings: [
+                {
+                    projectId: 'pj-aaaaaa',
+                    id: 'pj-aaaaaa',
+                    path: 'D:/projects/demo',
+                    rootId: 'root_1',
+                    hasMetaFile: false,
+                    lastScannedAt: '2026-01-01T00:00:00Z',
+                    lastModifiedAt: '2026-01-02T00:00:00Z',
+                },
+            ],
+        });
+
+        expect(config.bindings[0]).not.toHaveProperty('lastModifiedAt');
     });
 
     test('[validateSharedConfig] schema 版本过高应抛出', () => {
@@ -115,7 +146,10 @@ describe('schema', () => {
         expect(config.projects[0]?.ignore).toEqual(['dist/']);
         expect(config.projects[0]?.syncRespectGitignore).toBe(true);
         expect(config.tags?.[0]?.name).toBe('unity');
-        expect(config.tagGroups?.[0]?.tags).toEqual(['unity']);
+        expect(config.tagGroups).toEqual([
+            { name: FAVORITE_TAG_GROUP_NAME, tags: [getDynamicTagDefinition('recent-month').label] },
+            { name: '引擎项目', tags: ['unity'] },
+        ]);
     });
 
     test('[validateLocalConfig] 应兼容旧版 sync 并迁移为 syncConfigs', () => {
@@ -168,8 +202,36 @@ describe('schema', () => {
         const nextLocal = mergeAppConfigIntoLocal(app, 'D:/cfg/fm.shared.json');
         expect(nextShared.syncConfigs).toHaveLength(1);
         expect(nextShared.syncConfigs?.[0]?.scope).toBe('shared');
-        expect(nextShared.tagGroups).toEqual([{ name: '客户端', tags: ['electron', 'react'] }]);
+        expect(nextShared.tagGroups).toEqual([
+            { name: FAVORITE_TAG_GROUP_NAME, tags: [getDynamicTagDefinition('recent-month').label] },
+            { name: '客户端', tags: ['electron', 'react'] },
+        ]);
         expect(nextLocal.syncConfigs).toHaveLength(1);
         expect(nextLocal.syncConfigs?.[0]?.scope).toBe('local');
+    });
+
+    test('[mergeAppConfigIntoLocal] 不应写入项目目录修改时间等运行时字段', () => {
+        const app = createDefaultConfig();
+        app.projects = [
+            {
+                projectId: 'pj-aaaaaa',
+                id: 'pj-aaaaaa',
+                path: 'D:/projects/demo',
+                rootId: 'root_1',
+                hasMetaFile: false,
+                lastScannedAt: '2026-01-01T00:00:00Z',
+                syncedAt: undefined,
+                syncedHash: undefined,
+                syncedFrom: undefined,
+                syncStates: undefined,
+                name: 'Demo',
+                tags: [],
+                ignore: [],
+                fingerprint: { kind: 'metadata' },
+            },
+        ];
+
+        const local = mergeAppConfigIntoLocal(app, 'D:/cfg/fm.shared.json');
+        expect(local.bindings[0]).not.toHaveProperty('lastModifiedAt');
     });
 });

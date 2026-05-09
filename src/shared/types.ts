@@ -34,7 +34,6 @@ export interface ProjectBinding {
   rootId: string;
   hasMetaFile: boolean;
   lastScannedAt: string;
-  lastModifiedAt?: string;
   /** 上次同步成功的时间（推送或拉取） */
   syncedAt?: string;
   /** 上次同步时该项目的内容指纹 */
@@ -98,6 +97,12 @@ export interface Project extends ProjectBinding {
   fingerprint: ProjectFingerprint;
 }
 
+export interface ProjectRuntimeInfo {
+  projectId: string;
+  /** 项目目录当前的运行时修改时间；按需实时读取，不写入 shared/local 配置 */
+  directoryModifiedAt?: string;
+}
+
 export interface FingerprintConflictWarning {
   id: string;
   kind: 'fingerprint-conflict';
@@ -149,6 +154,8 @@ export interface UiPreferences {
 
 export interface AppPreferences {
   trayEnabled: boolean;
+  autoLaunchEnabled: boolean;
+  ui: UiPreferences;
 }
 
 export interface SharedConfig {

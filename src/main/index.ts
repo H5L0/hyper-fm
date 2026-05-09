@@ -15,6 +15,7 @@ import {
   resolveStartupSharedConfigPath,
   saveLastSharedConfigPath,
 } from './app-config-store.js';
+import { syncLoginItemSettings } from './login-item.js';
 import { disposeAutoSyncSchedules, refreshAutoSyncSchedules } from './sync/auto-sync.js';
 import { createTrayController, type TrayController } from './tray-controller.js';
 
@@ -141,6 +142,7 @@ async function bootstrap(): Promise<void> {
 
   const appConfigStore = createAppConfigStore({ filePath: resolveAppConfigFilePath(app.getPath('home')) });
   currentAppPreferences = await loadAppPreferences(appConfigStore);
+  syncLoginItemSettings(app, currentAppPreferences);
 
   const defaultPaths = resolveDefaultConfigPaths(defaultConfigDir());
   try {
@@ -163,6 +165,7 @@ async function bootstrap(): Promise<void> {
     appConfigStore,
     onAppPreferencesChanged: preferences => {
       currentAppPreferences = preferences;
+      syncLoginItemSettings(app, preferences);
       void trayController?.applyPreferences(preferences);
     },
   });

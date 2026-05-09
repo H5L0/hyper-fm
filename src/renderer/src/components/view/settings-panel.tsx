@@ -198,7 +198,7 @@ export function SyncSettingsPanel() {
 }
 
 export function SettingsPanel() {
-  const { appPreferences, config } = useAppState();
+  const { appPreferences } = useAppState();
   const actions = useAppActions();
 
   return (
@@ -209,8 +209,8 @@ export function SettingsPanel() {
         <SettingSection title="主题">
           <SegmentedToggleGroup
             ariaLabel="选择主题模式"
-            value={config.ui.theme}
-            onValueChange={nextValue => void actions.saveTheme(nextValue as typeof config.ui.theme)}
+            value={appPreferences.ui.theme}
+            onValueChange={nextValue => void actions.saveTheme(nextValue as typeof appPreferences.ui.theme)}
             options={[
               { value: 'system', label: '跟随系统' },
               { value: 'light', label: '浅色' },
@@ -225,6 +225,16 @@ export function SettingsPanel() {
             checked={appPreferences.trayEnabled}
             onCheckedChange={checked => void actions.saveAppPreferences({ trayEnabled: checked })}
             label="关闭窗口后显示托盘"
+            className="items-center"
+          />
+        </SettingSection>
+
+        <SettingSection title="开机启动">
+          <CheckboxField
+            checked={appPreferences.autoLaunchEnabled}
+            onCheckedChange={checked => void actions.saveAppPreferences({ autoLaunchEnabled: checked })}
+            label="开机后自动启动 hyper-fm"
+            description="仅对打包后的桌面应用生效；开发模式不会注册系统启动项。"
             className="items-center"
           />
         </SettingSection>

@@ -1,9 +1,25 @@
 import { describe, expect, test } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type { AppConfig } from '../shared/types.js';
+import { FAVORITE_TAG_GROUP_NAME } from '../shared/dynamic-tags.js';
 import { createDefaultSyncConfig } from '../shared/sync-types.js';
 import { listTrayProjectEntries, listTraySyncActions } from './tray-controller.js';
 
-function createConfig(): AppConfig {
+const tempDirs: string[] = [];
+
+async function createTempDir(prefix = 'fm-tray-'): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+    tempDirs.push(dir);
+    return dir;
+}
+
+async function cleanupTempDirs(): Promise<void> {
+    await Promise.all(tempDirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true })));
+}
+
+function createConfig(projectPath: string): AppConfig {
     return {
         version: 2,
         name: 'fm',
@@ -14,11 +30,11 @@ function createConfig(): AppConfig {
             {
                 projectId: 'pj-1',
                 id: 'pj-1',
-                path: 'D:/projects/alpha',
+                path: projectPath,
                 rootId: 'root-1',
                 name: 'Alpha',
                 description: '',
-                tags: [],
+                tags: ['featured'],
                 ignore: [],
                 fingerprint: { kind: 'folder-name', folderName: 'alpha' },
                 hasMetaFile: false,
@@ -28,6 +44,7 @@ function createConfig(): AppConfig {
         ui: { theme: 'system', view: 'grid' },
         warnings: [],
         ignoredPaths: [],
+        tagGroups: [{ name: FAVORITE_TAG_GROUP_NAME, tags: ['featured'] }],
         commands: [
             {
                 id: 'cmd-1',
@@ -58,8 +75,9 @@ function createConfig(): AppConfig {
 }
 
 describe('tray-controller', () => {
-    test('[listTrayProjectEntries] 应为每个项目附带常用命令与自定义命令', () => {
-        const entries = listTrayProjectEntries(createConfig());
+    test('[listTrayProjectEntries] 应只返回收藏组中的项目并附带常用命令与自定义命令', async () => {
+        const dir = await createTempDir();
+        const entries = listTrayProjectEntries(createConfig(dir));
         expect(entries).toHaveLength(1);
         expect(entries[0]?.commands.map(command => command.id)).toEqual([
             'open.explorer',
@@ -67,10 +85,23 @@ describe('tray-controller', () => {
             'open.terminal',
             'cmd-1',
         ]);
+        await cleanupTempDirs();
+    });
+
+    test('[listTrayProjectEntries] 缺少收藏组时也应虚拟补上并按最近一月筛选', async () => {
+        const dir = await createTempDir();
+        const config = createConfig(dir);
+        config.tagGroups = [{ name: '其他分组', tags: ['sync'] }];
+
+        const entries = listTrayProjectEntries(config);
+
+        expect(entries).toHaveLength(1);
+        expect(entries[0]?.projectId).toBe('pj-1');
+        await cleanupTempDirs();
     });
 
     test('[listTraySyncActions] 应仅返回托盘可直接执行的同步配置', () => {
-        const actions = listTraySyncActions(createConfig());
+        const actions = listTraySyncActions(createConfig('D:/projects/alpha'));
         expect(actions.map(action => action.configId)).toEqual(['sync-folder', 'sync-shared']);
     });
 });

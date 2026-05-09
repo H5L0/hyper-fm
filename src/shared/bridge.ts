@@ -8,6 +8,7 @@ import type {
   ConfigOpenInspection,
   ConfigPaths,
   ConfigSnapshot,
+  ProjectRuntimeInfo,
   ProjectFingerprint,
   Project,
   ProjectMetaPatch,
@@ -18,6 +19,7 @@ import type {
   TagDefinition,
   TagGroupDefinition,
 } from './types.js';
+import type { DynamicTagId } from './dynamic-tags.js';
 import type {
   CommandRunResult,
   CustomCommand,
@@ -46,6 +48,8 @@ export type {
   ConfigOpenInspection,
   ConfigPaths,
   ConfigSnapshot,
+  ProjectRuntimeInfo,
+  DynamicTagId,
   ProjectFingerprint,
   Project,
   ProjectMetaPatch,
@@ -130,6 +134,7 @@ export interface FmScanBridge {
 
 export interface FmProjectsBridge {
   list(): Promise<Project[]>;
+  listRuntimeInfo(projectIds?: string[]): Promise<ProjectRuntimeInfo[]>;
   get(id: string): Promise<Project>;
   updateMeta(id: string, patch: ProjectMetaPatch): Promise<Project>;
   writeMetaFile(id: string, patch: ProjectMetaPatch): Promise<Project>;

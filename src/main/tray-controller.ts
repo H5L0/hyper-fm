@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { Menu, Tray, app, nativeImage, type BrowserWindow, type MenuItemConstructorOptions } from 'electron';
 import {
     PRESET_COMMANDS,
@@ -7,6 +8,7 @@ import {
     type SyncConfig,
 } from '../shared/sync-types.js';
 import { resolveSyncProjectIds } from '../shared/sync-config.js';
+import { FAVORITE_TAG_GROUP_NAME, findRequiredTagGroup, matchesTagGroup } from '../shared/dynamic-tags.js';
 import type { AppConfig, AppPreferences } from '../shared/types.js';
 import { createLogger } from '../shared/logger.js';
 import { runCommand } from './commands/runner.js';
@@ -66,12 +68,29 @@ function buildProjectCommandDescriptors(customCommands: readonly CustomCommand[]
 
 export function listTrayProjectEntries(config: AppConfig): TrayProjectEntry[] {
     const customCommands = config.commands ?? [];
-    return config.projects.map(project => ({
+    const favoriteGroup = findRequiredTagGroup(config.tagGroups, FAVORITE_TAG_GROUP_NAME);
+    if (!favoriteGroup || favoriteGroup.tags.length === 0) {
+        return [];
+    }
+    return config.projects
+        .filter(project => matchesTagGroup({
+            tags: project.tags,
+            modifiedAt: readProjectDirectoryModifiedAt(project.path),
+        }, favoriteGroup.tags))
+        .map(project => ({
         projectId: project.id,
         label: project.name.trim() || project.path,
         path: project.path,
         commands: buildProjectCommandDescriptors(customCommands),
-    }));
+        }));
+}
+
+function readProjectDirectoryModifiedAt(projectPath: string): string | undefined {
+        try {
+                return fs.statSync(projectPath).mtime?.toISOString();
+        } catch {
+                return undefined;
+        }
 }
 
 export function listTraySyncActions(config: AppConfig): TraySyncActionDescriptor[] {

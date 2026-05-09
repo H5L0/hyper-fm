@@ -188,7 +188,6 @@ function buildBinding(project: SharedProject, inspection: DirectoryInspection, r
         rootId,
         hasMetaFile: inspection.hasMetaFile,
         lastScannedAt: now,
-        lastModifiedAt: now,
     };
 }
 

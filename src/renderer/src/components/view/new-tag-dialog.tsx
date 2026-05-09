@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from 'react';
+import { isDynamicTagLabel } from '@shared/dynamic-tags.js';
 import { Button } from '@/components/ui/button';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import { DEFAULT_TAG_COLOR, TagPill } from '@/components/basic/tag-pill.js';
@@ -40,6 +41,10 @@ export function NewTagDialog({
   const submit = async () => {
     const n = name.trim().replace(/^#/, '');
     if (!n || busy) return;
+    if (isDynamicTagLabel(n)) {
+      actions.toast('error', `“${n}” 是系统内置动态标签，请换一个名称。`);
+      return;
+    }
     setBusy(true);
     try {
       if (editing) {
@@ -71,7 +76,7 @@ export function NewTagDialog({
   return (
     <EditDialogShell
       title={editing ? '修改标签' : '新建标签'}
-      note="名称和颜色会同时应用到标签注册表与当前界面预览。"
+      note="名称和颜色会同时应用到标签注册表与当前界面预览；“最近一月”“最近一年”等系统动态标签名称不可占用。"
       onClose={onClose}
       panelClassName="w-[min(420px,calc(100vw-2rem))]"
       bodyClassName="space-y-4"

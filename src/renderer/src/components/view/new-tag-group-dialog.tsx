@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import type { TagGroupDefinition } from '@shared/bridge.js';
+import { DYNAMIC_TAG_DEFINITIONS, isRequiredTagGroupName } from '@shared/dynamic-tags.js';
 import { Button } from '@/components/ui/button';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import { TagSelector } from '@/components/basic/tag-selector.js';
@@ -24,12 +25,20 @@ export function TagGroupDialog({
     const { config } = useAppState();
     const actions = useAppActions();
     const editing = !!initial;
+    const requiredGroup = Boolean(initial && isRequiredTagGroupName(initial.name));
     const [name, setName] = useState(initial?.name ?? '');
     const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
     const [busy, setBusy] = useState(false);
 
-    const normalizedName = name.trim();
+    const normalizedName = requiredGroup ? initial!.name : name.trim();
     const normalizedTags = [...new Set(tags.map(tag => tag.trim()).filter(Boolean))];
+    const selectableTags = [
+        ...DYNAMIC_TAG_DEFINITIONS.map(tag => ({
+            name: tag.label,
+            color: tag.color,
+        })),
+        ...(config.tags ?? []),
+    ];
     const dirty = editing
         ? normalizedName !== initial!.name || !isSameTagList(normalizedTags, initial!.tags)
         : normalizedName.length > 0 || normalizedTags.length > 0;
@@ -64,7 +73,9 @@ export function TagGroupDialog({
     return (
         <EditDialogShell
             title={editing ? '修改标签组' : '新建标签组'}
-            note="标签组会筛选同时拥有这些标签的项目。"
+            note={requiredGroup
+                ? '系统必备标签组可以调整筛选条件，但不能改名。'
+                : '标签组会筛选同时满足这些条件的项目；既可以选择普通标签，也可以选择“最近一月”“最近一年”等动态标签。'}
             onClose={onClose}
             panelClassName="w-[min(560px,calc(100vw-2rem))]"
             bodyClassName="space-y-4"
@@ -84,11 +95,12 @@ export function TagGroupDialog({
                     autoFocus
                     value={name}
                     onChange={event => setName(event.target.value)}
+                    disabled={requiredGroup}
                     onKeyDown={event => {
                         if (event.key === 'Enter') void submit();
                     }}
                     placeholder="如：游戏开发"
-                    className="h-9 w-full rounded-md border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                    className="h-9 w-full rounded-md border border-border bg-background px-3 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
                 />
             </EditDialogField>
 
@@ -96,11 +108,11 @@ export function TagGroupDialog({
                 <TagSelector
                     mode="alwaysEdit"
                     selectedTags={normalizedTags}
-                    tagDefs={config.tags}
+                    tagDefs={selectableTags}
                     onAdd={tag => setTags(prev => (prev.includes(tag) ? prev : [...prev, tag]))}
                     onRemove={tag => setTags(prev => prev.filter(item => item !== tag))}
                     emptySelectedLabel="至少选择一个标签"
-                    availableLabel="可加入标签组的标签"
+                    availableLabel="可加入标签组的标签与特殊标签"
                 />
             </EditDialogField>
         </EditDialogShell>
