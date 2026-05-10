@@ -49,7 +49,7 @@
 ### `src/main/`
 
 - `config-store.ts`：shared/local 双配置原子读写。
-- `app-config-store.ts`：通用应用级持久化存储，当前使用用户目录下的 `.fm.json` 保存最近打开配置、托盘开关、开机启动、主题与视图等偏好。
+- `app-config-store.ts`：通用应用级持久化存储，当前使用用户目录下的 `.fm.app.json`（开发模式为 `.test.fm.app.json`）保存最近打开配置、托盘开关、开机启动、主题与视图等偏好。
 - `login-item.ts`：系统登录项（开机启动）设置封装。
 - `meta-file.ts`：项目根 `.meta-data` 读写。
 - `ignore-matcher.ts` + `scanner.ts`：递归扫描与忽略规则。
@@ -98,8 +98,8 @@
 - `shared` 有唯一 `configId`（`cfg_` 前缀），每台设备的 local 独立存放在 `~/.fm/<configId>.local.json`，互不覆盖。
 - 项目目录的文件系统修改时间、同步基线状态均为运行时数据，不持久化到配置文件。
 - “收藏”属于系统必备标签组：默认包含动态标签”最近一月”，即使配置中缺失，运行时也应补齐；托盘项目列表展示的是”收藏”组命中的项目；该组允许修改筛选条件，但不允许删除或改名。
-- 默认共享配置位于 exe 同级目录的 `fm.shared.json`，不应提交到 Git。
-- `~/.fm.json` 通过 `lastSharedConfigId` + `knownConfigs` 映射恢复最近配置；启动回退链：最近配置 → exe 同级 `fm.shared.json` → 欢迎页。
+- 默认共享配置：开发模式（`npm run dev`）下为项目根 `.test/fm.shared.json`，打包后为 exe 同级 `fm.shared.json`；均不应提交到 Git。
+- `~/.fm.app.json`（开发模式为 `~/.test.fm.app.json`）通过 `lastSharedConfigId` + `knownConfigs` 映射恢复最近配置；启动回退链：最近配置 → 默认共享配置 → 欢迎页。
 - 若最近配置和默认配置都不存在，应用应进入欢迎页等待用户显式打开或通过保存弹窗创建，而不是自动创建文件。
 - `.meta-data` 是项目根目录中的自描述文件；存在时，展示层优先使用其中的名称、描述、标签与 `projectId`。
 - 项目身份通过 `projectId` + 指纹识别，当前支持：

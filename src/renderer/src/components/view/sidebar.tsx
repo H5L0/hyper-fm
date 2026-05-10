@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { AlertTriangle, Clock3, FolderRoot, GitCompareArrows, Inbox, Pencil, Plus, Settings, Star, Tag, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowUpToLine, Clock3, FolderRoot, GitCompareArrows, Inbox, Pencil, Plus, Settings, Star, Tag, Trash2 } from 'lucide-react';
 import {
   countProjectsForDynamicTag,
   countProjectsForTagGroup,
@@ -82,7 +82,15 @@ export function Sidebar() {
       def,
       countProjectsForDynamicTag(runtimeProjects, def.id),
     ] as const);
-    const sorted = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const tagDefMap = new Map((config.tags ?? []).map((def, i) => [def.name, i]));
+	    const sorted = [...counts.entries()].sort((a, b) => {
+	        const ai = tagDefMap.get(a[0]);
+	        const bi = tagDefMap.get(b[0]);
+	        if (ai !== undefined && bi !== undefined) return ai - bi;
+	        if (ai !== undefined) return -1;
+	        if (bi !== undefined) return 1;
+	        return a[0].localeCompare(b[0]);
+	    });
     const groupCounts = (config.tagGroups ?? [])
       .map(group => [
         group,
@@ -286,6 +294,7 @@ export function Sidebar() {
           x={menu.x}
           y={menu.y}
           editLabel={menu.kind === 'tag' ? '修改标签' : '修改标签组'}
+          moveToFrontLabel={menu.kind === 'tag' ? '移至最前' : undefined}
           deleteLabel={menu.kind === 'tag'
             ? '删除标签'
             : (menu.kind === 'group' && !isRequiredTagGroupName(menu.group) ? '删除标签组' : undefined)}
@@ -298,6 +307,12 @@ export function Sidebar() {
             }
             setMenu(null);
           }}
+          onMoveToFront={menu.kind === 'tag'
+            ? () => {
+              void actions.moveTagToFront(menu.tag);
+              setMenu(null);
+            }
+            : undefined}
           onDelete={menu.kind === 'tag'
             ? () => {
               setDeleteTagTarget({
@@ -408,17 +423,21 @@ function SidebarContextMenu({
   y,
   editLabel,
   deleteLabel,
+  moveToFrontLabel,
   onClose,
   onEdit,
   onDelete,
+  onMoveToFront,
 }: {
   x: number;
   y: number;
   editLabel: string;
   deleteLabel?: string;
+  moveToFrontLabel?: string;
   onClose: () => void;
   onEdit: () => void;
   onDelete?: () => void;
+  onMoveToFront?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -445,7 +464,8 @@ function SidebarContextMenu({
   if (typeof window !== 'undefined') {
     const margin = 8;
     if (x + 180 + margin > window.innerWidth) style.left = window.innerWidth - 180 - margin;
-    const menuHeight = onDelete ? 120 : 80;
+    const itemCount = 1 + (onMoveToFront ? 1 : 0) + (onDelete ? 1 : 0);
+    const menuHeight = itemCount * 36 + 4;
     if (y + menuHeight + margin > window.innerHeight) style.top = window.innerHeight - menuHeight - margin;
   }
 
@@ -465,6 +485,17 @@ function SidebarContextMenu({
         <Pencil className="size-4 text-muted-foreground" />
         {editLabel}
       </button>
+      {onMoveToFront && moveToFrontLabel ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onMoveToFront}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
+        >
+          <ArrowUpToLine className="size-4 text-muted-foreground" />
+          {moveToFrontLabel}
+        </button>
+      ) : null}
       {onDelete && deleteLabel ? (
         <button
           type="button"

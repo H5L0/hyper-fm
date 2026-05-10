@@ -28,16 +28,16 @@
 ### 2.1 文件布局
 
 ```text
-fm.shared.json                   # 默认共享配置：项目身份、标签、忽略规则、同步配置（exe 同级）
+{.test}/fm.shared.json            # 默认共享配置：开发模式为项目根 .test/，打包后为 exe 同级 fm.shared.json
 ~/.fm/<configId>.local.json      # 设备本地配置：扫描根、绑定、本地覆盖
-~/.fm.json                        # 应用级偏好：托盘、启动、主题、最近配置
+~/.fm.app.json                   # 应用级偏好（开发为 ~/.test.fm.app.json）：托盘、启动、主题、最近配置
 <project-root>/.meta-data        # 项目自描述（可选）
 ```
 
 - `shared` 关注**这个项目是谁**，`local` 关注**这台机器上它在哪里**。
 - 每个 shared 配置有唯一的 `configId`（`cfg_` 前缀），local 文件按 `~/.fm/<configId>.local.json` 独立存放，多设备不互相覆盖。
-- `~/.fm.json` 通过 `lastSharedConfigId` + `knownConfigs` 记住最近配置，下次启动优先恢复。
-- 启动回退链：最近配置 → exe 同级 `fm.shared.json` → 进入欢迎页。
+- `~/.fm.app.json`（开发为 `~/.test.fm.app.json`）通过 `lastSharedConfigId` + `knownConfigs` 记住最近配置，下次启动优先恢复。
+- 启动回退链：最近配置 → 默认共享配置（开发为 `.test/fm.shared.json`，打包为 `fm.shared.json`）→ 进入欢迎页。
 - 新建配置使用系统保存弹窗，后缀 `.shared.json`，默认名 `fm.shared.json`。
 - 同步状态为纯运行时数据，不持久化。项目目录 `mtime` 不写入配置文件。
 
@@ -110,46 +110,46 @@ fm.shared.json                   # 默认共享配置：项目身份、标签、
 
 ```jsonc
 {
-	“version”: 2,
-	“sharedConfigId”: “cfg_a1b2c3”,
-	“scanRoots”: [
+	"version": 2,
+	"sharedConfigId": "cfg_a1b2c3",
+	"scanRoots": [
 		{
-			“id”: “root_a1b2c3”,
-			“path”: “D:/projects”,
-			“label”: “主代码盘”,
-			“maxDepth”: 3,
-			“enabled”: true
+			"id": "root_a1b2c3",
+			"path": "D:/projects",
+			"label": "主代码盘",
+			"maxDepth": 3,
+			"enabled": true
 		}
 	],
-	“bindings”: [
+	"bindings": [
 		{
-			“projectId”: “pj-1a2b3c”,
-			“path”: “D:/projects/fm”,
-			“rootId”: “root_a1b2c3”,
-			“hasMetaFile”: true,
-			“lastScannedAt”: “2026-04-27T12:34:56Z”
+			"projectId": "pj-1a2b3c",
+			"path": "D:/projects/fm",
+			"rootId": "root_a1b2c3",
+			"hasMetaFile": true,
+			"lastScannedAt": "2026-04-27T12:34:56Z"
 		}
 	],
-	“syncConfigs”: [
-		{ “kind”: “override”, “configId”: “sync_d4e5f6”, “settings”: { “folder.intervalMinutes”: 15 } },
+	"syncConfigs": [
+		{ "kind": "override", "configId": "sync_d4e5f6", "settings": { "folder.intervalMinutes": 15 } },
 		{
-			“kind”: “standalone”,
-			“config”: {
-				“id”: “sync_x7y8z9”,
-				“name”: “本机 ZIP 备份”,
-				“scope”: “local”,
-				“type”: “zip”,
-				“mode”: “mirror-local-to-target”,
-				“targets”: { “projectIds”: [], “rootIds”: [], “ignoredProjectIds”: [], “ignoredRootIds”: [] },
-				“zip”: { “exportFile”: “D:/backups/fm.zip” }
+			"kind": "standalone",
+			"config": {
+				"id": "sync_x7y8z9",
+				"name": "本机 ZIP 备份",
+				"scope": "local",
+				"type": "zip",
+				"mode": "mirror-local-to-target",
+				"targets": { "projectIds": [], "rootIds": [], "ignoredProjectIds": [], "ignoredRootIds": [] },
+				"zip": { "exportFile": "D:/backups/fm.zip" }
 			}
 		}
 	],
-	“warnings”: [],
-	“ignoredPaths”: [],
-	“ui”: {
-		“theme”: “system”,
-		“view”: “grid”
+	"warnings": [],
+	"ignoredPaths": [],
+	"ui": {
+		"theme": "system",
+		"view": "grid"
 	}
 }
 ```
@@ -279,7 +279,7 @@ type ProjectFingerprint =
 #### 配置与会话
 
 - `config-store.ts`：shared/local 双配置读写与原子落盘。local 路径由 configId 派生（`~/.fm/<configId>.local.json`），启动时自动迁移旧位置文件。
-- `app-config-store.ts`：应用级持久化存储（`~/.fm.json`），通过 `lastSharedConfigId` + `knownConfigs` 映射恢复最近打开的配置，并保存托盘开关、开机启动、主题 / 视图等 UI 偏好。
+- `app-config-store.ts`：应用级持久化存储（`~/.fm.app.json`，开发为 `~/.test.fm.app.json`），通过 `lastSharedConfigId` + `knownConfigs` 映射恢复最近打开的配置，并保存托盘开关、开机启动、主题 / 视图等 UI 偏好。
 - `login-item.ts`：封装系统登录项（开机启动）设置，统一处理平台差异与开发模式跳过逻辑。
 - `tray-controller.ts`：系统托盘生命周期、菜单构建，以及项目快捷命令/快速同步入口。
 - `session.ts`：维护当前加载配置的会话状态，负责串行写盘，避免并发写坏配置。
@@ -360,8 +360,8 @@ preload 的职责非常明确：
 #### 启动与配置加载
 
 1. Electron 主进程启动；
-2. 从 `~/.fm.json` 读取 `lastSharedConfigId` + `knownConfigs`，解析 shared 配置路径；
-3. 若最近配置不可用，回退到 `.local/fm.shared.json`；
+2. 从 `~/.fm.app.json`（开发为 `~/.test.fm.app.json`）读取 `lastSharedConfigId` + `knownConfigs`，解析 shared 配置路径；
+3. 若最近配置不可用，回退到默认共享配置（开发为 `.test/fm.shared.json`，打包为 `fm.shared.json`）；
 4. 仍不可用时保持未加载状态，进入欢迎页；
 5. 用户打开或通过保存弹窗创建 `.shared.json` 后加载 shared/local；
 6. 主进程整理为聚合视图（合并 shared 项目 + local binding + 同步配置覆盖）；

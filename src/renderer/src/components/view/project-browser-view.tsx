@@ -12,7 +12,7 @@ import {
 } from '@shared/search.js';
 import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '@/store/app-store.js';
-import { TagPill, resolveTagColor } from '@/components/basic/tag-pill.js';
+import { TagPill, resolveTagColor, sortTagsByDefinition } from '@/components/basic/tag-pill.js';
 
 function matchesTagFilter(
     project: Project,
@@ -169,7 +169,7 @@ export function ProjectBrowserView() {
                                 </td>
                                 <td className="py-2.5">
                                     <div className="flex flex-wrap items-center gap-1">
-                                        {project.tags.slice(0, 3).map(tag => (
+                                        {sortTagsByDefinition(project.tags, config.tags).slice(0, 3).map(tag => (
                                             <TagPill
                                                 key={tag}
                                                 name={tag}
@@ -302,7 +302,7 @@ function ProjectCard({
             ) : null}
             {project.tags.length > 0 ? (
                 <div className="mt-auto flex flex-wrap items-center gap-1 overflow-hidden pt-2.5">
-                    {project.tags.slice(0, 3).map(tag => (
+                    {sortTagsByDefinition(project.tags, tagDefs).slice(0, 3).map(tag => (
                         <TagPill
                             key={tag}
                             name={tag}

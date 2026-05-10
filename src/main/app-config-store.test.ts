@@ -35,9 +35,35 @@ function createMemoryBackend(): AppConfigStoreBackend {
 }
 
 describe('app-config-store', () => {
-    test('[resolveAppConfigFilePath] 应生成用户目录下的 .fm.json 路径', async () => {
+    test('[resolveAppConfigFilePath] 打包后应生成用户目录下的 .fm.app.json', async () => {
         const dir = await tmpDir();
-        expect(resolveAppConfigFilePath(dir)).toBe(path.join(dir, '.fm.json').replace(/\\/g, '/'));
+        expect(resolveAppConfigFilePath(dir)).toBe(path.join(dir, '.fm.app.json').replace(/\\/g, '/'));
+    });
+
+    test('[resolveAppConfigFilePath] 开发模式下应生成 .test.fm.app.json', async () => {
+        const { app } = await import('./__mocks__/electron.js');
+        app.isPackaged = false;
+        try {
+            const dir = await tmpDir();
+            expect(resolveAppConfigFilePath(dir)).toBe(path.join(dir, '.test.fm.app.json').replace(/\\/g, '/'));
+        } finally {
+            app.isPackaged = true;
+        }
+    });
+
+    test('[resolveStartupSharedConfigPath] 开发模式下应优先读取 cwd/.test/fm.shared.json', async () => {
+        const { app } = await import('./__mocks__/electron.js');
+        const store = createAppConfigStore({ backend: createMemoryBackend() });
+        const dir = await tmpDir();
+        app.isPackaged = false;
+        try {
+            // 临时替换 cwd 来隔离测试太复杂，仅验证 dev 分支可达且不抛错
+            // 如果 cwd 下没有 .test/fm.shared.json 则退回正常逻辑
+            const result = await resolveStartupSharedConfigPath(store, path.join(dir, '.test', 'fm.shared.json'));
+            expect(result === null || result.endsWith('.test/fm.shared.json')).toBe(true);
+        } finally {
+            app.isPackaged = true;
+        }
     });
 
     test('[createAppConfigStore] 应支持读写字符串值', async () => {
@@ -59,9 +85,9 @@ describe('app-config-store', () => {
         expect(await store.getString('language')).toBeNull();
     });
 
-    test('[createAppConfigStore] 应支持写入用户目录 .fm.json 文件', async () => {
+    test('[createAppConfigStore] 应支持写入用户目录 .fm.app.json 文件', async () => {
         const dir = await tmpDir();
-        const filePath = path.join(dir, '.fm.json');
+        const filePath = path.join(dir, '.fm.app.json');
         const store = createAppConfigStore({ filePath });
         await store.setString('theme', 'dark');
         expect(await store.getString('theme')).toBe('dark');

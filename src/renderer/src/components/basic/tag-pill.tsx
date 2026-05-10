@@ -9,6 +9,16 @@ export function resolveTagColor(name: string, tags: readonly TagDefinition[] | u
     return tags?.find(tag => tag.name === name)?.color ?? DEFAULT_TAG_COLOR;
 }
 
+export function sortTagsByDefinition(tagNames: readonly string[], tagDefs: readonly TagDefinition[] | undefined): string[] {
+    if (!tagDefs || tagDefs.length === 0) return [...tagNames];
+    const indexMap = new Map(tagDefs.map((def, i) => [def.name, i]));
+    return [...tagNames].sort((a, b) => {
+        const ai = indexMap.get(a) ?? Infinity;
+        const bi = indexMap.get(b) ?? Infinity;
+        return ai - bi;
+    });
+}
+
 interface TagPillProps {
     name: string;
     color: string;

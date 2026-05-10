@@ -123,6 +123,8 @@ const fmApi: FmBridge = {
     remove: name => ipcRenderer.invoke('fm:tags:remove', name) as Promise<TagDefinition[]>,
     rename: (oldName, newName) =>
       ipcRenderer.invoke('fm:tags:rename', oldName, newName) as Promise<TagDefinition[]>,
+    reorder: ordered =>
+      ipcRenderer.invoke('fm:tags:reorder', ordered) as Promise<TagDefinition[]>,
   },
   sync: {
     getDevice: () => ipcRenderer.invoke('fm:sync:getDevice') as Promise<DeviceRegistry>,

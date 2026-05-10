@@ -152,6 +152,7 @@ export interface FmTagsBridge {
   upsert(tag: TagDefinition): Promise<TagDefinition[]>;
   remove(name: string): Promise<TagDefinition[]>;
   rename(oldName: string, newName: string): Promise<TagDefinition[]>;
+  reorder(ordered: TagDefinition[]): Promise<TagDefinition[]>;
 }
 
 export interface ManualProjectInput {

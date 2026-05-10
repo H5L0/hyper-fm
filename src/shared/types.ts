@@ -6,9 +6,11 @@
 export const CONFIG_SCHEMA_VERSION = 2;
 export const META_FILE_NAME = '.meta-data';
 export const META_SCHEMA = 'fm.meta/v1';
-export const DEFAULT_CONFIG_DIRECTORYNAME = '.local';
 export const DEFAULT_SHARED_CONFIG_FILENAME = 'fm.shared.json';
 export const DEFAULT_LOCAL_CONFIG_FILENAME = 'fm.local.json';
+export const DEFAULT_APP_CONFIG_FILENAME = '.fm.app.json';
+
+export const TEST_CONFIG_DIRECTORYNAME = '.test';
 
 // ---------------------------------------------------------------------------
 // 配置实体

@@ -235,6 +235,7 @@ interface AppActions {
   upsertTag(tag: TagDefinition): Promise<void>;
   removeTag(name: string): Promise<void>;
   renameTag(oldName: string, newName: string): Promise<void>;
+  moveTagToFront(name: string): Promise<void>;
   upsertTagGroup(group: TagGroupDefinition, previousName?: string): Promise<void>;
   removeTagGroup(name: string): Promise<void>;
   toast(level: 'info' | 'success' | 'error', text: string): void;
@@ -667,6 +668,20 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [handleError, reloadCurrent]);
 
+  const moveTagToFront = useCallback(async (name: string) => {
+    try {
+      const tags = stateRef.current.config.tags ?? [];
+      const target = tags.find(t => t.name === name);
+      if (!target) return;
+      const reordered = [target, ...tags.filter(t => t.name !== name)];
+      const nextTags = await window.fm.tags.reorder(reordered);
+      const next: AppConfig = { ...stateRef.current.config, tags: nextTags };
+      dispatch({ type: 'config', config: next });
+    } catch (error) {
+      handleError(error, '移动标签失败');
+    }
+  }, [handleError]);
+
   const upsertTagGroup = useCallback(async (group: TagGroupDefinition, previousName?: string) => {
     try {
       const normalizedName = group.name.trim();
@@ -792,6 +807,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       upsertTag,
       removeTag,
       renameTag,
+      moveTagToFront,
       upsertTagGroup,
       removeTagGroup,
       toast,
@@ -815,6 +831,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       removeTag,
       removeTagGroup,
       renameTag,
+      moveTagToFront,
       revealProject,
       runScanAll,
       runScanOne,

@@ -1083,6 +1083,10 @@ export function ensureBrowserBridge(): void {
                 updateConfig({ ...browserState.snapshot.data, tags, tagGroups, projects });
                 return clone(tags);
             },
+            reorder: async (ordered: TagDefinition[]) => {
+                updateConfig({ ...browserState.snapshot.data, tags: ordered });
+                return clone(ordered);
+            },
         },
         sync: {
             getDevice: async (): Promise<DeviceRegistry> => clone(browserState.snapshot.data.devices ?? {

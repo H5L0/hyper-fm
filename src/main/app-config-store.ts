@@ -2,7 +2,8 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { normalizePath } from '../shared/path-utils.js';
-import type { AppPreferences } from '../shared/types.js';
+import { DEFAULT_APP_CONFIG_FILENAME, DEFAULT_SHARED_CONFIG_FILENAME, TEST_CONFIG_DIRECTORYNAME, type AppPreferences } from '../shared/types.js';
+import { app } from 'electron';
 
 export const APP_CONFIG_PREF_KEYS = {
     appPreferences: 'appPreferences',
@@ -167,7 +168,10 @@ export function resolveAppConfigFilePath(homeDir = os.homedir()): string {
     if (!normalizedHomeDir) {
         throw new Error('用户目录不能为空');
     }
-    return normalizePath(path.resolve(normalizedHomeDir, '.fm.json'));
+    if (!app.isPackaged) {
+        return normalizePath(path.resolve(normalizedHomeDir, `.test${DEFAULT_APP_CONFIG_FILENAME}`));
+    }
+    return normalizePath(path.resolve(normalizedHomeDir, DEFAULT_APP_CONFIG_FILENAME));
 }
 
 export function createAppConfigStore(options: AppConfigStoreOptions = {}): AppConfigStore {
@@ -292,6 +296,13 @@ export async function resolveStartupSharedConfigPath(
     defaultSharedPath: string,
     exists: (filePath: string) => Promise<boolean> = pathExists,
 ): Promise<string | null> {
+    if (!app.isPackaged) {
+        const devSharedPath = normalizePath(path.resolve(process.cwd(), TEST_CONFIG_DIRECTORYNAME, DEFAULT_SHARED_CONFIG_FILENAME));
+        if (await pathExists(devSharedPath)) {
+            return devSharedPath;
+        }
+    }
+
     // 1. 通过 lastSharedConfigId + knownConfigs 查找
     const configId = await loadLastSharedConfigId(store);
     if (configId) {

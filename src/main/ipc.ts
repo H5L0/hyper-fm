@@ -15,6 +15,7 @@ import {
   type ProjectDirectoryInspection,
   type Project,
   type ProjectMetaPatch,
+  type TagDefinition,
   type ScanReport,
   type SyncConfig,
   type SyncPlanApplyRequest,
@@ -807,6 +808,19 @@ function registerTagHandlers(): void {
           }
         }
         return { nextShared: { ...shared, tags, tagGroups, projects }, result: tags };
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:tags:reorder',
+    wrap('fm:tags:reorder', async (_e, ordered: unknown) => {
+      if (!Array.isArray(ordered)) {
+        throw new FmError('CONFIG_INVALID', 'ordered 必须为数组');
+      }
+      return mutate(({ shared }) => {
+        const nextShared = { ...shared, tags: ordered as TagDefinition[] };
+        return { nextShared, result: nextShared.tags! };
       });
     }),
   );
