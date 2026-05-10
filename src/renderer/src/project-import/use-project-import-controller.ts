@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
     ManualProjectInput,
     ManualProjectValidationResult,
@@ -27,11 +27,13 @@ export function useProjectImportController() {
     const actions = useAppActions();
 
     const [addOpen, setAddOpen] = useState(false);
+    const [mode, setMode] = useState<'new' | 'import'>('new');
     const [form, setForm] = useState<ProjectFormValue>(createEmptyProjectForm());
     const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
     const [validation, setValidation] = useState<ManualProjectValidationResult>({ valid: false, conflicts: [] });
     const [draftSyncRules, setDraftSyncRules] = useState<Partial<Record<string, SyncProjectRule>>>({});
     const [busy, setBusy] = useState(false);
+    const pathBaseRef = useRef<{ basePath: string } | null>(null);
 
     const [batchOpen, setBatchOpen] = useState(false);
     const [batchItems, setBatchItems] = useState<BatchImportItem[]>([]);
@@ -107,11 +109,22 @@ export function useProjectImportController() {
         void validate();
     }, [addOpen, form]);
 
+    useEffect(() => {
+        if (!addOpen || !pathBaseRef.current) return;
+        const name = form.name.trim();
+        if (!name) return;
+        const basePath = pathBaseRef.current.basePath;
+        const newPath = `${basePath}/${name}`;
+        setForm(prev => (prev.path === newPath ? prev : { ...prev, path: newPath }));
+    }, [addOpen, form.name]);
+
     const openAddProject = async () => {
         setForm(createEmptyProjectForm());
         setInspection(null);
         setValidation({ valid: false, conflicts: [] });
         setDraftSyncRules({});
+        setMode('import');
+        pathBaseRef.current = null;
         const dir = await actions.pickProjectDirectory();
         if (!dir) return;
         const next = await inspectAndSync(dir, true, []);
@@ -127,6 +140,7 @@ export function useProjectImportController() {
     const browseProjectDir = async () => {
         const dir = await actions.pickProjectDirectory();
         if (!dir) return;
+        pathBaseRef.current = null;
         const next = await inspectAndSync(dir, true);
         await validate({ path: next.path, name: next.suggestedName, ignore: form.ignore });
     };
@@ -141,6 +155,32 @@ export function useProjectImportController() {
             setInspection(null);
             setValidation({ valid: false, conflicts: [] });
         }
+    };
+
+    const openNewProject = () => {
+        setForm(createEmptyProjectForm());
+        setInspection(null);
+        setValidation({ valid: false, conflicts: [] });
+        setDraftSyncRules({});
+        setMode('new');
+        pathBaseRef.current = null;
+        setAddOpen(true);
+    };
+
+    const browseParentDir = async () => {
+        const dir = await actions.pickProjectDirectory();
+        if (!dir) return;
+        const basePath = dir.replace(/\/+$/, '');
+        pathBaseRef.current = { basePath };
+        const name = form.name.trim();
+        setForm(prev => ({ ...prev, path: name ? `${basePath}/${name}` : basePath }));
+    };
+
+    const setPathFromScanRoot = (rootPath: string) => {
+        const basePath = rootPath.replace(/\/+$/, '');
+        pathBaseRef.current = { basePath };
+        const name = form.name.trim();
+        setForm(prev => ({ ...prev, path: name ? `${basePath}/${name}` : basePath }));
     };
 
     const closeAddProject = () => {
@@ -327,6 +367,7 @@ export function useProjectImportController() {
     return {
         addProject: {
             isOpen: addOpen,
+            mode,
             form,
             inspection,
             validation,
@@ -336,7 +377,10 @@ export function useProjectImportController() {
             setForm,
             close: closeAddProject,
             open: openAddProject,
+            openNew: openNewProject,
             browsePath: browseProjectDir,
+            browseParentPath: browseParentDir,
+            setPathFromScanRoot,
             commitPath: commitProjectPath,
             submit: submitProject,
             setSyncRule: (configId: string, rule: SyncProjectRule) => {

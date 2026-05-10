@@ -22,6 +22,11 @@ interface SessionState {
 
 let state: SessionState | null = null;
 let writeChain: Promise<void> = Promise.resolve();
+let onConfigChanged: (() => void) | null = null;
+
+export function setOnConfigChanged(listener: (() => void) | null): void {
+    onConfigChanged = listener;
+}
 
 function buildState(snapshot: ConfigSnapshot, shared: SharedConfig, local: LocalConfig): SessionState {
     return {
@@ -131,6 +136,7 @@ export function mutate<T>(
             local: nextLocal,
             config: nextConfig,
         };
+        onConfigChanged?.();
         return out.result;
     };
 

@@ -13,6 +13,7 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
+import { toast as sonnerToast } from 'sonner';
 import type {
   AppPreferences,
   AppConfig,
@@ -62,12 +63,6 @@ export type TagFilter =
 export type View = 'grid' | 'list';
 export type Route = 'browse' | 'scan-settings' | 'sync-settings' | 'settings' | 'warnings';
 
-export interface ToastMessage {
-  id: string;
-  level: 'info' | 'success' | 'error';
-  text: string;
-}
-
 export interface AppState {
   ready: boolean;
   hasLoadedConfig: boolean;
@@ -81,7 +76,7 @@ export interface AppState {
   route: Route;
   selectedProjectId?: string;
   scanProgress?: ScanProgressEvent & { running: boolean };
-  toasts: ToastMessage[];
+  pendingNewProject: number;
 }
 
 const INITIAL_STATE: AppState = {
@@ -111,7 +106,7 @@ const INITIAL_STATE: AppState = {
   search: '',
   view: 'grid',
   route: 'browse',
-  toasts: [],
+  pendingNewProject: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -133,8 +128,7 @@ type Action =
   | { type: 'route'; value: Route }
   | { type: 'select'; id?: string }
   | { type: 'progress'; value?: ScanProgressEvent & { running: boolean } }
-  | { type: 'toast:push'; toast: ToastMessage }
-  | { type: 'toast:pop'; id: string };
+  | { type: 'triggerNewProject' };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -198,10 +192,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, selectedProjectId: action.id };
     case 'progress':
       return { ...state, scanProgress: action.value };
-    case 'toast:push':
-      return { ...state, toasts: [...state.toasts, action.toast] };
-    case 'toast:pop':
-      return { ...state, toasts: state.toasts.filter(t => t.id !== action.id) };
+    case 'triggerNewProject':
+      return { ...state, route: 'browse', pendingNewProject: state.pendingNewProject + 1 };
     default:
       return state;
   }
@@ -245,8 +237,8 @@ interface AppActions {
   renameTag(oldName: string, newName: string): Promise<void>;
   upsertTagGroup(group: TagGroupDefinition, previousName?: string): Promise<void>;
   removeTagGroup(name: string): Promise<void>;
-  toast(level: ToastMessage['level'], text: string): void;
-  dismissToast(id: string): void;
+  toast(level: 'info' | 'success' | 'error', text: string): void;
+  triggerNewProject(): void;
 }
 
 const StateContext = createContext<AppState | undefined>(undefined);
@@ -261,14 +253,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const toast = useCallback((level: ToastMessage['level'], text: string) => {
-    const id = `toast_${Math.random().toString(36).slice(2, 8)}`;
-    dispatch({ type: 'toast:push', toast: { id, level, text } });
-    setTimeout(() => dispatch({ type: 'toast:pop', id }), level === 'error' ? 6000 : 3500);
-  }, []);
-
-  const dismissToast = useCallback((id: string) => {
-    dispatch({ type: 'toast:pop', id });
+  const toast = useCallback((level: 'info' | 'success' | 'error', text: string) => {
+    sonnerToast[level](text);
   }, []);
 
   const handleError = useCallback(
@@ -425,42 +411,46 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const runScanAll = useCallback(async () => {
+    const toastId = sonnerToast.loading('扫描中…');
+    dispatch({
+      type: 'progress',
+      value: { rootId: '', scanned: 0, found: 0, running: true },
+    });
     try {
-      dispatch({
-        type: 'progress',
-        value: { rootId: '', scanned: 0, found: 0, running: true },
-      });
       const reports = await window.fm.scan.runAll();
       const total = reports.reduce(
         (acc, r) => ({ matched: acc.matched + r.matched, updated: acc.updated + r.updated, warnings: acc.warnings + r.warnings }),
         { matched: 0, updated: 0, warnings: 0 },
       );
-      await reloadCurrent();
-      toast('success', `扫描完成：匹配 ${total.matched}，更新 ${total.updated}${total.warnings > 0 ? `，告警 ${total.warnings}` : ''}`);
-    } catch (error) {
-      handleError(error, '扫描失败');
-    } finally {
       dispatch({ type: 'progress', value: undefined });
+      await reloadCurrent();
+      sonnerToast.success(`扫描完成：匹配 ${total.matched}，更新 ${total.updated}${total.warnings > 0 ? `，告警 ${total.warnings}` : ''}`, { id: toastId });
+    } catch (error) {
+      dispatch({ type: 'progress', value: undefined });
+      console.error(error);
+      sonnerToast.error(error instanceof Error ? error.message : '扫描失败', { id: toastId });
     }
-  }, [handleError, reloadCurrent, toast]);
+  }, [reloadCurrent]);
 
   const runScanOne = useCallback(
     async (rootId: string) => {
+      const toastId = sonnerToast.loading('扫描中…');
+      dispatch({
+        type: 'progress',
+        value: { rootId, scanned: 0, found: 0, running: true },
+      });
       try {
-        dispatch({
-          type: 'progress',
-          value: { rootId, scanned: 0, found: 0, running: true },
-        });
         const report = await window.fm.scan.runOne(rootId);
-        await reloadCurrent();
-        toast('success', `扫描完成：匹配 ${report.matched}，更新 ${report.updated}${report.warnings > 0 ? `，告警 ${report.warnings}` : ''}`);
-      } catch (error) {
-        handleError(error, '扫描失败');
-      } finally {
         dispatch({ type: 'progress', value: undefined });
+        await reloadCurrent();
+        sonnerToast.success(`扫描完成：匹配 ${report.matched}，更新 ${report.updated}${report.warnings > 0 ? `，告警 ${report.warnings}` : ''}`, { id: toastId });
+      } catch (error) {
+        dispatch({ type: 'progress', value: undefined });
+        console.error(error);
+        sonnerToast.error(error instanceof Error ? error.message : '扫描失败', { id: toastId });
       }
     },
-    [handleError, reloadCurrent, toast],
+    [reloadCurrent],
   );
 
   const ignorePathAction = useCallback(
@@ -750,6 +740,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return off;
   }, []);
 
+  // 托盘新建项目事件订阅
+  useEffect(() => {
+    const off = window.fm.app.onOpenNewProject(() => {
+      dispatch({ type: 'triggerNewProject' });
+    });
+    return off;
+  }, []);
+
   useEffect(() => {
     if (!state.ready || state.config.projects.length === 0) return undefined;
     void refreshProjectRuntimeInfo(undefined, true);
@@ -797,12 +795,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       upsertTagGroup,
       removeTagGroup,
       toast,
-      dismissToast,
+      triggerNewProject: () => dispatch({ type: 'triggerNewProject' }),
     }),
     [
       addProjectAction,
       addScanRootAction,
-      dismissToast,
       loadConfig,
       pickAndCreateConfig,
       pickAndLoadConfig,

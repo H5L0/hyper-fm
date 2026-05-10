@@ -112,6 +112,7 @@ export interface FmConfigBridge {
 export interface FmAppBridge {
   getPreferences(): Promise<AppPreferences>;
   updatePreferences(patch: Partial<AppPreferences>): Promise<AppPreferences>;
+  onOpenNewProject(handler: () => void): () => void;
 }
 
 export interface FmScanRootsBridge {

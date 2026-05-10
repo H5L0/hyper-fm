@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import path from 'node:path';
+import { mkdir } from 'node:fs/promises';
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import { createLogger } from '../shared/logger.js';
 import {
@@ -47,7 +48,7 @@ import {
   updateScanRoot,
 } from './project-repo.js';
 import { listProjectRuntimeInfo } from './project-runtime.js';
-import { switchConfigFile, getSnapshot, mutate, requireSession } from './session.js';
+import { switchConfigFile, getSnapshot, mutate, requireSession, setOnConfigChanged } from './session.js';
 import {
   createConfig as createConfigFile,
   createLocalConfigForShared,
@@ -187,6 +188,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
   const appConfigStore = options.appConfigStore
     ?? createAppConfigStore({ filePath: resolveAppConfigFilePath(app.getPath('home')) });
   const onConfigChanged = options.onConfigChanged;
+  setOnConfigChanged(onConfigChanged ?? null);
 
   // ── 兼容原模板 ──
   ipcMain.handle(
@@ -580,6 +582,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
         if (!validation.valid) {
           throw new FmError('FINGERPRINT_CONFLICT', '项目存在冲突，无法添加', validation.conflicts);
         }
+        await mkdir(i.path, { recursive: true });
         const inspection = await inspectProjectDirectory(i.path, {
           globalIgnore: requireSession().config.ignore.globs,
           projectIgnore: normalizeIgnoreInput(i.ignore),

@@ -51,6 +51,7 @@ export interface TrayController {
 interface TrayControllerOptions {
     showMainWindow(): BrowserWindow;
     requestQuit(): void;
+    openNewProject(): void;
 }
 
 function buildProjectCommandDescriptors(customCommands: readonly CustomCommand[]): TrayProjectCommandDescriptor[] {
@@ -245,6 +246,12 @@ export function createTrayController(options: TrayControllerOptions): TrayContro
                 label: '显示主窗口',
                 click: () => {
                     options.showMainWindow();
+                },
+            },
+            {
+                label: '新建项目',
+                click: () => {
+                    options.openNewProject();
                 },
             },
             { type: 'separator' },

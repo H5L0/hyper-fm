@@ -1,4 +1,4 @@
-import type { ProjectDirectoryEntry, ProjectDirectoryInspection, ProjectFingerprint, TagDefinition } from '@shared/bridge.js';
+import type { ProjectDirectoryEntry, ProjectDirectoryInspection, ProjectFingerprint, ScanRoot, TagDefinition } from '@shared/bridge.js';
 import { FileTreeView } from '@/components/basic/file-tree';
 import { TagSelector } from '@/components/basic/tag-selector';
 import { EditDialogShell } from '@/components/ui/edit-dialog-shell';
@@ -6,8 +6,8 @@ import { SegmentedToggleGroup } from '@/components/ui/segmented-toggle-group';
 import { cn } from '@/lib/utils';
 import { useAppActions } from '@/store/app-store';
 import { META_FILE_NAME } from '@shared/types';
-import { FileCode2, FolderOpen, Files, FileMinus, Search, X } from 'lucide-react';
-import { ReactNode, useState, useMemo } from 'react';
+import { ChevronDown, FileCode2, FolderOpen, Files, FileMinus, FolderPlus, FolderTree, Search, X } from 'lucide-react';
+import { ReactNode, useState, useMemo, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { filterTree } from './project-files-view';
 
@@ -42,6 +42,10 @@ export function ProjectInfoForm({
     tagSelectorMode = 'editable',
     onPickPath,
     onPathCommit,
+    onPickParentPath,
+    onSetPathFromScanRoot,
+    scanRoots,
+    mode = 'import',
     onAddTag,
     onRemoveTag,
 }: {
@@ -57,6 +61,10 @@ export function ProjectInfoForm({
     tagSelectorMode?: TagSelectorMode;
     onPickPath?: () => void;
     onPathCommit?: () => void;
+    onPickParentPath?: () => void;
+    onSetPathFromScanRoot?: (rootPath: string) => void;
+    scanRoots?: readonly ScanRoot[];
+    mode?: 'new' | 'import';
     onAddTag: (tag: string) => void;
     onRemoveTag: (tag: string) => void;
 }) {
@@ -70,16 +78,24 @@ export function ProjectInfoForm({
                             disabled={!pathEditable}
                             onChange={event => onFormChange({ ...form, path: event.target.value })}
                             onBlur={() => onPathCommit?.()}
-                            placeholder="选择或粘贴项目目录"
+                            placeholder={mode === 'new' ? '输入路径或通过右侧菜单选择' : '选择或粘贴项目目录'}
                             className={cn(
                                 'h-9 flex-1 rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
                                 !pathEditable && 'cursor-default bg-muted/40 text-muted-foreground',
                             )}
                         />
-                        {pathEditable && onPickPath ? (
+                        {pathEditable && onPickPath && mode === 'import' ? (
                             <Button size="default" variant="outline" onClick={onPickPath}>
                                 浏览…
                             </Button>
+                        ) : null}
+                        {pathEditable && mode === 'new' ? (
+                            <PathMenuButton
+                                scanRoots={scanRoots}
+                                onPickPath={onPickPath}
+                                onPickParentPath={onPickParentPath}
+                                onSetPathFromScanRoot={onSetPathFromScanRoot}
+                            />
                         ) : null}
                     </div>
                     {pathHint ? <div className="mt-2">{pathHint}</div> : null}
@@ -136,6 +152,102 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
         <div>
             <label className="mb-2 block text-subheading text-muted-foreground">{label}</label>
             {children}
+        </div>
+    );
+}
+
+function PathMenuButton({
+    scanRoots,
+    onPickPath,
+    onPickParentPath,
+    onSetPathFromScanRoot,
+}: {
+    scanRoots?: readonly ScanRoot[];
+    onPickPath?: () => void;
+    onPickParentPath?: () => void;
+    onSetPathFromScanRoot?: (rootPath: string) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const onDown = (event: MouseEvent) => {
+            if (ref.current && !ref.current.contains(event.target as Node)) {
+                setOpen(false);
+            }
+        };
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setOpen(false);
+        };
+        window.addEventListener('mousedown', onDown, true);
+        window.addEventListener('keydown', onKey);
+        return () => {
+            window.removeEventListener('mousedown', onDown, true);
+            window.removeEventListener('keydown', onKey);
+        };
+    }, [open]);
+
+    const hasScanRoots = scanRoots && scanRoots.length > 0 && onSetPathFromScanRoot;
+    const hasActions = onPickPath || onPickParentPath;
+
+    return (
+        <div ref={ref} className="relative shrink-0">
+            <Button
+                size="default"
+                variant="outline"
+                onClick={() => setOpen(v => !v)}
+                aria-label="选择路径"
+            >
+                <ChevronDown className="size-3.5" />
+            </Button>
+            {open ? (
+                <div className="absolute right-0 top-full z-50 mt-1 min-w-52 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-md">
+                    {hasScanRoots
+                        ? scanRoots!.map(root => (
+                            <button
+                                key={root.id}
+                                type="button"
+                                onClick={() => {
+                                    onSetPathFromScanRoot!(root.path);
+                                    setOpen(false);
+                                }}
+                                className="flex w-full items-center px-3 py-2 text-left text-body text-foreground transition-colors hover:bg-muted"
+                            >
+                                <FolderTree className="mr-2 size-3.5 text-muted-foreground" />
+                                {root.label || root.path}
+                            </button>
+                        ))
+                        : null}
+                    {hasScanRoots && hasActions ? <div className="my-1 border-t border-border" /> : null}
+                    {onPickPath ? (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                onPickPath();
+                                setOpen(false);
+                            }}
+                            className="flex w-full items-center px-3 py-2 text-left text-body text-foreground transition-colors hover:bg-muted"
+                        >
+                            <FolderPlus className="mr-2 size-3.5 text-muted-foreground" />
+                            选择项目目录
+                        </button>
+                    ) : null}
+                    {onPickParentPath ? (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                onPickParentPath();
+                                setOpen(false);
+                            }}
+                            className="flex w-full items-center px-3 py-2 text-left text-body text-foreground transition-colors hover:bg-muted"
+                        >
+                            <FolderTree className="mr-2 size-3.5 text-muted-foreground" />
+                            选择项目父目录
+                        </button>
+                    ) : null}
+                </div>
+            ) : null}
         </div>
     );
 }
@@ -388,6 +500,10 @@ export function ProjectDetailsView({
     tagSelectorMode = 'editable',
     onPickPath,
     onPathCommit,
+    onPickParentPath,
+    onSetPathFromScanRoot,
+    scanRoots,
+    mode,
     onAddTag,
     onRemoveTag,
 }: {
@@ -401,6 +517,10 @@ export function ProjectDetailsView({
     tagSelectorMode?: TagSelectorMode;
     onPickPath?: () => void;
     onPathCommit?: () => void;
+    onPickParentPath?: () => void;
+    onSetPathFromScanRoot?: (rootPath: string) => void;
+    scanRoots?: readonly ScanRoot[];
+    mode?: 'new' | 'import';
     onAddTag: (tag: string) => void;
     onRemoveTag: (tag: string) => void;
 }) {
@@ -416,6 +536,10 @@ export function ProjectDetailsView({
             tagSelectorMode={tagSelectorMode}
             onPickPath={onPickPath}
             onPathCommit={onPathCommit}
+            onPickParentPath={onPickParentPath}
+            onSetPathFromScanRoot={onSetPathFromScanRoot}
+            scanRoots={scanRoots}
+            mode={mode}
             onAddTag={onAddTag}
             onRemoveTag={onRemoveTag}
         />

@@ -163,6 +163,10 @@ async function bootstrap(): Promise<void> {
       isQuitting = true;
       app.quit();
     },
+    openNewProject: () => {
+      const win = showMainWindow(preloadPath);
+      win.webContents.send('fm:open-new-project-dialog');
+    },
   });
   await trayController.applyPreferences(currentAppPreferences);
   showMainWindow(preloadPath);

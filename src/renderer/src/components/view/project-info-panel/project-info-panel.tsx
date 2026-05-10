@@ -7,6 +7,7 @@ import type {
     Project,
     ProjectDirectoryInspection,
     ProjectMetaPatch,
+    ScanRoot,
     SyncConfig,
     SyncProjectRule,
     TagDefinition,
@@ -140,6 +141,7 @@ function updateSyncRuleOverrides(
 
 export function AddProjectInfoPanel({
     open,
+    mode,
     form,
     onFormChange,
     tagDefs,
@@ -154,11 +156,15 @@ export function AddProjectInfoPanel({
     onSubmit,
     onPickPath,
     onPathCommit,
+    onPickParentPath,
+    onSetPathFromScanRoot,
+    scanRoots,
     onSyncRuleChange,
     onAddTag,
     onRemoveTag,
 }: {
     open: boolean;
+    mode: 'new' | 'import';
     form: ProjectFormValue;
     onFormChange: (next: ProjectFormValue) => void;
     tagDefs: readonly TagDefinition[] | undefined;
@@ -173,6 +179,9 @@ export function AddProjectInfoPanel({
     onSubmit: () => void;
     onPickPath: () => void;
     onPathCommit: () => void;
+    onPickParentPath?: () => void;
+    onSetPathFromScanRoot?: (rootPath: string) => void;
+    scanRoots?: ScanRoot[];
     onSyncRuleChange: (configId: string, rule: SyncProjectRule) => void;
     onAddTag: (tag: string) => void;
     onRemoveTag: (tag: string) => void;
@@ -216,7 +225,7 @@ export function AddProjectInfoPanel({
 
     return (
         <DrawerPanelShell
-            title="添加项目"
+            title={mode === 'new' ? '新建项目' : '导入项目'}
             headerTabs={PROJECT_INFO_PANEL_VIEWS}
             activeTabId={activeView}
             onTabChange={tabId => setActiveView(tabId as ProjectInfoPanelViewId)}
@@ -266,8 +275,13 @@ export function AddProjectInfoPanel({
                     pathEditable
                     pathHint={renderInspectionHint(inspection)}
                     validation={renderAddProjectValidation(validation, hasEmptyFileFingerprint(form))}
+                    tagSelectorMode="alwaysEdit"
                     onPickPath={onPickPath}
                     onPathCommit={onPathCommit}
+                    onPickParentPath={onPickParentPath}
+                    onSetPathFromScanRoot={onSetPathFromScanRoot}
+                    scanRoots={scanRoots}
+                    mode={mode}
                     onAddTag={onAddTag}
                     onRemoveTag={onRemoveTag}
                 />

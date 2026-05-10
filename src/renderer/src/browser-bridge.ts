@@ -867,6 +867,9 @@ export function ensureBrowserBridge(): void {
                 };
                 return clone(browserState.appPreferences);
             },
+            onOpenNewProject: (_handler: () => void) => {
+                return () => {};
+            },
         },
         config: {
             current: async () => getSnapshot(),

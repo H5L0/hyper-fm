@@ -9,7 +9,7 @@ import { TitleBar } from './view/title-bar.js';
 import { Toolbar } from './view/toolbar.js';
 import { ProjectBrowserView } from './view/project-browser-view.js';
 import { ProjectInfoPanel } from './view/project-info-panel/project-info-panel.js';
-import { Toaster } from './view/toaster.js';
+import { Toaster } from './ui/sonner.js';
 import { ThemeEffect } from './theme-effect.js';
 import { WarningsPanel } from './view/warnings-panel.js';
 import { WelcomeScreen } from './view/welcome-screen.js';

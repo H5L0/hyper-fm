@@ -58,6 +58,13 @@ const fmApi: FmBridge = {
   app: {
     getPreferences: () => ipcRenderer.invoke('fm:app:getPreferences') as Promise<AppPreferences>,
     updatePreferences: patch => ipcRenderer.invoke('fm:app:updatePreferences', patch) as Promise<AppPreferences>,
+    onOpenNewProject: handler => {
+      const listener = () => handler();
+      ipcRenderer.on('fm:open-new-project-dialog', listener);
+      return () => {
+        ipcRenderer.off('fm:open-new-project-dialog', listener);
+      };
+    },
   },
   config: {
     current: () => ipcRenderer.invoke('fm:config:current') as Promise<ConfigSnapshot>,
