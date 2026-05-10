@@ -6,7 +6,8 @@ import type { AppPreferences } from '../shared/types.js';
 
 export const APP_CONFIG_PREF_KEYS = {
     appPreferences: 'appPreferences',
-    lastSharedConfigPath: 'lastSharedConfigPath',
+    lastSharedConfigId: 'lastSharedConfigId',
+    knownConfigs: 'knownConfigs',
 } as const;
 
 export const DEFAULT_APP_PREFERENCES: AppPreferences = {
@@ -235,15 +236,47 @@ export async function saveAppPreferences(
     return normalizedValue;
 }
 
-export async function loadLastSharedConfigPath(store: AppConfigStore): Promise<string | null> {
-    const value = await store.getString(APP_CONFIG_PREF_KEYS.lastSharedConfigPath);
+// ---- configId → sharedPath 映射 (knownConfigs) ----
+
+export async function loadKnownConfigs(store: AppConfigStore): Promise<Record<string, string>> {
+    const value = await store.getJson<Record<string, string>>(APP_CONFIG_PREF_KEYS.knownConfigs);
+    if (!value || typeof value !== 'object') return {};
+    const clean: Record<string, string> = {};
+    for (const [k, v] of Object.entries(value)) {
+        if (k.trim() && typeof v === 'string' && v.trim()) {
+            clean[k.trim()] = v.trim();
+        }
+    }
+    return clean;
+}
+
+export async function addKnownConfig(store: AppConfigStore, configId: string, sharedPath: string): Promise<void> {
+    const known = await loadKnownConfigs(store);
+    known[configId] = normalizeStoredPath(sharedPath);
+    await store.setJson(APP_CONFIG_PREF_KEYS.knownConfigs, known);
+}
+
+// ---- lastSharedConfigId ----
+
+export async function loadLastSharedConfigId(store: AppConfigStore): Promise<string | null> {
+    const value = await store.getString(APP_CONFIG_PREF_KEYS.lastSharedConfigId);
+    const normalizedValue = typeof value === 'string' ? value.trim() : '';
+    return normalizedValue || null;
+}
+
+export async function saveLastSharedConfigId(store: AppConfigStore, configId: string): Promise<void> {
+    await store.setString(APP_CONFIG_PREF_KEYS.lastSharedConfigId, configId.trim());
+}
+
+// ---- 兼容旧版 lastSharedConfigPath ----
+
+async function tryLoadLegacyLastSharedConfigPath(store: AppConfigStore): Promise<string | null> {
+    const value = await store.getString('lastSharedConfigPath');
     const normalizedValue = typeof value === 'string' ? value.trim() : '';
     return normalizedValue ? normalizeStoredPath(normalizedValue) : null;
 }
 
-export async function saveLastSharedConfigPath(store: AppConfigStore, sharedConfigPath: string): Promise<void> {
-    await store.setString(APP_CONFIG_PREF_KEYS.lastSharedConfigPath, normalizeStoredPath(sharedConfigPath));
-}
+// ---- 启动路径解析 ----
 
 export async function pathExists(filePath: string): Promise<boolean> {
     try {
@@ -259,11 +292,24 @@ export async function resolveStartupSharedConfigPath(
     defaultSharedPath: string,
     exists: (filePath: string) => Promise<boolean> = pathExists,
 ): Promise<string | null> {
-    const recentSharedPath = await loadLastSharedConfigPath(store);
-    if (recentSharedPath && await exists(recentSharedPath)) {
-        return recentSharedPath;
+    // 1. 通过 lastSharedConfigId + knownConfigs 查找
+    const configId = await loadLastSharedConfigId(store);
+    if (configId) {
+        const knownConfigs = await loadKnownConfigs(store);
+        const knownPath = knownConfigs[configId];
+        if (knownPath && await exists(knownPath)) {
+            return knownPath;
+        }
+        // configId 存在但路径映射丢失，无法恢复
     }
 
+    // 2. 兼容旧版 lastSharedConfigPath
+    const legacyPath = await tryLoadLegacyLastSharedConfigPath(store);
+    if (legacyPath && await exists(legacyPath)) {
+        return legacyPath;
+    }
+
+    // 3. 默认路径
     const normalizedDefaultSharedPath = normalizeStoredPath(defaultSharedPath);
     return await exists(normalizedDefaultSharedPath) ? normalizedDefaultSharedPath : null;
 }

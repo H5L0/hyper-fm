@@ -5,7 +5,7 @@
 
 import { composeAppConfig, createDefaultConfig, mergeAppConfigIntoLocal, mergeAppConfigIntoShared } from '../shared/schema.js';
 import { createLogger } from '../shared/logger.js';
-import type { AppConfig, ConfigSnapshot, LocalConfig, SharedConfig } from '../shared/types.js';
+import type { AppConfig, ConfigPaths, ConfigSnapshot, LocalConfig, SharedConfig } from '../shared/types.js';
 import { loadConfig, loadLocalConfig, loadOrInitConfig, loadSharedConfig, saveConfig } from './config-store.js';
 import { FmError } from './fm-error.js';
 
@@ -14,6 +14,7 @@ const logger = createLogger('main:session');
 interface SessionState {
     sharedPath: string;
     localPath: string;
+    configId: string;
     shared: SharedConfig;
     local: LocalConfig;
     config: AppConfig;
@@ -26,6 +27,7 @@ function buildState(snapshot: ConfigSnapshot, shared: SharedConfig, local: Local
     return {
         sharedPath: snapshot.paths.sharedPath,
         localPath: snapshot.paths.localPath,
+        configId: snapshot.paths.configId,
         shared,
         local,
         config: snapshot.data,
@@ -59,18 +61,26 @@ export function requireSession(): SessionState {
     return state;
 }
 
-export function getSnapshot(): ConfigSnapshot {
+function getPaths(): ConfigPaths {
     const s = state;
-    if (!s) {
+    return {
+        sharedPath: s?.sharedPath ?? '',
+        localPath: s?.localPath ?? '',
+        configId: s?.configId ?? '',
+    };
+}
+
+export function getSnapshot(): ConfigSnapshot {
+    if (!state) {
         return {
-            paths: { sharedPath: '', localPath: '' },
+            paths: { sharedPath: '', localPath: '', configId: '' },
             data: createDefaultConfig(),
             hasLoadedConfig: false,
         };
     }
     return {
-        paths: { sharedPath: s.sharedPath, localPath: s.localPath },
-        data: s.config,
+        paths: getPaths(),
+        data: state.config,
         hasLoadedConfig: true,
     };
 }
@@ -107,20 +117,16 @@ export function mutate<T>(
         let nextLocal = out.nextLocal ?? session.local;
         if (out.nextConfig) {
             nextShared = mergeAppConfigIntoShared(nextShared, out.nextConfig);
-            nextLocal = mergeAppConfigIntoLocal(out.nextConfig, session.sharedPath);
+            nextLocal = mergeAppConfigIntoLocal(out.nextConfig, nextShared);
         }
-        nextLocal = { ...nextLocal, sharedConfigPath: session.sharedPath };
         const nextConfig = composeAppConfig(nextShared, nextLocal);
 
-        await saveConfig(
-            { sharedPath: session.sharedPath, localPath: session.localPath },
-            nextShared,
-            nextLocal,
-        );
+        await saveConfig(getPaths(), nextShared, nextLocal);
 
         state = {
             sharedPath: session.sharedPath,
             localPath: session.localPath,
+            configId: session.configId,
             shared: nextShared,
             local: nextLocal,
             config: nextConfig,

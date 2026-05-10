@@ -5,7 +5,7 @@ import type { AppPreferences } from '../shared/types.js';
 import { createLogger } from '../shared/logger.js';
 import { registerIpcHandlers } from './ipc.js';
 import { initSession } from './session.js';
-import { resolveDefaultConfigPaths } from './config-store.js';
+import { resolveDefaultSharedConfigPath } from './config-store.js';
 import {
   createAppConfigStore,
   DEFAULT_APP_PREFERENCES,
@@ -13,7 +13,8 @@ import {
   pathExists,
   resolveAppConfigFilePath,
   resolveStartupSharedConfigPath,
-  saveLastSharedConfigPath,
+  saveLastSharedConfigId,
+  addKnownConfig,
 } from './app-config-store.js';
 import { syncLoginItemSettings } from './login-item.js';
 import { disposeAutoSyncSchedules, refreshAutoSyncSchedules } from './sync/auto-sync.js';
@@ -32,6 +33,7 @@ let isQuitting = false;
 let currentAppPreferences: AppPreferences = DEFAULT_APP_PREFERENCES;
 
 function createWindow(preloadPath: string): BrowserWindow {
+  const iconPath = path.resolve(app.getAppPath(), 'assets', 'icons', 'icon.ico');
   const window = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -39,6 +41,7 @@ function createWindow(preloadPath: string): BrowserWindow {
     minHeight: 540,
     backgroundColor: '#fafafa',
     autoHideMenuBar: true,
+    icon: iconPath,
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -86,7 +89,8 @@ async function initializeConfigSession(
 
   try {
     const snapshot = await initSession(startupSharedPath);
-    await saveLastSharedConfigPath(appConfigStore, snapshot.paths.sharedPath);
+    await saveLastSharedConfigId(appConfigStore, snapshot.paths.configId);
+    await addKnownConfig(appConfigStore, snapshot.paths.configId, snapshot.paths.sharedPath);
     refreshAutoSyncSchedules();
   } catch (error) {
     if (startupSharedPath !== defaultSharedPath) {
@@ -97,7 +101,8 @@ async function initializeConfigSession(
       });
       if (await pathExists(defaultSharedPath)) {
         const snapshot = await initSession(defaultSharedPath);
-        await saveLastSharedConfigPath(appConfigStore, snapshot.paths.sharedPath);
+        await saveLastSharedConfigId(appConfigStore, snapshot.paths.configId);
+        await addKnownConfig(appConfigStore, snapshot.paths.configId, snapshot.paths.sharedPath);
         refreshAutoSyncSchedules();
       }
       return;
@@ -144,9 +149,9 @@ async function bootstrap(): Promise<void> {
   currentAppPreferences = await loadAppPreferences(appConfigStore);
   syncLoginItemSettings(app, currentAppPreferences);
 
-  const defaultPaths = resolveDefaultConfigPaths(defaultConfigDir());
+  const defaultSharedPath = resolveDefaultSharedConfigPath(defaultConfigDir());
   try {
-    await initializeConfigSession(appConfigStore, defaultPaths.sharedPath);
+    await initializeConfigSession(appConfigStore, defaultSharedPath);
   } catch (error) {
     logger.error('初始化配置失败', error);
   }
@@ -167,6 +172,9 @@ async function bootstrap(): Promise<void> {
       currentAppPreferences = preferences;
       syncLoginItemSettings(app, preferences);
       void trayController?.applyPreferences(preferences);
+    },
+    onConfigChanged: () => {
+      trayController?.refreshContextMenu();
     },
   });
   logger.info('主进程初始化完成');

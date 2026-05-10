@@ -4,10 +4,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 import { createDefaultConfig } from '../../shared/schema.js';
 import { SYNC_SCHEMA, createDefaultSyncConfig, type SyncFileEntry, type SyncProjectEntry } from '../../shared/sync-types.js';
-import type { Project, ProjectSyncState } from '../../shared/types.js';
+import type { Project } from '../../shared/types.js';
+import type { SyncBaselineState } from './file-sync.js';
 import { normalizePath } from '../../shared/path-utils.js';
 import { publishToBundleDir, readBundleIndex, readProjectZip } from './dir-bundle.js';
-import { applySharedDirSync, buildProjectSyncPlan, previewFolderSync, previewSharedDirSync } from './file-sync.js';
+import { applySharedDirSync, buildProjectSyncPlan, previewFolderSync, previewSharedDirSync, syncBaselines } from './file-sync.js';
 import { buildProjectSnapshot } from './snapshot.js';
 import { packProjectZip, unpackProjectZip } from './zip-bundle.js';
 
@@ -34,7 +35,7 @@ function entry(id: string, files: SyncFileEntry[], hash = `hash-${id}`): SyncPro
     };
 }
 
-function baseline(path: string, sha1: string): ProjectSyncState {
+function baseline(path: string, sha1: string): SyncBaselineState {
     return {
         configId: 'sync-folder',
         lastSyncedAt: '2026-01-01T00:00:00Z',
@@ -65,10 +66,6 @@ function createProject(projectPath: string, overrides: Partial<Project> = {}): P
         rootId: '__manual__',
         hasMetaFile: false,
         lastScannedAt: '2026-01-01T00:00:00Z',
-        syncedAt: undefined,
-        syncedHash: undefined,
-        syncedFrom: undefined,
-        syncStates: undefined,
         name: 'Demo',
         description: 'demo project',
         tags: [],
@@ -274,14 +271,14 @@ describe('file-sync', () => {
             id: 'pj-abc123',
             projectId: 'pj-abc123',
             name: '演示项目',
-            syncStates: [{
-                configId: syncConfig.id,
-                lastSyncedAt: '2026-01-01T00:00:00.000Z',
-                baselineHash: 'hash-demo',
-                baselineFiles: [],
-                targetPath: `${targetDir}/[pj-abc123]演示项目/demo`,
-            }],
         })];
+        syncBaselines.set(`pj-abc123\x00${syncConfig.id}`, {
+            configId: syncConfig.id,
+            lastSyncedAt: '2026-01-01T00:00:00.000Z',
+            baselineHash: 'hash-demo',
+            baselineFiles: [],
+            targetPath: `${targetDir}/[pj-abc123]演示项目/demo`,
+        });
 
         const preview = await previewFolderSync(config, syncConfig, ['pj-abc123']);
         expect(preview.projects[0]?.targetPath).toBe(`${targetDir}/[pj-abc123]演示项目/demo`);
@@ -331,15 +328,13 @@ describe('file-sync', () => {
 
         const project = createProject(localProjectDir);
         const { config, syncConfig } = createSharedDirContext(project, bundleDir);
-        const { result, nextConfig } = await applySharedDirSync(config, syncConfig);
+        const { result } = await applySharedDirSync(config, syncConfig);
 
         expect(result.projects).toHaveLength(1);
         expect(result.projects[0]!.applied.create).toBe(2);
         expect(await fs.readFile(path.join(localProjectDir, 'README.md'), 'utf-8')).toBe('from remote');
 
-        const updatedProject = nextConfig.projects[0]!;
-        expect(updatedProject.syncedFrom).toBe('dev-remote');
-        const syncState = updatedProject.syncStates?.find(item => item.configId === syncConfig.id);
+        const syncState = syncBaselines.get(`pj-demo\x00${syncConfig.id}`);
         expect(syncState?.targetPath).toContain(`${normalizePath(bundleDir)}/devices/dev-remote/projects/`);
         expect(syncState?.baselineFiles).toEqual(expect.arrayContaining([
             expect.objectContaining({ path: 'README.md' }),
@@ -366,8 +361,7 @@ describe('file-sync', () => {
         expect(result.projects[0]!.applied.create).toBe(2);
         expect(nextConfig.devices?.selfId).toBeTruthy();
 
-        const updatedProject = nextConfig.projects[0]!;
-        const syncState = updatedProject.syncStates?.find(item => item.configId === syncConfig.id);
+        const syncState = syncBaselines.get(`pj-demo\x00${syncConfig.id}`);
         expect(syncState?.targetPath).toContain(normalizePath(bundleDir));
         expect(syncState?.baselineFiles).toEqual(expect.arrayContaining([
             expect.objectContaining({ path: 'README.md' }),
@@ -398,16 +392,14 @@ describe('file-sync', () => {
         const remoteEntry = await publishRemoteProject(bundleDir, remoteProjectDir);
 
         const baselineFile = remoteEntry.files.find(item => item.path === 'README.md');
-        const project: Project = {
-            ...createProject(localProjectDir),
-            syncStates: [{
-                configId: 'sync-shared',
-                lastSyncedAt: '2026-01-01T00:00:00Z',
-                baselineHash: remoteEntry.hash,
-                baselineFiles: baselineFile ? [{ path: baselineFile.path, sha1: baselineFile.sha1 }] : [],
-                targetPath: `${normalizePath(bundleDir)}/devices/dev-remote/projects/${remoteEntry.slug}`,
-            }],
-        };
+        const project: Project = createProject(localProjectDir);
+        syncBaselines.set(`pj-demo\x00sync-shared`, {
+            configId: 'sync-shared',
+            lastSyncedAt: '2026-01-01T00:00:00Z',
+            baselineHash: remoteEntry.hash,
+            baselineFiles: baselineFile ? [{ path: baselineFile.path, sha1: baselineFile.sha1 }] : [],
+            targetPath: `${normalizePath(bundleDir)}/devices/dev-remote/projects/${remoteEntry.slug}`,
+        });
 
         const { config, syncConfig } = createSharedDirContext(project, bundleDir);
         const { result, nextConfig } = await applySharedDirSync(config, syncConfig, undefined, {
@@ -441,16 +433,14 @@ describe('file-sync', () => {
         await writeProjectFiles(remoteProjectDir, { 'README.md': 'remote change\n' });
         const remoteEntry = await publishRemoteProject(bundleDir, remoteProjectDir);
 
-        const project: Project = {
-            ...createProject(localProjectDir),
-            syncStates: [{
-                configId: 'sync-shared',
-                lastSyncedAt: '2026-01-01T00:00:00Z',
-                baselineHash: 'baseline-hash',
-                baselineFiles: [{ path: 'README.md', sha1: 'baseline-sha' }],
-                targetPath: `${normalizePath(bundleDir)}/devices/dev-remote/projects/${remoteEntry.slug}`,
-            }],
-        };
+        const project: Project = createProject(localProjectDir);
+        syncBaselines.set(`pj-demo\x00sync-shared`, {
+            configId: 'sync-shared',
+            lastSyncedAt: '2026-01-01T00:00:00Z',
+            baselineHash: 'baseline-hash',
+            baselineFiles: [{ path: 'README.md', sha1: 'baseline-sha' }],
+            targetPath: `${normalizePath(bundleDir)}/devices/dev-remote/projects/${remoteEntry.slug}`,
+        });
 
         const { config, syncConfig } = createSharedDirContext(project, bundleDir);
         const { result } = await applySharedDirSync(config, syncConfig, undefined, {

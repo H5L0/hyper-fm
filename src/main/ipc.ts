@@ -49,7 +49,6 @@ import {
 import { listProjectRuntimeInfo } from './project-runtime.js';
 import { switchConfigFile, getSnapshot, mutate, requireSession } from './session.js';
 import {
-  createConfigInDirectory,
   createConfig as createConfigFile,
   createLocalConfigForShared,
   inspectOpenConfig,
@@ -59,7 +58,8 @@ import {
   loadAppPreferences,
   resolveAppConfigFilePath,
   saveAppPreferences,
-  saveLastSharedConfigPath,
+  saveLastSharedConfigId,
+  addKnownConfig,
   type AppConfigStore,
 } from './app-config-store.js';
 import { scanRoot } from './scanner.js';
@@ -164,9 +164,10 @@ function senderWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender);
 }
 
-async function rememberRecentConfig(store: AppConfigStore, sharedPath: string): Promise<void> {
+async function rememberRecentConfig(store: AppConfigStore, sharedPath: string, configId: string): Promise<void> {
   try {
-    await saveLastSharedConfigPath(store, sharedPath);
+    await saveLastSharedConfigId(store, configId);
+    await addKnownConfig(store, configId, sharedPath);
   } catch (error) {
     logger.warn('记录最近打开的配置失败', { sharedPath, error });
   }
@@ -175,6 +176,7 @@ async function rememberRecentConfig(store: AppConfigStore, sharedPath: string): 
 export interface RegisterIpcHandlersOptions {
   appConfigStore?: AppConfigStore;
   onAppPreferencesChanged?: (preferences: import('../shared/types.js').AppPreferences) => void;
+  onConfigChanged?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +186,7 @@ export interface RegisterIpcHandlersOptions {
 export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): void {
   const appConfigStore = options.appConfigStore
     ?? createAppConfigStore({ filePath: resolveAppConfigFilePath(app.getPath('home')) });
+  const onConfigChanged = options.onConfigChanged;
 
   // ── 兼容原模板 ──
   ipcMain.handle(
@@ -241,8 +244,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
     wrap('fm:config:load', async (_e, filePath: unknown): Promise<ConfigSnapshot> => {
       assertString(filePath, 'filePath');
       const snapshot = await switchConfigFile(filePath);
-      await rememberRecentConfig(appConfigStore, snapshot.paths.sharedPath);
+      await rememberRecentConfig(appConfigStore, snapshot.paths.sharedPath, snapshot.paths.configId);
       refreshAutoSyncSchedules();
+      onConfigChanged?.();
       return snapshot;
     }),
   );
@@ -253,20 +257,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
       assertString(filePath, 'filePath');
       const snapshot = await createConfigFile(filePath);
       const next = await switchConfigFile(snapshot.paths.sharedPath);
-      await rememberRecentConfig(appConfigStore, next.paths.sharedPath);
+      await rememberRecentConfig(appConfigStore, next.paths.sharedPath, next.paths.configId);
       refreshAutoSyncSchedules();
-      return next;
-    }),
-  );
-
-  ipcMain.handle(
-    'fm:config:createInDirectory',
-    wrap('fm:config:createInDirectory', async (_e, directoryPath: unknown): Promise<ConfigSnapshot> => {
-      assertString(directoryPath, 'directoryPath');
-      const snapshot = await createConfigInDirectory(directoryPath);
-      const next = await switchConfigFile(snapshot.paths.sharedPath);
-      await rememberRecentConfig(appConfigStore, next.paths.sharedPath);
-      refreshAutoSyncSchedules();
+      onConfigChanged?.();
       return next;
     }),
   );
@@ -277,8 +270,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
       assertString(sharedPath, 'sharedPath');
       const snapshot = await createLocalConfigForShared(sharedPath);
       const next = await switchConfigFile(snapshot.paths.sharedPath);
-      await rememberRecentConfig(appConfigStore, next.paths.sharedPath);
+      await rememberRecentConfig(appConfigStore, next.paths.sharedPath, next.paths.configId);
       refreshAutoSyncSchedules();
+      onConfigChanged?.();
       return next;
     }),
   );
@@ -289,6 +283,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
       const config = data as AppConfig;
       await mutate(() => ({ nextConfig: config, result: undefined as void }));
       refreshAutoSyncSchedules();
+      onConfigChanged?.();
     }),
   );
 
@@ -308,46 +303,32 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
           ? await dialog.showOpenDialog(window, {
             title: '选择配置文件',
             defaultPath,
-            filters: [{ name: 'fm 配置', extensions: ['json'] }],
+            filters: [{ name: 'fm 共享配置', extensions: ['shared.json'] }],
             properties: ['openFile'],
           })
           : await dialog.showOpenDialog({
             title: '选择配置文件',
             defaultPath,
-            filters: [{ name: 'fm 配置', extensions: ['json'] }],
+            filters: [{ name: 'fm 共享配置', extensions: ['shared.json'] }],
             properties: ['openFile'],
           });
         return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]!;
       }
+      const saveDefaultPath = defaultPath
+        ? path.join(path.dirname(defaultPath), 'fm.shared.json')
+        : path.join(process.cwd(), 'fm.shared.json');
       const res = window
         ? await dialog.showSaveDialog(window, {
-          title: '新建配置文件',
-          defaultPath,
-          filters: [{ name: 'fm 配置', extensions: ['json'] }],
+          title: '新建共享配置',
+          defaultPath: saveDefaultPath,
+          filters: [{ name: 'fm 共享配置', extensions: ['shared.json'] }],
         })
         : await dialog.showSaveDialog({
-          title: '新建配置文件',
-          defaultPath,
-          filters: [{ name: 'fm 配置', extensions: ['json'] }],
+          title: '新建共享配置',
+          defaultPath: saveDefaultPath,
+          filters: [{ name: 'fm 共享配置', extensions: ['shared.json'] }],
         });
       return res.canceled || !res.filePath ? null : res.filePath;
-    }),
-  );
-
-  ipcMain.handle(
-    'fm:config:pickDirectory',
-    wrap('fm:config:pickDirectory', async (event): Promise<string | null> => {
-      const window = senderWindow(event);
-      const res = window
-        ? await dialog.showOpenDialog(window, {
-          title: '选择配置目录',
-          properties: ['openDirectory', 'createDirectory'],
-        })
-        : await dialog.showOpenDialog({
-          title: '选择配置目录',
-          properties: ['openDirectory', 'createDirectory'],
-        });
-      return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]!;
     }),
   );
 

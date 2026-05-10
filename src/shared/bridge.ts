@@ -104,11 +104,9 @@ export interface FmConfigBridge {
   inspectOpen(filePath: string): Promise<ConfigOpenInspection>;
   load(filePath: string): Promise<ConfigSnapshot>;
   create(filePath: string): Promise<ConfigSnapshot>;
-  createInDirectory(directoryPath: string): Promise<ConfigSnapshot>;
   createLocalForShared(sharedPath: string): Promise<ConfigSnapshot>;
   save(data: AppConfig): Promise<void>;
   pick(mode: 'open' | 'save'): Promise<string | null>;
-  pickDirectory(): Promise<string | null>;
 }
 
 export interface FmAppBridge {

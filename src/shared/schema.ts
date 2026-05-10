@@ -3,6 +3,7 @@
 // 纯函数；可在 main / renderer 共用
 // ---------------------------------------------------------------------------
 
+import { generateId, ID_PREFIX } from './id.js';
 import {
     type AppConfig,
     type FingerprintConflictWarning,
@@ -13,13 +14,11 @@ import {
     type MetaFile,
     type Project,
     type ProjectBinding,
-    type ProjectSyncState,
     type ProjectFingerprint,
     type ScanRoot,
     type ScanWarning,
     type SharedConfig,
     type SharedProject,
-    type SyncBaselineFile,
     type SyncConflictWarning,
     type SyncErrorWarning,
     type TagDefinition,
@@ -32,6 +31,10 @@ import {
     type DeviceRegistry,
     type KnownDevice,
     type LegacySyncSettings,
+    type LocalSyncConfigEntry,
+    type LocalSyncConfigOverride,
+    type LocalSyncConfigStandalone,
+    SYNC_FIELD_CONTRACTS,
     type SyncConfig,
     type SyncConfigScope,
     type SyncNetworkSettings,
@@ -63,6 +66,7 @@ export function createDefaultUi(): UiPreferences {
 export function createDefaultSharedConfig(meta?: { name?: string; description?: string }): SharedConfig {
     return {
         version: CONFIG_SCHEMA_VERSION,
+        configId: generateId(ID_PREFIX.config),
         name: meta?.name?.trim() || 'fm',
         description: meta?.description?.trim() || undefined,
         ignore: createDefaultIgnore(),
@@ -71,10 +75,10 @@ export function createDefaultSharedConfig(meta?: { name?: string; description?: 
     };
 }
 
-export function createDefaultLocalConfig(sharedConfigPath = ''): LocalConfig {
+export function createDefaultLocalConfig(sharedConfigId = ''): LocalConfig {
     return {
         version: CONFIG_SCHEMA_VERSION,
-        sharedConfigPath,
+        sharedConfigId,
         scanRoots: [],
         bindings: [],
         ui: createDefaultUi(),
@@ -218,14 +222,12 @@ function validateProjectBinding(value: unknown, idx: number, errors: ValidationE
         return null;
     }
     if (!isString(value.projectId)) pushError(errors, `${base}.projectId`, '缺少 projectId');
-    if (!isString(value.id)) pushError(errors, `${base}.id`, '缺少 id');
     if (!isString(value.path)) pushError(errors, `${base}.path`, '缺少 path');
     if (!isString(value.rootId)) pushError(errors, `${base}.rootId`, '缺少 rootId');
     if (typeof value.hasMetaFile !== 'boolean') pushError(errors, `${base}.hasMetaFile`, '必须为布尔');
     if (!isString(value.lastScannedAt)) pushError(errors, `${base}.lastScannedAt`, '缺少 lastScannedAt');
     if (
         !isString(value.projectId) ||
-        !isString(value.id) ||
         !isString(value.path) ||
         !isString(value.rootId) ||
         typeof value.hasMetaFile !== 'boolean' ||
@@ -235,83 +237,11 @@ function validateProjectBinding(value: unknown, idx: number, errors: ValidationE
     }
     return {
         projectId: value.projectId,
-        id: value.id,
         path: value.path,
         rootId: value.rootId,
         hasMetaFile: value.hasMetaFile,
         lastScannedAt: value.lastScannedAt,
-        syncedAt: isString(value.syncedAt) ? value.syncedAt : undefined,
-        syncedHash: isString(value.syncedHash) ? value.syncedHash : undefined,
-        syncedFrom: isString(value.syncedFrom) ? value.syncedFrom : undefined,
-        syncStates: validateProjectSyncStates(value.syncStates, `${base}.syncStates`, errors),
     };
-}
-
-function validateSyncBaselineFile(
-    value: unknown,
-    base: string,
-    errors: ValidationError[],
-): SyncBaselineFile | null {
-    if (!isObject(value)) {
-        pushError(errors, base, '必须为对象');
-        return null;
-    }
-    if (!isString(value.path)) pushError(errors, `${base}.path`, '缺少 path');
-    if (!isString(value.sha1)) pushError(errors, `${base}.sha1`, '缺少 sha1');
-    if (!isString(value.path) || !isString(value.sha1)) {
-        return null;
-    }
-    return {
-        path: value.path.replace(/\\/g, '/'),
-        sha1: value.sha1,
-    };
-}
-
-function validateProjectSyncState(
-    value: unknown,
-    base: string,
-    errors: ValidationError[],
-): ProjectSyncState | null {
-    if (!isObject(value)) {
-        pushError(errors, base, '必须为对象');
-        return null;
-    }
-    if (!isString(value.configId)) pushError(errors, `${base}.configId`, '缺少 configId');
-    if (!isString(value.lastSyncedAt)) pushError(errors, `${base}.lastSyncedAt`, '缺少 lastSyncedAt');
-    if (!isString(value.baselineHash)) pushError(errors, `${base}.baselineHash`, '缺少 baselineHash');
-    if (!Array.isArray(value.baselineFiles)) pushError(errors, `${base}.baselineFiles`, '必须为数组');
-    if (
-        !isString(value.configId) ||
-        !isString(value.lastSyncedAt) ||
-        !isString(value.baselineHash) ||
-        !Array.isArray(value.baselineFiles)
-    ) {
-        return null;
-    }
-    return {
-        configId: value.configId,
-        lastSyncedAt: value.lastSyncedAt,
-        baselineHash: value.baselineHash,
-        baselineFiles: value.baselineFiles
-            .map((item, index) => validateSyncBaselineFile(item, `${base}.baselineFiles[${index}]`, errors))
-            .filter((item): item is SyncBaselineFile => item !== null),
-        targetPath: isString(value.targetPath) ? value.targetPath : undefined,
-    };
-}
-
-function validateProjectSyncStates(
-    value: unknown,
-    base: string,
-    errors: ValidationError[],
-): ProjectSyncState[] | undefined {
-    if (value === undefined) return undefined;
-    if (!Array.isArray(value)) {
-        pushError(errors, base, '必须为数组');
-        return undefined;
-    }
-    return value
-        .map((item, index) => validateProjectSyncState(item, `${base}[${index}]`, errors))
-        .filter((item): item is ProjectSyncState => item !== null);
 }
 
 function validateScanWarning(value: unknown, idx: number, errors: ValidationError[]): ScanWarning | null {
@@ -599,6 +529,49 @@ function validateSyncConfigs(
         .filter((entry): entry is SyncConfig => entry !== null);
 }
 
+function validateLocalSyncConfigEntry(
+    value: unknown,
+    idx: number,
+    errors: ValidationError[],
+): LocalSyncConfigEntry | null {
+    const base = `syncConfigs[${idx}]`;
+    if (!isObject(value)) {
+        pushError(errors, base, '必须为对象');
+        return null;
+    }
+    if (value.kind === 'standalone') {
+        const config = validateSyncConfigEntry(value.config, 0, 'local', errors);
+        if (!config) return null;
+        const entry: LocalSyncConfigStandalone = { kind: 'standalone', config };
+        if (isString(value.lastSyncedAt)) entry.lastSyncedAt = value.lastSyncedAt;
+        if (isStringArray(value.lastSyncedProjectIds)) entry.lastSyncedProjectIds = normalizeStringList(value.lastSyncedProjectIds);
+        return entry;
+    }
+    if (!isString(value.configId) || !value.configId.trim()) {
+        pushError(errors, `${base}.configId`, '缺少 configId');
+        return null;
+    }
+    const entry: LocalSyncConfigOverride = {
+        kind: 'override',
+        configId: value.configId.trim(),
+    };
+    if (isObject(value.settings)) entry.settings = value.settings as Record<string, unknown>;
+    if (isString(value.lastSyncedAt)) entry.lastSyncedAt = value.lastSyncedAt;
+    if (isStringArray(value.lastSyncedProjectIds)) entry.lastSyncedProjectIds = normalizeStringList(value.lastSyncedProjectIds);
+    return entry;
+}
+
+function validateLocalSyncConfigs(value: unknown, errors: ValidationError[]): LocalSyncConfigEntry[] | undefined {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) {
+        pushError(errors, 'syncConfigs', '必须为数组');
+        return undefined;
+    }
+    return value
+        .map((entry, idx) => validateLocalSyncConfigEntry(entry, idx, errors))
+        .filter((entry): entry is LocalSyncConfigEntry => entry !== null);
+}
+
 function migrateLegacySyncSettings(value: unknown): SyncConfig[] | undefined {
     if (!isObject(value)) return undefined;
     const legacy = value as LegacySyncSettings;
@@ -749,6 +722,9 @@ export function validateSharedConfig(input: unknown): ValidationResult<SharedCon
     if (!isObject(input)) throw new Error('共享配置根必须为 JSON 对象');
     validateVersion(input);
     const errors: ValidationError[] = [];
+    const configId = isString(input.configId) && input.configId.trim()
+        ? input.configId.trim()
+        : generateId(ID_PREFIX.config);
     const ignore = validateIgnore(input.ignore, errors);
     const projects = (Array.isArray(input.projects) ? input.projects : [])
         .map((p, i) => validateSharedProject(p, i, errors))
@@ -758,6 +734,7 @@ export function validateSharedConfig(input: unknown): ValidationResult<SharedCon
     const syncConfigs = validateSyncConfigs(input.syncConfigs, 'shared', errors);
     const config: SharedConfig = {
         version: CONFIG_SCHEMA_VERSION,
+        configId,
         name: isString(input.name) && input.name.trim() ? input.name.trim() : 'fm',
         description: isString(input.description) && input.description.trim() ? input.description.trim() : undefined,
         ignore,
@@ -785,12 +762,21 @@ export function validateLocalConfig(input: unknown): ValidationResult<LocalConfi
     const ignoredPaths = isStringArray(input.ignoredPaths) ? normalizeStringList(input.ignoredPaths) : [];
     const ui = validateUi(input.ui, errors);
     const devices = validateDevices(input.devices, errors);
-    const syncConfigs = validateSyncConfigs(input.syncConfigs, 'local', errors)
-        ?? migrateLegacySyncSettings(input.sync);
+    const validatedSyncConfigs = validateLocalSyncConfigs(input.syncConfigs, errors);
+    let syncConfigs = validatedSyncConfigs;
+    if (!syncConfigs) {
+        const legacy = migrateLegacySyncSettings(input.sync);
+        if (legacy) {
+            syncConfigs = legacy.map(config => ({
+                kind: 'standalone' as const,
+                config: normalizeSyncConfig(config),
+            }));
+        }
+    }
     const commands = validateCommands(input.commands, errors);
     const config: LocalConfig = {
         version: CONFIG_SCHEMA_VERSION,
-        sharedConfigPath: isString(input.sharedConfigPath) ? input.sharedConfigPath : '',
+        sharedConfigId: isString(input.sharedConfigId) ? input.sharedConfigId : '',
         scanRoots,
         bindings,
         ui,
@@ -811,7 +797,6 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
     if (!isObject(input)) {
         throw new Error('配置文件根必须为 JSON 对象');
     }
-    const errors: ValidationError[] = [];
     const sharedInput = {
         version: input.version,
         name: input.name,
@@ -838,12 +823,11 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
     };
     const localInput = {
         version: input.version,
-        sharedConfigPath: undefined,
+        sharedConfigId: isString(input.sharedConfigId) ? input.sharedConfigId : '',
         scanRoots: input.scanRoots,
         bindings: Array.isArray(input.projects)
-            ? input.projects.map((project, index) => ({
+            ? input.projects.map(project => ({
                 projectId: isObject(project) && isString(project.id) ? project.id : '',
-                id: isObject(project) && isString(project.id) ? project.id : '',
                 path: isObject(project) && isString(project.path) ? project.path : '',
                 rootId: isObject(project) && isString(project.rootId) ? project.rootId : '',
                 hasMetaFile: isObject(project) && typeof project.hasMetaFile === 'boolean' ? project.hasMetaFile : false,
@@ -851,12 +835,6 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
                     isObject(project) && isString(project.lastScannedAt)
                         ? project.lastScannedAt
                         : new Date(0).toISOString(),
-                syncedAt: isObject(project) && isString(project.syncedAt) ? project.syncedAt : undefined,
-                syncedHash: isObject(project) && isString(project.syncedHash) ? project.syncedHash : undefined,
-                syncedFrom: isObject(project) && isString(project.syncedFrom) ? project.syncedFrom : undefined,
-                syncStates: isObject(project)
-                    ? validateProjectSyncStates(project.syncStates, `projects[${index}].syncStates`, errors)
-                    : undefined,
             }))
             : [],
         ui: input.ui,
@@ -864,7 +842,6 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
         ignoredPaths: input.ignoredPaths,
         devices: input.devices,
         syncConfigs: input.syncConfigs,
-        sync: input.sync,
         commands: input.commands,
     };
     const shared = validateSharedConfig(sharedInput);
@@ -879,6 +856,80 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
 // 合并 / 拆分
 // ---------------------------------------------------------------------------
 
+/**
+ * 根据 shared 同步配置和 local override/standalone 条目计算运行时有效配置列表。
+ */
+export function resolveEffectiveSyncConfigs(shared: SharedConfig, local: LocalConfig): SyncConfig[] {
+    const sharedConfigs = shared.syncConfigs ?? [];
+    const localEntries = local.syncConfigs ?? [];
+
+    const overrideByConfigId = new Map<string, LocalSyncConfigOverride>();
+    const standalones: SyncConfig[] = [];
+
+    for (const entry of localEntries) {
+        if (entry.kind === 'override') {
+            overrideByConfigId.set(entry.configId, entry);
+        } else if (entry.kind === 'standalone') {
+            standalones.push(normalizeSyncConfig(entry.config));
+        }
+    }
+
+    const merged = sharedConfigs.map(config => {
+        const override = overrideByConfigId.get(config.id);
+        if (override?.settings) {
+            return applySyncConfigOverride(config, override.settings);
+        }
+        return normalizeSyncConfig(config);
+    });
+
+    return [...merged, ...standalones];
+}
+
+function applySyncConfigOverride(config: SyncConfig, settings: Record<string, unknown>): SyncConfig {
+    const result = structuredClone(config) as unknown as Record<string, unknown>;
+    for (const [key, value] of Object.entries(settings)) {
+        const dot = key.indexOf('.');
+        if (dot === -1) continue;
+        const section = key.slice(0, dot);
+        const field = key.slice(dot + 1);
+        const sectionObj = result[section];
+        if (typeof sectionObj === 'object' && sectionObj !== null) {
+            (sectionObj as Record<string, unknown>)[field] = value;
+        }
+    }
+    return normalizeSyncConfig(result as unknown as SyncConfig);
+}
+
+/**
+ * 将有效配置与 shared 基线对比，提取需要写入 local override 的字段差异。
+ */
+function diffSyncConfigOverrides(shared: SyncConfig, effective: SyncConfig): Record<string, unknown> {
+    const diffs: Record<string, unknown> = {};
+    const contract = SYNC_FIELD_CONTRACTS[shared.type];
+    if (!contract) return diffs;
+
+    const sharedObj = shared as unknown as Record<string, unknown>;
+    const effectiveObj = effective as unknown as Record<string, unknown>;
+
+    for (const [key, mode] of Object.entries(contract)) {
+        if (mode === 'shared') continue;
+        const [section, field] = key.split('.');
+        const sharedSection = sharedObj[section!];
+        const effectiveSection = effectiveObj[section!];
+        const sv = typeof sharedSection === 'object' && sharedSection !== null
+            ? (sharedSection as Record<string, unknown>)[field!]
+            : undefined;
+        const ev = typeof effectiveSection === 'object' && effectiveSection !== null
+            ? (effectiveSection as Record<string, unknown>)[field!]
+            : undefined;
+        if (JSON.stringify(sv) !== JSON.stringify(ev)) {
+            diffs[key] = ev;
+        }
+    }
+
+    return diffs;
+}
+
 export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppConfig {
     const projectById = new Map(shared.projects.map(project => [project.id, project]));
     const projects: Project[] = [];
@@ -887,7 +938,7 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
         if (!sharedProject) continue;
         projects.push({
             ...binding,
-            id: sharedProject.id,
+            id: binding.projectId,
             name: sharedProject.name,
             description: sharedProject.description,
             tags: [...sharedProject.tags],
@@ -896,6 +947,7 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
             fingerprint: sharedProject.fingerprint,
         });
     }
+    const effectiveSyncConfigs = resolveEffectiveSyncConfigs(shared, local);
     return {
         version: CONFIG_SCHEMA_VERSION,
         name: shared.name,
@@ -916,14 +968,7 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
             }
             : {}),
         ...(local.devices ? { devices: local.devices } : {}),
-        ...((shared.syncConfigs?.length || local.syncConfigs?.length)
-            ? {
-                syncConfigs: [
-                    ...(shared.syncConfigs ?? []).map(normalizeSyncConfig),
-                    ...(local.syncConfigs ?? []).map(normalizeSyncConfig),
-                ],
-            }
-            : {}),
+        ...(effectiveSyncConfigs.length > 0 ? { syncConfigs: effectiveSyncConfigs } : {}),
         ...(local.commands ? { commands: local.commands } : {}),
     };
 }
@@ -984,40 +1029,44 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
     };
 }
 
-export function mergeAppConfigIntoLocal(appConfig: AppConfig, sharedConfigPath = ''): LocalConfig {
+export function mergeAppConfigIntoLocal(appConfig: AppConfig, shared: SharedConfig): LocalConfig {
+    const sharedSyncConfigs = shared.syncConfigs ?? [];
+    const sharedConfigMap = new Map(sharedSyncConfigs.map(c => [c.id, c]));
+    const localSyncConfigs: LocalSyncConfigEntry[] = [];
+    for (const config of (appConfig.syncConfigs ?? [])) {
+        if (config.scope === 'shared') {
+            const sharedConfig = sharedConfigMap.get(config.id);
+            const overrideSettings = sharedConfig
+                ? diffSyncConfigOverrides(sharedConfig, config)
+                : undefined;
+            localSyncConfigs.push({
+                kind: 'override',
+                configId: config.id,
+                ...(overrideSettings && Object.keys(overrideSettings).length > 0 ? { settings: overrideSettings } : {}),
+            });
+        } else {
+            localSyncConfigs.push({
+                kind: 'standalone',
+                config: normalizeSyncConfig(config),
+            });
+        }
+    }
     return {
         version: CONFIG_SCHEMA_VERSION,
-        sharedConfigPath,
+        sharedConfigId: shared.configId,
         scanRoots: [...appConfig.scanRoots],
         bindings: appConfig.projects.map(project => ({
             projectId: project.id,
-            id: project.id,
             path: project.path,
             rootId: project.rootId,
             hasMetaFile: project.hasMetaFile,
             lastScannedAt: project.lastScannedAt,
-            syncedAt: project.syncedAt,
-            syncedHash: project.syncedHash,
-            syncedFrom: project.syncedFrom,
-            syncStates: project.syncStates?.map(state => ({
-                configId: state.configId,
-                lastSyncedAt: state.lastSyncedAt,
-                baselineHash: state.baselineHash,
-                baselineFiles: state.baselineFiles.map(file => ({ path: file.path, sha1: file.sha1 })),
-                targetPath: state.targetPath,
-            })),
         })),
         ui: { ...appConfig.ui },
         warnings: [...appConfig.warnings],
         ignoredPaths: [...appConfig.ignoredPaths],
+        ...(localSyncConfigs.length > 0 ? { syncConfigs: localSyncConfigs } : {}),
         ...(appConfig.devices ? { devices: appConfig.devices } : {}),
-        ...(appConfig.syncConfigs
-            ? {
-                syncConfigs: appConfig.syncConfigs
-                    .filter(config => config.scope === 'local')
-                    .map(normalizeSyncConfig),
-            }
-            : {}),
         ...(appConfig.commands ? { commands: appConfig.commands } : {}),
     };
 }

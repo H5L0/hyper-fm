@@ -220,23 +220,21 @@ export function SettingsPanel() {
           />
         </SettingSection>
 
-        <SettingSection title="托盘">
-          <CheckboxField
-            checked={appPreferences.trayEnabled}
-            onCheckedChange={checked => void actions.saveAppPreferences({ trayEnabled: checked })}
-            label="关闭窗口后显示托盘"
-            className="items-center"
-          />
-        </SettingSection>
-
-        <SettingSection title="开机启动">
-          <CheckboxField
-            checked={appPreferences.autoLaunchEnabled}
-            onCheckedChange={checked => void actions.saveAppPreferences({ autoLaunchEnabled: checked })}
-            label="开机后自动启动 hyper-fm"
-            description="仅对打包后的桌面应用生效；开发模式不会注册系统启动项。"
-            className="items-center"
-          />
+        <SettingSection title="通用">
+          <div className="flex flex-col items-start gap-4 rounded-2xl border border-border bg-card px-4 py-4">
+            <CheckboxField
+              checked={appPreferences.autoLaunchEnabled}
+              onCheckedChange={checked => void actions.saveAppPreferences({ autoLaunchEnabled: checked })}
+              label="开机后自动启动 hyper-fm"
+              className="items-center"
+            />
+            <CheckboxField
+              checked={appPreferences.trayEnabled}
+              onCheckedChange={checked => void actions.saveAppPreferences({ trayEnabled: checked })}
+              label="关闭窗口后显示托盘"
+              className="items-center"
+            />
+          </div>
         </SettingSection>
 
         <CommandsSection />

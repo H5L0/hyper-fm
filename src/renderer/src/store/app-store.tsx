@@ -92,7 +92,7 @@ const INITIAL_STATE: AppState = {
     autoLaunchEnabled: false,
     ui: DEFAULT_UI_PREFERENCES,
   },
-  configPaths: { sharedPath: '', localPath: '' },
+  configPaths: { sharedPath: '', localPath: '', configId: '' },
   config: {
     version: 2,
     name: 'fm',
@@ -366,9 +366,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const pickAndCreateConfig = useCallback(async () => {
     try {
-      const directoryPath = await window.fm.config.pickDirectory();
-      if (directoryPath) {
-        const snapshot = await window.fm.config.createInDirectory(directoryPath);
+      const filePath = await window.fm.config.pick('save');
+      if (filePath) {
+        const snapshot = await window.fm.config.create(filePath);
         applySnapshot(snapshot);
         toast('success', '已创建新配置');
       }

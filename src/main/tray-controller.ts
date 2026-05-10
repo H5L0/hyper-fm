@@ -1,3 +1,4 @@
+import path from 'node:path';
 import fs from 'node:fs';
 import { Menu, Tray, app, nativeImage, type BrowserWindow, type MenuItemConstructorOptions } from 'electron';
 import {
@@ -41,6 +42,7 @@ export interface TraySyncActionDescriptor {
 
 export interface TrayController {
     applyPreferences(preferences: AppPreferences): Promise<void>;
+    refreshContextMenu(): void;
     handleWindowHidden(): void;
     hasTray(): boolean;
     destroy(): void;
@@ -78,19 +80,19 @@ export function listTrayProjectEntries(config: AppConfig): TrayProjectEntry[] {
             modifiedAt: readProjectDirectoryModifiedAt(project.path),
         }, favoriteGroup.tags))
         .map(project => ({
-        projectId: project.id,
-        label: project.name.trim() || project.path,
-        path: project.path,
-        commands: buildProjectCommandDescriptors(customCommands),
+            projectId: project.id,
+            label: project.name.trim() || project.path,
+            path: project.path,
+            commands: buildProjectCommandDescriptors(customCommands),
         }));
 }
 
 function readProjectDirectoryModifiedAt(projectPath: string): string | undefined {
-        try {
-                return fs.statSync(projectPath).mtime?.toISOString();
-        } catch {
-                return undefined;
-        }
+    try {
+        return fs.statSync(projectPath).mtime?.toISOString();
+    } catch {
+        return undefined;
+    }
 }
 
 export function listTraySyncActions(config: AppConfig): TraySyncActionDescriptor[] {
@@ -176,8 +178,14 @@ export function createTrayController(options: TrayControllerOptions): TrayContro
 
     async function resolveTrayIcon() {
         try {
-            const image = await app.getFileIcon(process.execPath, { size: 'small' });
-            return image.isEmpty() ? nativeImage.createEmpty() : image;
+            const iconPath = path.join(app.getAppPath(), 'assets', 'icons', 'icon.ico');
+            const image = nativeImage.createFromPath(iconPath);
+            if (image.isEmpty()) {
+                logger.warn('托盘图标为空，回退到应用图标');
+                const appIcon = await app.getFileIcon(process.execPath, { size: 'small' });
+                return appIcon.isEmpty() ? nativeImage.createEmpty() : appIcon;
+            }
+            return image;
         } catch (error) {
             logger.warn('读取托盘图标失败，回退到空图标', { error });
             return nativeImage.createEmpty();
@@ -292,12 +300,15 @@ export function createTrayController(options: TrayControllerOptions): TrayContro
             }
             disposeTray();
         },
+        refreshContextMenu: () => {
+            if (!tray) return;
+            tray.setContextMenu(buildContextMenu());
+        },
         handleWindowHidden: () => {
             if (!tray || hasShownHideHint) {
                 return;
             }
             hasShownHideHint = true;
-            // notify('hyper-fm 已最小化到托盘', '可通过托盘菜单打开项目、执行同步或重新显示主窗口。');
         },
         hasTray: () => tray !== null,
         destroy: () => {

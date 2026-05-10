@@ -662,6 +662,7 @@ const browserState: {
         paths: {
             sharedPath: 'browser://fm.shared.json',
             localPath: 'browser://fm.local.json',
+            configId: '',
         },
         data: createSampleConfig(),
         hasLoadedConfig: true,
@@ -880,6 +881,7 @@ export function ensureBrowserBridge(): void {
                 browserState.snapshot.paths = {
                     sharedPath: filePath.endsWith('.local.json') ? filePath.replace(/\.local\.json$/iu, '.shared.json') : filePath,
                     localPath: filePath.endsWith('.local.json') ? filePath : deriveLocalPath(filePath),
+                    configId: '',
                 };
                 browserState.snapshot.hasLoadedConfig = true;
                 return getSnapshot();
@@ -889,6 +891,7 @@ export function ensureBrowserBridge(): void {
                     paths: {
                         sharedPath: filePath,
                         localPath: deriveLocalPath(filePath),
+                        configId: '',
                     },
                     data: {
                         ...createSampleConfig(),
@@ -898,25 +901,11 @@ export function ensureBrowserBridge(): void {
                 };
                 return getSnapshot();
             },
-            createInDirectory: async (directoryPath: string) => {
-                const normalizedPath = normalizePath(directoryPath);
-                browserState.snapshot = {
-                    paths: {
-                        sharedPath: `${normalizedPath}/fm.shared.json`,
-                        localPath: `${normalizedPath}/fm.local.json`,
-                    },
-                    data: {
-                        ...createSampleConfig(),
-                        name: lastSegment(normalizedPath) || 'fm',
-                    },
-                    hasLoadedConfig: true,
-                };
-                return getSnapshot();
-            },
             createLocalForShared: async (sharedPath: string) => {
                 browserState.snapshot.paths = {
                     sharedPath,
                     localPath: deriveLocalPath(sharedPath),
+                    configId: '',
                 };
                 browserState.snapshot.hasLoadedConfig = true;
                 return getSnapshot();
@@ -925,7 +914,6 @@ export function ensureBrowserBridge(): void {
                 updateConfig(data);
             },
             pick: async () => null,
-            pickDirectory: async () => 'D:/configs',
         },
         scanRoots: {
             add: async input => {

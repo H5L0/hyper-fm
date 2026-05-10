@@ -5,14 +5,15 @@ import path from 'node:path';
 import {
     APP_CONFIG_PREF_KEYS,
     DEFAULT_APP_PREFERENCES,
+    addKnownConfig,
     createAppConfigStore,
     loadAppPreferences,
-    loadLastSharedConfigPath,
+    loadLastSharedConfigId,
     pathExists,
     resolveAppConfigFilePath,
     resolveStartupSharedConfigPath,
     saveAppPreferences,
-    saveLastSharedConfigPath,
+    saveLastSharedConfigId,
     type AppConfigStoreBackend,
 } from './app-config-store.js';
 
@@ -92,13 +93,21 @@ describe('app-config-store', () => {
         });
     });
 
-    test('[saveLastSharedConfigPath + loadLastSharedConfigPath] 应保存并读取最近一次 shared 配置路径', async () => {
+    test('[saveLastSharedConfigId + loadLastSharedConfigId] 应保存并读取 configId', async () => {
         const store = createAppConfigStore({ backend: createMemoryBackend() });
-        const dir = await tmpDir();
-        const sharedPath = path.join(dir, 'workspace.shared.json');
-        await saveLastSharedConfigPath(store, sharedPath);
-        expect(await loadLastSharedConfigPath(store)).toBe(sharedPath.replace(/\\/g, '/'));
-        expect(await store.getString(APP_CONFIG_PREF_KEYS.lastSharedConfigPath)).toBe(sharedPath.replace(/\\/g, '/'));
+        const configId = 'cfg_abc123';
+        await saveLastSharedConfigId(store, configId);
+        expect(await loadLastSharedConfigId(store)).toBe(configId);
+        expect(await store.getString(APP_CONFIG_PREF_KEYS.lastSharedConfigId)).toBe(configId);
+    });
+
+    test('[addKnownConfig] 应保存 configId → path 映射', async () => {
+        const store = createAppConfigStore({ backend: createMemoryBackend() });
+        const configId = 'cfg_xyz';
+        const sharedPath = 'D:/team/fm.shared.json';
+        await addKnownConfig(store, configId, sharedPath);
+        const known = await store.getJson<Record<string, string>>(APP_CONFIG_PREF_KEYS.knownConfigs);
+        expect(known?.[configId]).toBe(path.resolve(sharedPath).replace(/\\/g, '/'));
     });
 
     test('[resolveStartupSharedConfigPath] 无最近配置且默认配置不存在时应返回 null', async () => {
@@ -117,7 +126,7 @@ describe('app-config-store', () => {
         expect(await pathExists(defaultPath)).toBe(true);
     });
 
-    test('[resolveStartupSharedConfigPath] 最近配置存在时应优先返回最近配置', async () => {
+    test('[resolveStartupSharedConfigPath] 最近配置存在时应优先通过 knownConfigs 查找', async () => {
         const store = createAppConfigStore({ backend: createMemoryBackend() });
         const dir = await tmpDir();
         const recentPath = path.join(dir, 'recent.shared.json');
@@ -125,7 +134,9 @@ describe('app-config-store', () => {
         await fs.mkdir(path.dirname(defaultPath), { recursive: true });
         await fs.writeFile(recentPath, '{}');
         await fs.writeFile(defaultPath, '{}');
-        await saveLastSharedConfigPath(store, recentPath);
+        const configId = 'cfg_recent';
+        await saveLastSharedConfigId(store, configId);
+        await addKnownConfig(store, configId, recentPath);
         expect(await resolveStartupSharedConfigPath(store, defaultPath)).toBe(recentPath.replace(/\\/g, '/'));
     });
 });

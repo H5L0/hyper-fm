@@ -27,6 +27,7 @@ describe('tag-utils', () => {
   test('removeTagFromSharedConfig 应该移除项目和标签组中的标签引用', () => {
     const shared: SharedConfig = {
       version: 2,
+      configId: 'cfg-test',
       name: 'fm',
       ignore: { respectGitignore: true, globs: [] },
       tags: [

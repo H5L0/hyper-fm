@@ -75,8 +75,10 @@
     "directories": {
       "output": ".release"
     },
+    "icon": "assets/icons/icon",
     "files": [
       "dist/**/*",
+      "assets/icons/icon.ico",
       "package.json",
       "!dist/**/*.map"
     ],

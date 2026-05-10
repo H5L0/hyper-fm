@@ -64,11 +64,9 @@ const fmApi: FmBridge = {
     inspectOpen: filePath => ipcRenderer.invoke('fm:config:inspectOpen', filePath) as Promise<ConfigOpenInspection>,
     load: filePath => ipcRenderer.invoke('fm:config:load', filePath) as Promise<ConfigSnapshot>,
     create: filePath => ipcRenderer.invoke('fm:config:create', filePath) as Promise<ConfigSnapshot>,
-    createInDirectory: directoryPath => ipcRenderer.invoke('fm:config:createInDirectory', directoryPath) as Promise<ConfigSnapshot>,
     createLocalForShared: sharedPath => ipcRenderer.invoke('fm:config:createLocalForShared', sharedPath) as Promise<ConfigSnapshot>,
     save: data => ipcRenderer.invoke('fm:config:save', data) as Promise<void>,
     pick: mode => ipcRenderer.invoke('fm:config:pick', mode) as Promise<string | null>,
-    pickDirectory: () => ipcRenderer.invoke('fm:config:pickDirectory') as Promise<string | null>,
   },
   scanRoots: {
     add: input => ipcRenderer.invoke('fm:scanRoots:add', input) as Promise<ScanRoot>,

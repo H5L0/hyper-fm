@@ -28,4 +28,5 @@ export const ID_PREFIX = {
   device: 'dev',
   syncConfig: 'sync',
   command: 'cmd',
+  config: 'cfg',
 } as const;

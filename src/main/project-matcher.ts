@@ -183,7 +183,6 @@ function buildBinding(project: SharedProject, inspection: DirectoryInspection, r
     const now = new Date().toISOString();
     return {
         projectId: project.id,
-        id: project.id,
         path: inspection.path,
         rootId,
         hasMetaFile: inspection.hasMetaFile,

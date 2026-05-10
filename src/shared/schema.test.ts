@@ -49,7 +49,7 @@ describe('schema', () => {
     test('[validateLocalConfig] 缺失字段应回退默认值', () => {
         const { config, errors } = validateLocalConfig({});
         expect(config.version).toBe(CONFIG_SCHEMA_VERSION);
-        expect(config.sharedConfigPath).toBe('');
+        expect(config.sharedConfigId).toBe('');
         expect(config.scanRoots).toEqual([]);
         expect(config.bindings).toEqual([]);
         expect(config.ui.view).toBe('grid');
@@ -61,7 +61,6 @@ describe('schema', () => {
             bindings: [
                 {
                     projectId: 'pj-aaaaaa',
-                    id: 'pj-aaaaaa',
                     path: 'D:/projects/demo',
                     rootId: 'root_1',
                     hasMetaFile: false,
@@ -104,7 +103,6 @@ describe('schema', () => {
         const local = createDefaultLocalConfig();
         local.bindings.push({
             projectId: 'pj-aaaaaa',
-            id: 'pj-aaaaaa',
             path: 'D:/projects/game-a',
             rootId: 'root_1',
             hasMetaFile: true,
@@ -165,9 +163,17 @@ describe('schema', () => {
         });
         expect(errors).toEqual([]);
         expect(config.syncConfigs).toHaveLength(2);
-        expect(config.syncConfigs?.[0]?.type).toBe('shared-dir');
-        expect(config.syncConfigs?.[1]?.type).toBe('p2p');
-        expect(config.syncConfigs?.[1]?.scope).toBe('local');
+        const entry0 = config.syncConfigs?.[0];
+        const entry1 = config.syncConfigs?.[1];
+        expect(entry0?.kind).toBe('standalone');
+        expect(entry1?.kind).toBe('standalone');
+        if (entry0?.kind === 'standalone') {
+            expect(entry0.config.type).toBe('shared-dir');
+        }
+        if (entry1?.kind === 'standalone') {
+            expect(entry1.config.type).toBe('p2p');
+            expect(entry1.config.scope).toBe('local');
+        }
     });
 
     test('[composeAppConfig + mergeAppConfigIntoShared/Local] 应按 scope 拆分并合并 syncConfigs', () => {
@@ -185,11 +191,14 @@ describe('schema', () => {
         ];
         local.syncConfigs = [
             {
-                ...createDefaultSyncConfig('p2p', 'local'),
-                name: '本机 P2P',
-                network: {
-                    ...createDefaultSyncConfig('p2p', 'local').network,
-                    listenPort: 42555,
+                kind: 'standalone' as const,
+                config: {
+                    ...createDefaultSyncConfig('p2p', 'local'),
+                    name: '本机 P2P',
+                    network: {
+                        ...createDefaultSyncConfig('p2p', 'local').network,
+                        listenPort: 42555,
+                    },
                 },
             },
         ];
@@ -199,15 +208,22 @@ describe('schema', () => {
         expect(app.syncConfigs?.map(item => item.scope)).toEqual(['shared', 'local']);
 
         const nextShared = mergeAppConfigIntoShared(shared, app);
-        const nextLocal = mergeAppConfigIntoLocal(app, 'D:/cfg/fm.shared.json');
+        const nextLocal = mergeAppConfigIntoLocal(app, shared);
         expect(nextShared.syncConfigs).toHaveLength(1);
         expect(nextShared.syncConfigs?.[0]?.scope).toBe('shared');
         expect(nextShared.tagGroups).toEqual([
             { name: FAVORITE_TAG_GROUP_NAME, tags: [getDynamicTagDefinition('recent-month').label] },
             { name: '客户端', tags: ['electron', 'react'] },
         ]);
-        expect(nextLocal.syncConfigs).toHaveLength(1);
-        expect(nextLocal.syncConfigs?.[0]?.scope).toBe('local');
+        // shared-scope configs 转为 override 条目，local-scope 为 standalone
+        expect(nextLocal.syncConfigs).toHaveLength(2);
+        const overrideEntry = nextLocal.syncConfigs?.find(e => e.kind === 'override');
+        const standaloneEntry = nextLocal.syncConfigs?.find(e => e.kind === 'standalone');
+        expect(overrideEntry).toBeTruthy();
+        expect(standaloneEntry).toBeTruthy();
+        if (standaloneEntry?.kind === 'standalone') {
+            expect(standaloneEntry.config.scope).toBe('local');
+        }
     });
 
     test('[mergeAppConfigIntoLocal] 不应写入项目目录修改时间等运行时字段', () => {
@@ -220,10 +236,6 @@ describe('schema', () => {
                 rootId: 'root_1',
                 hasMetaFile: false,
                 lastScannedAt: '2026-01-01T00:00:00Z',
-                syncedAt: undefined,
-                syncedHash: undefined,
-                syncedFrom: undefined,
-                syncStates: undefined,
                 name: 'Demo',
                 tags: [],
                 ignore: [],
@@ -231,7 +243,8 @@ describe('schema', () => {
             },
         ];
 
-        const local = mergeAppConfigIntoLocal(app, 'D:/cfg/fm.shared.json');
+        const shared = createDefaultSharedConfig();
+        const local = mergeAppConfigIntoLocal(app, shared);
         expect(local.bindings[0]).not.toHaveProperty('lastModifiedAt');
     });
 });

@@ -10,10 +10,8 @@ import {
     type ConfigOpenInspection,
     type ConfigPaths,
     type ConfigSnapshot,
-    DEFAULT_CONFIG_DIRECTORYNAME,
     type LocalConfig,
     type SharedConfig,
-    DEFAULT_LOCAL_CONFIG_FILENAME,
     DEFAULT_SHARED_CONFIG_FILENAME,
 } from '../shared/types.js';
 import {
@@ -31,6 +29,17 @@ const logger = createLogger('main:config-store');
 // ---------------------------------------------------------------------------
 // 路径解析
 // ---------------------------------------------------------------------------
+
+const FM_CONFIG_DIR_NAME = '.fm';
+
+export function resolveLocalConfigDir(): string {
+    const home = process.env.USERPROFILE ?? process.env.HOME ?? process.env.HOMEPATH ?? '';
+    return normalizePath(path.resolve(home, FM_CONFIG_DIR_NAME));
+}
+
+export function resolveLocalConfigPath(configId: string): string {
+    return normalizePath(path.resolve(resolveLocalConfigDir(), `${configId}.local.json`));
+}
 
 function normalizeConfigFilePath(filePath: string): string {
     return normalizePath(path.resolve(filePath));
@@ -76,20 +85,37 @@ export function deriveSharedConfigPath(localConfigPath: string): string {
     return normalizePath(path.resolve(path.dirname(normalized), sharedName));
 }
 
-export function resolveDefaultConfigPaths(execDir: string): ConfigPaths {
-    const configDir = path.resolve(execDir, DEFAULT_CONFIG_DIRECTORYNAME);
-    return {
-        sharedPath: normalizePath(path.resolve(configDir, DEFAULT_SHARED_CONFIG_FILENAME)),
-        localPath: normalizePath(path.resolve(configDir, DEFAULT_LOCAL_CONFIG_FILENAME)),
-    };
+/** 返回 exe 同级目录下的默认 shared 配置路径（local 路径由 configId 派生）。 */
+export function resolveDefaultSharedConfigPath(execDir: string): string {
+    return normalizePath(path.resolve(execDir, DEFAULT_SHARED_CONFIG_FILENAME));
 }
 
-export function resolveConfigPathsInDirectory(directoryPath: string): ConfigPaths {
-    const normalizedDirectoryPath = normalizePath(path.resolve(directoryPath));
-    return {
-        sharedPath: normalizePath(path.resolve(normalizedDirectoryPath, DEFAULT_SHARED_CONFIG_FILENAME)),
-        localPath: normalizePath(path.resolve(normalizedDirectoryPath, DEFAULT_LOCAL_CONFIG_FILENAME)),
-    };
+// ---------------------------------------------------------------------------
+// 兼容迁移
+// ---------------------------------------------------------------------------
+
+/**
+ * 旧版 local 与 shared 放在同一目录。
+ * 如果旧位置存在且 ~/.fm/ 下还没有对应文件，则迁移。
+ */
+async function tryMigrateLocalConfig(oldLocalPath: string, configId: string): Promise<LocalConfig | null> {
+    const newPath = resolveLocalConfigPath(configId);
+    if (await exists(newPath)) return null;
+    if (!await exists(oldLocalPath)) return null;
+
+    let raw: unknown;
+    try {
+        raw = JSON.parse(await fs.readFile(oldLocalPath, 'utf8')) as unknown;
+    } catch {
+        return null;
+    }
+    const result = validateLocalConfig(raw);
+    const local = result.config;
+    // 写入新位置（with sharedConfigId）
+    const migrated: LocalConfig = { ...local, sharedConfigId: configId };
+    await atomicWriteJson(newPath, migrated);
+    logger.info('本地配置已迁移', { from: oldLocalPath, to: newPath });
+    return migrated;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,11 +196,14 @@ export async function loadLocalConfig(filePath: string): Promise<LocalConfig> {
     if (result.errors.length > 0) {
         logger.warn('本地配置存在结构问题，已尽量恢复', { filePath, errors: result.errors });
     }
+    return result.config;
+}
+
+function configPathsFromSharedConfig(sharedPath: string, shared: SharedConfig): ConfigPaths {
     return {
-        ...result.config,
-        sharedConfigPath: result.config.sharedConfigPath
-            ? normalizeConfigFilePath(result.config.sharedConfigPath)
-            : '',
+        sharedPath: normalizeConfigFilePath(sharedPath),
+        localPath: resolveLocalConfigPath(shared.configId),
+        configId: shared.configId,
     };
 }
 
@@ -182,26 +211,43 @@ export async function inspectOpenConfig(filePath: string): Promise<ConfigOpenIns
     const selectedPath = normalizeConfigFilePath(filePath);
     if (isLocalConfigPath(selectedPath)) {
         const local = await loadLocalConfig(selectedPath);
-        const sharedPath = local.sharedConfigPath
-            ? normalizeConfigFilePath(local.sharedConfigPath)
+        const configId = local.sharedConfigId || '';
+        const sharedPath = configId
+            ? undefined // can't derive shared path from configId alone; will need knownConfigs
             : deriveSharedConfigPath(selectedPath);
         return {
             selectedPath,
             selectedKind: 'local',
-            sharedPath,
+            sharedPath: sharedPath ?? '',
             localPath: selectedPath,
             localExists: true,
         };
     }
 
     const sharedPath = selectedPath;
-    const localPath = deriveLocalConfigPath(sharedPath);
+    const shared = await loadSharedConfig(sharedPath);
+    const localPath = resolveLocalConfigPath(shared.configId);
+    const localExists = await exists(localPath);
+
+    // 检查旧位置的 local 是否需要迁移
+    const oldLocalPath = deriveLocalConfigPath(sharedPath);
+    if (!localExists && (await exists(oldLocalPath))) {
+        await tryMigrateLocalConfig(oldLocalPath, shared.configId);
+        return {
+            selectedPath,
+            selectedKind: 'shared',
+            sharedPath,
+            localPath,
+            localExists: await exists(localPath),
+        };
+    }
+
     return {
         selectedPath,
         selectedKind: 'shared',
         sharedPath,
         localPath,
-        localExists: await exists(localPath),
+        localExists,
     };
 }
 
@@ -215,70 +261,77 @@ export async function loadConfig(filePath: string): Promise<ConfigSnapshot> {
         loadLocalConfig(inspection.localPath),
     ]);
     return {
-        paths: { sharedPath: inspection.sharedPath, localPath: inspection.localPath },
-        data: composeAppConfig(shared, { ...local, sharedConfigPath: inspection.sharedPath }),
+        paths: configPathsFromSharedConfig(inspection.sharedPath, shared),
+        data: composeAppConfig(shared, local),
         hasLoadedConfig: true,
     };
 }
 
 export async function saveConfig(paths: ConfigPaths, shared: SharedConfig, local: LocalConfig): Promise<void> {
-    const normalizedPaths = {
-        sharedPath: normalizeConfigFilePath(paths.sharedPath),
-        localPath: normalizeConfigFilePath(paths.localPath),
-    };
+    const normalizedSharedPath = normalizeConfigFilePath(paths.sharedPath);
+    const normalizedLocalPath = paths.localPath || resolveLocalConfigPath(paths.configId);
     await Promise.all([
-        atomicWriteJson(normalizedPaths.sharedPath, shared),
-        atomicWriteJson(normalizedPaths.localPath, {
-            ...local,
-            sharedConfigPath: normalizedPaths.sharedPath,
-        }),
+        atomicWriteJson(normalizedSharedPath, shared),
+        atomicWriteJson(normalizedLocalPath, local),
     ]);
-    logger.debug('共享/本地配置已保存', normalizedPaths);
+    logger.debug('共享/本地配置已保存', { sharedPath: normalizedSharedPath, localPath: normalizedLocalPath });
 }
 
 export async function createConfig(sharedPath: string): Promise<ConfigSnapshot> {
     const normalizedSharedPath = normalizeConfigFilePath(sharedPath);
-    const paths = { sharedPath: normalizedSharedPath, localPath: deriveLocalConfigPath(normalizedSharedPath) };
+    const shared = createDefaultSharedConfig({ name: deriveDefaultSharedName(normalizedSharedPath) });
+    const local = createDefaultLocalConfig(shared.configId);
+    const paths = configPathsFromSharedConfig(normalizedSharedPath, shared);
+
     if ((await exists(paths.sharedPath)) || (await exists(paths.localPath))) {
         throw new FmError('WRITE_FAILED', `目标配置已存在：${paths.sharedPath} / ${paths.localPath}`);
     }
-    const shared = createDefaultSharedConfig({ name: deriveDefaultSharedName(paths.sharedPath) });
-    const local = createDefaultLocalConfig(paths.sharedPath);
     await saveConfig(paths, shared, local);
     return { paths, data: composeAppConfig(shared, local), hasLoadedConfig: true };
 }
 
-export async function createConfigInDirectory(directoryPath: string): Promise<ConfigSnapshot> {
-    const paths = resolveConfigPathsInDirectory(directoryPath);
-    return createConfig(paths.sharedPath);
-}
-
 export async function createLocalConfigForShared(sharedPath: string): Promise<ConfigSnapshot> {
     const normalizedSharedPath = normalizeConfigFilePath(sharedPath);
-    await loadSharedConfig(normalizedSharedPath);
-    const localPath = deriveLocalConfigPath(normalizedSharedPath);
+    const shared = await loadSharedConfig(normalizedSharedPath);
+    const localPath = resolveLocalConfigPath(shared.configId);
     if (!(await exists(localPath))) {
-        await atomicWriteJson(localPath, createDefaultLocalConfig(normalizedSharedPath));
+        await atomicWriteJson(localPath, createDefaultLocalConfig(shared.configId));
     }
     return loadConfig(normalizedSharedPath);
 }
 
 export async function loadOrInitConfig(sharedPath: string): Promise<ConfigSnapshot> {
     const normalizedSharedPath = normalizeConfigFilePath(sharedPath);
-    const paths = { sharedPath: normalizedSharedPath, localPath: deriveLocalConfigPath(normalizedSharedPath) };
-    const sharedExists = await exists(paths.sharedPath);
-    const localExists = await exists(paths.localPath);
+    const sharedExists = await exists(normalizedSharedPath);
 
     if (!sharedExists) {
-        logger.info('未发现共享配置，创建默认配置', { sharedPath: paths.sharedPath });
+        logger.info('未发现共享配置，创建默认配置', { sharedPath: normalizedSharedPath });
         await atomicWriteJson(
-            paths.sharedPath,
-            createDefaultSharedConfig({ name: deriveDefaultSharedName(paths.sharedPath) }),
+            normalizedSharedPath,
+            createDefaultSharedConfig({ name: deriveDefaultSharedName(normalizedSharedPath) }),
         );
     }
+
+    const shared = await loadSharedConfig(normalizedSharedPath);
+    const localPath = resolveLocalConfigPath(shared.configId);
+    const localExists = await exists(localPath);
+
     if (!localExists) {
-        logger.info('未发现本地配置，创建默认配置', { localPath: paths.localPath });
-        await atomicWriteJson(paths.localPath, createDefaultLocalConfig(paths.sharedPath));
+        // 检查旧位置
+        const oldLocalPath = deriveLocalConfigPath(normalizedSharedPath);
+        if (await exists(oldLocalPath)) {
+            const migrated = await tryMigrateLocalConfig(oldLocalPath, shared.configId);
+            if (migrated) {
+                return {
+                    paths: configPathsFromSharedConfig(normalizedSharedPath, shared),
+                    data: composeAppConfig(shared, migrated),
+                    hasLoadedConfig: true,
+                };
+            }
+        }
+        logger.info('未发现本地配置，创建默认配置', { localPath });
+        await atomicWriteJson(localPath, createDefaultLocalConfig(shared.configId));
     }
-    return loadConfig(paths.sharedPath);
+
+    return loadConfig(normalizedSharedPath);
 }

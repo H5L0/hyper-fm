@@ -29,32 +29,10 @@ export interface IgnoreRules {
 
 export interface ProjectBinding {
   projectId: string;
-  id: string;
   path: string;
   rootId: string;
   hasMetaFile: boolean;
   lastScannedAt: string;
-  /** 上次同步成功的时间（推送或拉取） */
-  syncedAt?: string;
-  /** 上次同步时该项目的内容指纹 */
-  syncedHash?: string;
-  /** 上次拉取来源设备 ID */
-  syncedFrom?: string;
-  /** 每个同步配置自己的稳定基线，用于双向同步冲突判断 */
-  syncStates?: ProjectSyncState[];
-}
-
-export interface SyncBaselineFile {
-  path: string;
-  sha1: string;
-}
-
-export interface ProjectSyncState {
-  configId: string;
-  lastSyncedAt: string;
-  baselineHash: string;
-  baselineFiles: SyncBaselineFile[];
-  targetPath?: string;
 }
 
 export interface MetadataFingerprint {
@@ -88,11 +66,11 @@ export interface SharedProject {
 }
 
 export interface Project extends ProjectBinding {
+  id: string;
   name: string;
   description?: string;
   tags: string[];
   ignore: string[];
-  /** 同步项目文件时是否额外遵循项目目录中的 .gitignore（含嵌套目录） */
   syncRespectGitignore?: boolean;
   fingerprint: ProjectFingerprint;
 }
@@ -160,32 +138,26 @@ export interface AppPreferences {
 
 export interface SharedConfig {
   version: number;
+  configId: string;
   name: string;
   description?: string;
   ignore: IgnoreRules;
   projects: SharedProject[];
-  /** 标签注册表：可在项目详情和侧边栏中显示颜色，未在此处注册的标签按默认色渲染 */
   tags?: TagDefinition[];
-  /** 标签组：标签集合，用于按“同时拥有这些标签”的条件筛选项目 */
   tagGroups?: TagGroupDefinition[];
-  /** 共享同步配置 */
   syncConfigs?: import('./sync-types.js').SyncConfig[];
 }
 
 export interface LocalConfig {
   version: number;
-  sharedConfigPath: string;
+  sharedConfigId: string;
   scanRoots: ScanRoot[];
   bindings: ProjectBinding[];
   ui: UiPreferences;
   warnings?: ScanWarning[];
-  /** 本机忽略的具体目录路径（优先于扫描发现） */
   ignoredPaths?: string[];
-  /** M2：设备身份与已知对端 */
   devices?: import('./sync-types.js').DeviceRegistry;
-  /** 同步配置（仅本机生效） */
-  syncConfigs?: import('./sync-types.js').SyncConfig[];
-  /** M3：自定义命令列表 */
+  syncConfigs?: import('./sync-types.js').LocalSyncConfigEntry[];
   commands?: import('./sync-types.js').CustomCommand[];
 }
 
@@ -270,6 +242,7 @@ export interface ScanReport {
 export interface ConfigPaths {
   sharedPath: string;
   localPath: string;
+  configId: string;
 }
 
 export interface ConfigSnapshot {

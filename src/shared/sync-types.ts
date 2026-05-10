@@ -125,6 +125,66 @@ export type SyncConfig =
   | ZipSyncConfig
   | P2PSyncConfig;
 
+// ---------------------------------------------------------------------------
+// 字段同步契约与本地覆盖
+// ---------------------------------------------------------------------------
+
+export type FieldSyncContract = 'shared' | 'local' | 'hybrid';
+
+export interface FOLDER_SYNC_FIELD_CONTRACTS {
+  'folder.targetDir': FieldSyncContract;
+  'folder.compareBeforeSync': FieldSyncContract;
+  'folder.autoSync': FieldSyncContract;
+  'folder.intervalMinutes': FieldSyncContract;
+}
+
+export const FOLDER_SYNC_FIELD_CONTRACT: FOLDER_SYNC_FIELD_CONTRACTS = Object.freeze({
+  'folder.targetDir': 'local',
+  'folder.compareBeforeSync': 'shared',
+  'folder.autoSync': 'hybrid',
+  'folder.intervalMinutes': 'hybrid',
+});
+
+export const SHARED_DIR_SYNC_FIELD_CONTRACT = Object.freeze({
+  'sharedDir.bundleDir': 'local' as FieldSyncContract,
+});
+
+export const ZIP_SYNC_FIELD_CONTRACT = Object.freeze({
+  'zip.exportFile': 'local' as FieldSyncContract,
+});
+
+export const P2P_SYNC_FIELD_CONTRACT = Object.freeze({
+  'network.listenPort': 'shared' as FieldSyncContract,
+  'network.autoStart': 'hybrid' as FieldSyncContract,
+  'network.relayMode': 'shared' as FieldSyncContract,
+  'network.ownerDeviceId': 'shared' as FieldSyncContract,
+  'network.accessKey': 'local' as FieldSyncContract,
+});
+
+export const SYNC_FIELD_CONTRACTS: Readonly<Record<SyncConfigType, Record<string, FieldSyncContract>>> = {
+  folder: FOLDER_SYNC_FIELD_CONTRACT as unknown as Record<string, FieldSyncContract>,
+  'shared-dir': SHARED_DIR_SYNC_FIELD_CONTRACT as unknown as Record<string, FieldSyncContract>,
+  zip: ZIP_SYNC_FIELD_CONTRACT as unknown as Record<string, FieldSyncContract>,
+  p2p: P2P_SYNC_FIELD_CONTRACT as unknown as Record<string, FieldSyncContract>,
+};
+
+export interface LocalSyncConfigOverride {
+  kind: 'override';
+  configId: string;
+  settings?: Record<string, unknown>;
+  lastSyncedAt?: string;
+  lastSyncedProjectIds?: string[];
+}
+
+export interface LocalSyncConfigStandalone {
+  kind: 'standalone';
+  config: SyncConfig;
+  lastSyncedAt?: string;
+  lastSyncedProjectIds?: string[];
+}
+
+export type LocalSyncConfigEntry = LocalSyncConfigOverride | LocalSyncConfigStandalone;
+
 export interface LegacySyncSettings {
   /** 旧版共享目录路径 */
   bundleDir?: string;

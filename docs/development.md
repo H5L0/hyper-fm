@@ -28,21 +28,18 @@
 ### 2.1 文件布局
 
 ```text
-.local/fm.shared.json     # 默认共享配置：项目身份、标签、共享忽略规则
-.local/fm.local.json      # 默认本地配置：扫描根、绑定、warning、UI、本机同步状态
-<project-root>/.meta-data # 项目自描述（可选）
+fm.shared.json                   # 默认共享配置：项目身份、标签、忽略规则、同步配置（exe 同级）
+~/.fm/<configId>.local.json      # 设备本地配置：扫描根、绑定、本地覆盖
+~/.fm.json                        # 应用级偏好：托盘、启动、主题、最近配置
+<project-root>/.meta-data        # 项目自描述（可选）
 ```
 
-这套布局的设计目标很直接：把“可跨设备稳定存在的东西”和“只对当前机器有意义的东西”拆开。
-
-默认配置会落在工作目录的 `.local/` 中，避免把运行时配置混进仓库提交；如果用户手动打开了其他共享配置文件，应用会通过 `app-config-store.ts` 把最近一次成功打开的 shared 配置路径写入用户个人目录下的 `.fm.json`，并在下次启动时优先恢复，失败后再回退到 `.local/fm.shared.json`。同一处应用级存储也会保存仅本机生效的偏好，例如“关闭窗口时是否保留托盘后台运行”、是否在系统登录后自动启动应用，以及主题 / 项目列表视图等 UI 偏好。
-
-应用启动时不会在缺少配置的情况下自动创建文件：如果最近打开的 shared 配置存在则优先恢复；否则如果工作目录 `.local/` 下已有默认配置则直接加载；若两者都不存在，则进入欢迎页，由用户显式选择已有配置，或先选一个目录创建 `fm.shared.json` / `fm.local.json`。
-
-- `shared` 关注：**这个项目是谁**
-- `local` 关注：**这个项目在这台机器上是什么状态**
-
-补充约束：项目目录的文件系统修改时间属于运行时信息，不写入 `fm.local.json`；像“最近一月”“最近一年”这类动态标签应在运行时按目录 `mtime` 计算。若未来需要持久化“项目信息什么时候被编辑过”，应放在 `shared` 中，并明确表示“项目元数据更新时间”，不要复用目录 `mtime` 语义。
+- `shared` 关注**这个项目是谁**，`local` 关注**这台机器上它在哪里**。
+- 每个 shared 配置有唯一的 `configId`（`cfg_` 前缀），local 文件按 `~/.fm/<configId>.local.json` 独立存放，多设备不互相覆盖。
+- `~/.fm.json` 通过 `lastSharedConfigId` + `knownConfigs` 记住最近配置，下次启动优先恢复。
+- 启动回退链：最近配置 → exe 同级 `fm.shared.json` → 进入欢迎页。
+- 新建配置使用系统保存弹窗，后缀 `.shared.json`，默认名 `fm.shared.json`。
+- 同步状态为纯运行时数据，不持久化。项目目录 `mtime` 不写入配置文件。
 
 ### 2.2 `fm.shared.json`
 
@@ -61,12 +58,25 @@
 ```jsonc
 {
 	"version": 2,
+	"configId": "cfg_a1b2c3",
+	"name": "fm",
 	"ignore": {
 		"respectGitignore": true,
 		"globs": ["node_modules", ".git", "dist"]
 	},
 	"tags": [
 		{ "name": "electron", "color": "#60a5fa" }
+	],
+	"syncConfigs": [
+		{
+			"id": "sync_d4e5f6",
+			"name": "文件夹同步",
+			"scope": "shared",
+			"type": "folder",
+			"mode": "two-way",
+			"targets": { "projectIds": [], "rootIds": [], "ignoredProjectIds": [], "ignoredRootIds": [] },
+			"folder": { "compareBeforeSync": true, "autoSync": false }
+		}
 	],
 	"projects": [
 		{
@@ -80,48 +90,66 @@
 }
 ```
 
-这里最重要的是：**shared 里没有“这台机器上的绝对路径”**。
+这里最重要的是：**shared 里没有”这台机器上的绝对路径”**。`configId` 是 shared 配置的唯一标识，用于派生本机 local 文件路径和多设备关联。
 
-### 2.3 `fm.local.json`
+### 2.3 `<configId>.local.json`
 
-`fm.local.json` 保存本机状态，主要包括：
+本机状态保存在 `~/.fm/<configId>.local.json`，每个 shared 配置对应一个独立的 local 文件。主要包括：
 
+- `sharedConfigId`：关联的 shared 配置 ID
 - `scanRoots`：从哪里开始扫
-- `bindings`：`projectId` 和本机真实路径之间的关系（不持久化项目目录 `mtime`）
+- `bindings`：`projectId` 和本机真实路径之间的关系（不再冗余存储 `id`，不再持久化同步状态）
 - `warnings`：扫描时遇到的冲突与告警
 - `ignoredPaths`：本机明确忽略的目录
 - `ui`：当前机器的视图、主题等偏好（保留在 local 中兼容旧配置；运行时以应用级偏好为准）
-- 同步相关本机状态与设备信息
+- `syncConfigs`：`LocalSyncConfigEntry[]` 联合类型——`kind: 'override'` 仅存储 configId + 本地覆盖字段；`kind: 'standalone'` 存储完整的本地独占同步配置
+- `devices`：设备身份与已知对端
+- `commands`：自定义命令列表（M3）
 
-它描述的是“这个 shared 项目在当前设备上长什么样”。
+它描述的是”这个 shared 项目在当前设备上长什么样”。
 
 ```jsonc
 {
-	"version": 2,
-	"scanRoots": [
+	“version”: 2,
+	“sharedConfigId”: “cfg_a1b2c3”,
+	“scanRoots”: [
 		{
-			"id": "root_a1b2c3",
-			"path": "D:/projects",
-			"label": "主代码盘",
-			"maxDepth": 3,
-			"enabled": true
+			“id”: “root_a1b2c3”,
+			“path”: “D:/projects”,
+			“label”: “主代码盘”,
+			“maxDepth”: 3,
+			“enabled”: true
 		}
 	],
-	"bindings": [
+	“bindings”: [
 		{
-			"projectId": "pj-1a2b3c",
-			"id": "pj-1a2b3c",
-			"path": "D:/projects/fm",
-			"rootId": "root_a1b2c3",
-			"hasMetaFile": true,
-			"lastScannedAt": "2026-04-27T12:34:56Z"
+			“projectId”: “pj-1a2b3c”,
+			“path”: “D:/projects/fm”,
+			“rootId”: “root_a1b2c3”,
+			“hasMetaFile”: true,
+			“lastScannedAt”: “2026-04-27T12:34:56Z”
 		}
 	],
-	"warnings": [],
-	"ignoredPaths": [],
-	"ui": {
-		"theme": "system",
-		"view": "grid"
+	“syncConfigs”: [
+		{ “kind”: “override”, “configId”: “sync_d4e5f6”, “settings”: { “folder.intervalMinutes”: 15 } },
+		{
+			“kind”: “standalone”,
+			“config”: {
+				“id”: “sync_x7y8z9”,
+				“name”: “本机 ZIP 备份”,
+				“scope”: “local”,
+				“type”: “zip”,
+				“mode”: “mirror-local-to-target”,
+				“targets”: { “projectIds”: [], “rootIds”: [], “ignoredProjectIds”: [], “ignoredRootIds”: [] },
+				“zip”: { “exportFile”: “D:/backups/fm.zip” }
+			}
+		}
+	],
+	“warnings”: [],
+	“ignoredPaths”: [],
+	“ui”: {
+		“theme”: “system”,
+		“view”: “grid”
 	}
 }
 ```
@@ -221,9 +249,11 @@ type ProjectFingerprint =
 协作时要牢牢记住以下不变量：
 
 - 所有内部路径统一保存为正斜杠绝对路径；
+- `shared.configId` 全局唯一，用于关联 local 文件和多设备身份；
 - `shared.projects[].id` 在 shared 配置内唯一；
 - `tags[].name` 在 shared 配置内唯一；
 - `bindings[].projectId` 与 `bindings[].path` 在 local 配置内唯一；
+- `ProjectBinding` 只存 `projectId`，不冗余存储 `id`，不持久化同步状态；
 - `warnings[]` 只描述问题，不自动修复问题；
 - 配置写盘必须走原子替换，避免中断后损坏文件。
 
@@ -248,8 +278,8 @@ type ProjectFingerprint =
 
 #### 配置与会话
 
-- `config-store.ts`：shared/local 双配置读写与原子落盘。
-- `app-config-store.ts`：通用应用级持久化存储，当前用来保存最近一次成功打开的 shared 配置路径、托盘开关、开机启动，以及主题 / 视图等 UI 偏好。
+- `config-store.ts`：shared/local 双配置读写与原子落盘。local 路径由 configId 派生（`~/.fm/<configId>.local.json`），启动时自动迁移旧位置文件。
+- `app-config-store.ts`：应用级持久化存储（`~/.fm.json`），通过 `lastSharedConfigId` + `knownConfigs` 映射恢复最近打开的配置，并保存托盘开关、开机启动、主题 / 视图等 UI 偏好。
 - `login-item.ts`：封装系统登录项（开机启动）设置，统一处理平台差异与开发模式跳过逻辑。
 - `tray-controller.ts`：系统托盘生命周期、菜单构建，以及项目快捷命令/快速同步入口。
 - `session.ts`：维护当前加载配置的会话状态，负责串行写盘，避免并发写坏配置。
@@ -330,15 +360,14 @@ preload 的职责非常明确：
 #### 启动与配置加载
 
 1. Electron 主进程启动；
-2. 主进程优先读取最近一次成功打开的 shared 配置路径与应用级偏好（如托盘开关）；
-3. 若最近配置不可用，则尝试加载工作目录 `.local/fm.shared.json`；
-4. 若仍无可用配置，则保持“未加载配置”状态并进入欢迎页；
-5. 会话层在用户打开或创建配置后再加载 shared/local 配置；
-6. 主进程整理为聚合视图；
-7. preload 暴露桥接接口；
-8. renderer 根据快照显示欢迎页或主界面；
-9. 若托盘启用，则关闭主窗口时仅隐藏窗口，后台会继续保留托盘菜单与自动同步调度。
-10. 若应用偏好开启“开机启动”，主进程会在启动完成后同步系统登录项；开发模式下为避免注册到 Electron 裸壳，当前会跳过实际写入。
+2. 从 `~/.fm.json` 读取 `lastSharedConfigId` + `knownConfigs`，解析 shared 配置路径；
+3. 若最近配置不可用，回退到 `.local/fm.shared.json`；
+4. 仍不可用时保持未加载状态，进入欢迎页；
+5. 用户打开或通过保存弹窗创建 `.shared.json` 后加载 shared/local；
+6. 主进程整理为聚合视图（合并 shared 项目 + local binding + 同步配置覆盖）；
+7. preload 暴露桥接接口，renderer 根据快照显示界面；
+8. 托盘启用时关闭窗口仅隐藏；`onConfigChanged` 回调在每次配置变更后刷新托盘菜单。
+9. 若偏好开启开机启动，主进程在启动完成后同步系统登录项（开发模式跳过）。
 
 #### 扫描链路
 

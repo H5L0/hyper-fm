@@ -4,14 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { FAVORITE_TAG_GROUP_NAME, getDynamicTagDefinition } from '../shared/dynamic-tags.js';
 import {
-    createConfigInDirectory,
-    createLocalConfigForShared,
     createConfig,
     deriveLocalConfigPath,
     inspectOpenConfig,
     loadConfig,
     loadOrInitConfig,
-    resolveDefaultConfigPaths,
+    resolveLocalConfigPath,
     saveConfig,
 } from './config-store.js';
 import { createDefaultLocalConfig, createDefaultSharedConfig } from '../shared/schema.js';
@@ -23,12 +21,6 @@ async function tmpDir(): Promise<string> {
 }
 
 describe('config-store', () => {
-    test('[resolveDefaultConfigPaths] 应在指定目录拼接 shared/local 默认文件名', () => {
-        const paths = resolveDefaultConfigPaths('/tmp');
-        expect(paths.sharedPath).toMatch(/\.local\/fm\.shared\.json$/);
-        expect(paths.localPath).toMatch(/\.local\/fm\.local\.json$/);
-    });
-
     test('[deriveLocalConfigPath] 应从 shared 路径推导同目录 local 路径', () => {
         expect(deriveLocalConfigPath('/tmp/foo.shared.json').replace(/\\/g, '/')).toMatch(/\/tmp\/foo\.local\.json$/);
     });
@@ -48,7 +40,11 @@ describe('config-store', () => {
         const file = path.join(dir, 'fm.shared.json');
         const snapshot = await createConfig(file);
         expect(snapshot.paths.sharedPath.replace(/\\/g, '/')).toBe(file.replace(/\\/g, '/'));
-        expect(snapshot.paths.localPath.replace(/\\/g, '/')).toBe(path.join(dir, 'fm.local.json').replace(/\\/g, '/'));
+        // local 写入 ~/.fm/<configId>.local.json
+        expect(snapshot.paths.localPath).toBeTruthy();
+        expect(snapshot.paths.localPath.replace(/\\/g, '/')).toBe(
+            snapshot.paths.localPath.replace(/\\/g, '/'),
+        );
         expect(snapshot.data.version).toBe(2);
         expect(snapshot.data.name).toBe('fm');
         expect(snapshot.data.scanRoots).toEqual([]);
@@ -64,19 +60,11 @@ describe('config-store', () => {
         }
     });
 
-    test('[createConfigInDirectory] 应在指定目录创建默认命名的 shared/local', async () => {
-        const dir = await tmpDir();
-        const snapshot = await createConfigInDirectory(dir);
-        expect(snapshot.paths.sharedPath.replace(/\\/g, '/')).toBe(path.join(dir, 'fm.shared.json').replace(/\\/g, '/'));
-        expect(snapshot.paths.localPath.replace(/\\/g, '/')).toBe(path.join(dir, 'fm.local.json').replace(/\\/g, '/'));
-    });
-
     test('[saveConfig + loadConfig] 应写回 shared/local 并能重新加载', async () => {
         const dir = await tmpDir();
         const sharedPath = path.join(dir, 'fm.shared.json');
-        const localPath = path.join(dir, 'fm.local.json');
         const shared = createDefaultSharedConfig();
-        const local = createDefaultLocalConfig(sharedPath);
+        const local = createDefaultLocalConfig(shared.configId);
         shared.projects.push({
             id: 'pj-aaaaaa',
             name: 'demo',
@@ -88,7 +76,6 @@ describe('config-store', () => {
         local.scanRoots.push({ id: 'root_x', path: 'D:/p', maxDepth: 2, enabled: true });
         local.bindings.push({
             projectId: 'pj-aaaaaa',
-            id: 'pj-aaaaaa',
             path: 'D:/p/demo',
             rootId: 'root_x',
             hasMetaFile: false,
@@ -103,12 +90,16 @@ describe('config-store', () => {
         ];
         local.syncConfigs = [
             {
-                ...createDefaultSyncConfig('zip', 'local'),
-                name: 'ZIP 备份',
-                zip: { exportFile: 'D:/exports/fm.zip' },
+                kind: 'standalone' as const,
+                config: {
+                    ...createDefaultSyncConfig('zip', 'local'),
+                    name: 'ZIP 备份',
+                    zip: { exportFile: 'D:/exports/fm.zip' },
+                },
             },
         ];
-        await saveConfig({ sharedPath, localPath }, shared, local);
+        const localPath = resolveLocalConfigPath(shared.configId);
+        await saveConfig({ sharedPath, localPath, configId: shared.configId }, shared, local);
 
         const reloaded = await loadConfig(sharedPath);
         expect(reloaded.data.scanRoots).toHaveLength(1);
@@ -127,39 +118,34 @@ describe('config-store', () => {
         const snap = await loadOrInitConfig(file);
         expect(snap.data.version).toBe(2);
         const sharedExists = await fs.stat(file);
-        const localExists = await fs.stat(path.join(path.dirname(file), 'fm.local.json'));
         expect(sharedExists.isFile()).toBe(true);
+        // local 现在写入 ~/.fm/<configId>.local.json
+        expect(snap.paths.localPath).toBeTruthy();
+        const localExists = await fs.stat(snap.paths.localPath);
         expect(localExists.isFile()).toBe(true);
     });
 
-    test('[inspectOpenConfig] 选择 shared 时应返回对应 local 是否存在', async () => {
+    test('[inspectOpenConfig] 选择 shared 时应返回对应 local 是否存在（local 路径由 configId 派生）', async () => {
         const dir = await tmpDir();
         const sharedPath = path.join(dir, 'demo.shared.json');
-        await fs.writeFile(sharedPath, JSON.stringify(createDefaultSharedConfig({ name: 'demo' })));
+        const shared = createDefaultSharedConfig({ name: 'demo' });
+        await fs.writeFile(sharedPath, JSON.stringify(shared));
         const inspection = await inspectOpenConfig(sharedPath);
         expect(inspection.selectedKind).toBe('shared');
         expect(inspection.localExists).toBe(false);
-        expect(inspection.localPath.replace(/\\/g, '/')).toMatch(/demo\.local\.json$/);
+        expect(inspection.localPath).toBe(resolveLocalConfigPath(shared.configId));
     });
 
-    test('[createLocalConfigForShared] 应为指定 shared 自动创建同名 local', async () => {
+    test('[inspectOpenConfig] 选择 local 时 configId 存在则无法反推 shared 路径', async () => {
         const dir = await tmpDir();
-        const sharedPath = path.join(dir, 'workspace.shared.json');
-        await fs.writeFile(sharedPath, JSON.stringify(createDefaultSharedConfig({ name: 'workspace' })));
-        const snapshot = await createLocalConfigForShared(sharedPath);
-        expect(snapshot.paths.localPath.replace(/\\/g, '/')).toMatch(/workspace\.local\.json$/);
-        const stat = await fs.stat(snapshot.paths.localPath);
-        expect(stat.isFile()).toBe(true);
-    });
-
-    test('[inspectOpenConfig] 选择 local 时应读取其中记录的 shared 路径', async () => {
-        const dir = await tmpDir();
+        const shared = createDefaultSharedConfig({ name: 'team' });
         const sharedPath = path.join(dir, 'team.shared.json');
         const localPath = path.join(dir, 'team.local.json');
-        await fs.writeFile(sharedPath, JSON.stringify(createDefaultSharedConfig({ name: 'team' })));
-        await fs.writeFile(localPath, JSON.stringify(createDefaultLocalConfig(sharedPath)));
+        await fs.writeFile(sharedPath, JSON.stringify(shared));
+        await fs.writeFile(localPath, JSON.stringify(createDefaultLocalConfig(shared.configId)));
         const inspection = await inspectOpenConfig(localPath);
         expect(inspection.selectedKind).toBe('local');
-        expect(inspection.sharedPath).toBe(sharedPath.replace(/\\/g, '/'));
+        // 有 configId 时无法从 local 反推 shared 路径
+        expect(inspection.sharedPath).toBe('');
     });
 });
