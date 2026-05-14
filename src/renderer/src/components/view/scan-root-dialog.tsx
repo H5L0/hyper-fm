@@ -56,7 +56,7 @@ export function AddScanRootDialog({
 }) {
     const actions = useAppActions();
     const [selectedPath, setSelectedPath] = useState(directoryPath);
-    const [maxDepth, setMaxDepth] = useState(existingRoot?.maxDepth ?? 3);
+    const [maxDepth, setMaxDepth] = useState(existingRoot?.maxDepth ?? 1);
     const [busy, setBusy] = useState(false);
     const editing = !!existingRoot;
 

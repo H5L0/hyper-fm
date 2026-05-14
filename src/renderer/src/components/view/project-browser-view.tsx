@@ -108,7 +108,7 @@ export function ProjectBrowserView() {
     if (config.scanRoots.length === 0 && config.projects.length === 0) {
         return (
             <EmptyState
-                title="尚未配置扫描根"
+                title="尚未添加扫描根目录"
                 hint="前往「扫描设置」添加包含项目的目录后，点击「扫描」来发现项目，也可以从工具栏「添加项目」手动添加。"
             />
         );

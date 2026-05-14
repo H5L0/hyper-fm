@@ -90,6 +90,8 @@ describe('tray-controller', () => {
 
     test('[listTrayProjectEntries] 缺少收藏组时也应虚拟补上并按最近一月筛选', async () => {
         const dir = await createTempDir();
+        const recentModifiedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        await fs.utimes(dir, recentModifiedAt, recentModifiedAt);
         const config = createConfig(dir);
         config.tagGroups = [{ name: '其他分组', tags: ['sync'] }];
 

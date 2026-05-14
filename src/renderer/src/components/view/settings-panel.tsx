@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { ExternalLink, FolderPlus, FolderRoot, PenLine, Plus, Trash2 } from 'lucide-react';
 import type { CustomCommand } from '@shared/bridge.js';
 import { IgnoreRulesEditor } from '@/components/basic/ignore-rules-editor.js';
-import { AddableList, AddableListEmpty, AddableListItem } from '@/components/ui/addable-list';
+import { AddableList, AddableListItem } from '@/components/ui/addable-list';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox-field';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
@@ -97,6 +97,7 @@ export function ScanSettingsPanel() {
             addIcon={<FolderPlus className="size-4" />}
             addLabel="添加扫描目录"
             onAdd={() => void handleAddRoot()}
+            emptyState="尚未添加扫描根目录"
             footerEnd={<ListMetaBadge>{config.scanRoots.length} 个扫描根</ListMetaBadge>}
             divided={false}
             sortable={{
@@ -104,38 +105,34 @@ export function ScanSettingsPanel() {
               onReorder: (activeId, targetIndex) => reorderScanRoots(activeId, targetIndex),
             }}
           >
-            {config.scanRoots.length === 0 ? (
-              <AddableListEmpty>尚未添加扫描根目录。</AddableListEmpty>
-            ) : (
-              config.scanRoots.map(root => (
-                <AddableListItem
-                  key={root.id}
-                  itemId={root.id}
-                  showGrabHandle
-                >
-                  <div className="flex items-center gap-2.5">
-                    <FolderRoot className="size-4 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <p className="break-all text-note text-foreground" title={root.path}>{root.path}</p>
-                    </div>
-                    <Button size="icon-xs" variant="ghost" title="扫描目录设置" onClick={() => {
-                      setEditingScanRootId(root.id);
-                      setScanRootDraftPath(root.path);
-                    }}>
-                      <PenLine className="size-4" />
-                    </Button>
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      title="删除扫描目录"
-                      onClick={() => void actions.removeScanRoot(root.id)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+            {config.scanRoots.map(root => (
+              <AddableListItem
+                key={root.id}
+                itemId={root.id}
+                showGrabHandle
+              >
+                <div className="flex items-center gap-2.5">
+                  <FolderRoot className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="break-all text-note text-foreground" title={root.path}>{root.path}</p>
                   </div>
-                </AddableListItem>
-              ))
-            )}
+                  <Button size="icon-xs" variant="ghost" title="扫描目录设置" onClick={() => {
+                    setEditingScanRootId(root.id);
+                    setScanRootDraftPath(root.path);
+                  }}>
+                    <PenLine className="size-4" />
+                  </Button>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    title="删除扫描目录"
+                    onClick={() => void actions.removeScanRoot(root.id)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              </AddableListItem>
+            ))}
           </AddableList>
         </SettingSection>
 
@@ -350,11 +347,12 @@ function CommandsSection() {
   };
 
   return (
-    <SettingSection title="命令" hint="可对项目运行的自定义命令。">
+    <SettingSection title="命令" hint="项目自定义命令。">
       <AddableList
         addIcon={<Plus className="size-4" />}
         addLabel="添加命令"
         onAdd={() => setCreatingCommand(true)}
+        emptyState="尚未添加自定义命令"
         footerEnd={<ListMetaBadge>{list.length} 条命令</ListMetaBadge>}
         divided={false}
         sortable={{
@@ -362,38 +360,34 @@ function CommandsSection() {
           onReorder: (activeId, targetIndex) => reorderCommands(activeId, targetIndex),
         }}
       >
-        {list.length === 0 ? (
-          <AddableListEmpty>尚未配置自定义命令。</AddableListEmpty>
-        ) : (
-          list.map(c => (
-            <AddableListItem
-              key={c.id}
-              itemId={c.id}
-              showGrabHandle
-            >
-              <div className="flex items-start gap-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-body text-foreground">{c.label}</p>
-                  <p className="mt-1 truncate text-note text-muted-foreground">
-                    {c.command}
-                    {c.args?.length ? ` ${c.args.join(' ')}` : ''}
-                  </p>
-                  {c.description ? (
-                    <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">{c.description}</p>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button size="icon-xs" variant="ghost" title="编辑命令" onClick={() => setEditingCommand(c)}>
-                    <PenLine className="size-4" />
-                  </Button>
-                  <Button size="icon-xs" variant="ghost" title="删除命令" onClick={() => void removeCommand(c.id)}>
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
+        {list.map(c => (
+          <AddableListItem
+            key={c.id}
+            itemId={c.id}
+            showGrabHandle
+          >
+            <div className="flex items-start gap-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-body text-foreground">{c.label}</p>
+                <p className="mt-1 truncate text-note text-muted-foreground">
+                  {c.command}
+                  {c.args?.length ? ` ${c.args.join(' ')}` : ''}
+                </p>
+                {c.description ? (
+                  <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">{c.description}</p>
+                ) : null}
               </div>
-            </AddableListItem>
-          ))
-        )}
+              <div className="flex items-center gap-1">
+                <Button size="icon-xs" variant="ghost" title="编辑命令" onClick={() => setEditingCommand(c)}>
+                  <PenLine className="size-4" />
+                </Button>
+                <Button size="icon-xs" variant="ghost" title="删除命令" onClick={() => void removeCommand(c.id)}>
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            </div>
+          </AddableListItem>
+        ))}
       </AddableList>
 
       {creatingCommand ? (
@@ -502,8 +496,8 @@ function CommandDialog({
           value={cwd ?? 'project'}
           onValueChange={nextValue => setCwd(nextValue as CustomCommand['cwd'])}
           options={[
-            { value: 'project', label: '项目目录', description: '以项目根目录作为 cwd' },
-            { value: 'parent', label: '上级目录', description: '以项目所在目录作为 cwd' },
+            { value: 'project', label: '项目目录', description: '以项目目录作为 cwd' },
+            { value: 'parent', label: '上级目录', description: '以项目的上级目录作为 cwd' },
           ]}
           optionMinWidth={180}
           align="start"

@@ -25,13 +25,33 @@ import { matchScanCandidates, normalizeFingerprint } from './project-matcher.js'
 
 export function buildProjects(shared: SharedConfig, local: LocalConfig): Project[] {
     const sharedMap = new Map(shared.projects.map(project => [project.id, project]));
+    const boundIds = new Set<string>();
     const projects: Project[] = [];
     for (const binding of local.bindings) {
         const sharedProject = sharedMap.get(binding.projectId);
         if (!sharedProject) continue;
+        boundIds.add(sharedProject.id);
         projects.push({
             ...binding,
             id: sharedProject.id,
+            name: sharedProject.name,
+            description: sharedProject.description,
+            tags: [...sharedProject.tags],
+            ignore: [...sharedProject.ignore],
+            syncRespectGitignore: sharedProject.syncRespectGitignore,
+            fingerprint: sharedProject.fingerprint,
+        });
+    }
+    // 未绑定的 shared 项目：路径不在本机或尚未扫描到，仍然展示
+    for (const sharedProject of shared.projects) {
+        if (boundIds.has(sharedProject.id)) continue;
+        projects.push({
+            projectId: sharedProject.id,
+            id: sharedProject.id,
+            path: '',
+            rootId: '',
+            hasMetaFile: false,
+            lastScannedAt: '',
             name: sharedProject.name,
             description: sharedProject.description,
             tags: [...sharedProject.tags],

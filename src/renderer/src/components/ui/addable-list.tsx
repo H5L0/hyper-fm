@@ -1,4 +1,5 @@
 import {
+    Children,
     createContext,
     useContext,
     useEffect,
@@ -141,6 +142,7 @@ function buildAddableListPath(width: number, bodyHeight: number, tabWidth: numbe
 
 export function AddableList({
     children,
+    emptyState,
     addLabel = '添加',
     addIcon,
     onAdd,
@@ -153,6 +155,7 @@ export function AddableList({
     sortable,
 }: {
     children: ReactNode;
+    emptyState?: ReactNode;
     addLabel?: string;
     addIcon?: ReactNode;
     onAdd?: () => void;
@@ -204,6 +207,8 @@ export function AddableList({
         '--addable-list-radius': `${LIST_RADIUS}px`,
         '--addable-list-tab-height': `${LIST_TAB_HEIGHT}px`,
     };
+
+    const childItems = useMemo(() => Children.toArray(children), [children]);
 
     const path = useMemo(
         () => buildAddableListPath(shapeSize.width, shapeSize.bodyHeight, shapeSize.tabWidth, LIST_RADIUS, LIST_TAB_HEIGHT),
@@ -434,7 +439,15 @@ export function AddableList({
                                 style={placeholderStyle}
                             />
                         ) : null}
-                        {children}
+                        {childItems.length > 0
+                            ? children
+                            : typeof emptyState === 'string'
+                                ? (
+                                    <AddableListEmpty className="rounded-[calc(var(--addable-list-radius)-0.25rem)] border border-dashed border-border bg-muted/10 text-body text-foreground">
+                                        {emptyState}
+                                    </AddableListEmpty>
+                                )
+                                : emptyState}
                     </div>
 
                     <button

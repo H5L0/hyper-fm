@@ -73,9 +73,7 @@ export function TagGroupDialog({
     return (
         <EditDialogShell
             title={editing ? '修改标签组' : '新建标签组'}
-            note={requiredGroup
-                ? '系统必备标签组可以调整筛选条件，但不能改名。'
-                : '标签组会筛选同时满足这些条件的项目；既可以选择普通标签，也可以选择“最近一月”“最近一年”等动态标签。'}
+            note={'标签组可以筛选包含指定标签的项目。'}
             onClose={onClose}
             panelClassName="w-[min(560px,calc(100vw-2rem))]"
             bodyClassName="space-y-4"
@@ -93,7 +91,7 @@ export function TagGroupDialog({
             <EditDialogField label="名称">
                 <input
                     autoFocus
-                    value={name}
+                    value={requiredGroup ? `${name}（系统标签组）` : name}
                     onChange={event => setName(event.target.value)}
                     disabled={requiredGroup}
                     onKeyDown={event => {
@@ -112,7 +110,7 @@ export function TagGroupDialog({
                     onAdd={tag => setTags(prev => (prev.includes(tag) ? prev : [...prev, tag]))}
                     onRemove={tag => setTags(prev => prev.filter(item => item !== tag))}
                     emptySelectedLabel="至少选择一个标签"
-                    availableLabel="可加入标签组的标签与特殊标签"
+                    availableLabel="可加入标签组的标签"
                 />
             </EditDialogField>
         </EditDialogShell>

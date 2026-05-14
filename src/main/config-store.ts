@@ -290,9 +290,23 @@ export async function createConfig(sharedPath: string): Promise<ConfigSnapshot> 
     return { paths, data: composeAppConfig(shared, local), hasLoadedConfig: true };
 }
 
+async function hasOriginalConfigId(filePath: string): Promise<boolean> {
+    try {
+        const raw = JSON.parse(await fs.readFile(filePath, 'utf8')) as Record<string, unknown>;
+        return typeof raw.configId === 'string' && raw.configId.trim() !== '';
+    } catch {
+        return false;
+    }
+}
+
 export async function createLocalConfigForShared(sharedPath: string): Promise<ConfigSnapshot> {
     const normalizedSharedPath = normalizeConfigFilePath(sharedPath);
     const shared = await loadSharedConfig(normalizedSharedPath);
+    // 若原始 shared 文件缺失 configId（由 validateSharedConfig 自动生成），
+    // 必须写回文件，否则下次 loadSharedConfig 生成不同的 configId 导致 local 匹配不上。
+    if (!(await hasOriginalConfigId(normalizedSharedPath))) {
+        await atomicWriteJson(normalizedSharedPath, shared);
+    }
     const localPath = resolveLocalConfigPath(shared.configId);
     if (!(await exists(localPath))) {
         await atomicWriteJson(localPath, createDefaultLocalConfig(shared.configId));

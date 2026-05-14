@@ -11,7 +11,7 @@ export function WelcomeScreen() {
         <div className="space-y-2">
           <h1 className="text-display">欢迎使用 fm</h1>
           <p className="text-note leading-6 text-muted-foreground">
-            当前还没有可用配置。打开一份已有配置，或先选一个目录创建新的 `fm.shared.json` 和 `fm.local.json`。
+            当前还没有可用配置。打开一份已有配置，或创建新配置。
           </p>
         </div>
 

@@ -19,7 +19,7 @@ import {
     type SyncConfigType,
     type SyncMode,
 } from '@shared/sync-types.js';
-import { AddableList, AddableListEmpty, AddableListItem } from '@/components/ui/addable-list';
+import { AddableList, AddableListItem } from '@/components/ui/addable-list';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox-field';
 import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
@@ -377,6 +377,7 @@ export function SyncConfigPanel() {
                     addIcon={<Plus className="size-4" />}
                     addLabel="添加同步配置"
                     onAdd={() => setEditingConfig(createScopedSyncConfig('shared-dir', 'local'))}
+                    emptyState="尚未添加同步配置"
                     footerEnd={<ListMetaBadge>{syncConfigs.length} 条配置</ListMetaBadge>}
                     divided={false}
                     sortable={{
@@ -384,69 +385,60 @@ export function SyncConfigPanel() {
                         onReorder: (activeId, targetIndex) => reorderSyncConfigs(activeId, targetIndex),
                     }}
                 >
-                    {syncConfigs.length === 0 ? (
-                        <AddableListEmpty className="rounded-[calc(var(--addable-list-radius)-0.25rem)] border border-dashed border-border bg-muted/10">
-                            <p className="text-body text-foreground">还没有同步配置</p>
-                            <p className="mt-1 text-note text-muted-foreground">
-                                先添加一条配置，再决定它是共享目录、ZIP、文件夹还是 P2P。
-                            </p>
-                        </AddableListEmpty>
-                    ) : (
-                        syncConfigs.map(syncConfig => {
-                            const busy = busyKey?.includes(syncConfig.id) ?? false;
-                            const onPickDirectory = () => void pickDirectoryForConfig(syncConfig);
-                            const onCompareAndSync = syncConfig.type === 'folder' || syncConfig.type === 'shared-dir'
-                                ? () => void previewSyncPlan(syncConfig)
-                                : undefined;
-                            const onExportZip = syncConfig.type === 'zip' ? () => void exportZip(syncConfig) : undefined;
-                            const onImportZip = syncConfig.type === 'zip' ? () => void importZip(syncConfig) : undefined;
-                            const onToggleServer = syncConfig.type === 'p2p' ? () => void toggleServer(syncConfig) : undefined;
+                    {syncConfigs.map(syncConfig => {
+                        const busy = busyKey?.includes(syncConfig.id) ?? false;
+                        const onPickDirectory = () => void pickDirectoryForConfig(syncConfig);
+                        const onCompareAndSync = syncConfig.type === 'folder' || syncConfig.type === 'shared-dir'
+                            ? () => void previewSyncPlan(syncConfig)
+                            : undefined;
+                        const onExportZip = syncConfig.type === 'zip' ? () => void exportZip(syncConfig) : undefined;
+                        const onImportZip = syncConfig.type === 'zip' ? () => void importZip(syncConfig) : undefined;
+                        const onToggleServer = syncConfig.type === 'p2p' ? () => void toggleServer(syncConfig) : undefined;
 
-                            return (
-                                <AddableListItem
-                                    key={syncConfig.id}
-                                    itemId={syncConfig.id}
-                                    showGrabHandle
-                                >
-                                    <SyncConfigSummaryCard
-                                        syncConfig={syncConfig}
-                                        includedProjectCount={includedProjectCounts[syncConfig.id] ?? 0}
-                                        chromeless
-                                        busy={busy}
-                                        onEdit={() => setEditingConfig(syncConfig)}
-                                        onDelete={() => void removeSyncConfig(syncConfig)}
-                                        footer={syncConfig.type === 'p2p'
-                                            ? (
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <SyncConfigActionButtons
-                                                        syncConfig={syncConfig}
-                                                        busy={busy}
-                                                        serverRunning={serverRunning[syncConfig.id] ?? false}
-                                                        onPickDirectory={onPickDirectory}
-                                                        onToggleServer={onToggleServer}
-                                                    />
-                                                    <span className="text-note text-muted-foreground">
-                                                        {syncConfig.network.relayMode ? '中转模式' : '直连模式'}
-                                                    </span>
-                                                </div>
-                                            )
-                                            : (
+                        return (
+                            <AddableListItem
+                                key={syncConfig.id}
+                                itemId={syncConfig.id}
+                                showGrabHandle
+                            >
+                                <SyncConfigSummaryCard
+                                    syncConfig={syncConfig}
+                                    includedProjectCount={includedProjectCounts[syncConfig.id] ?? 0}
+                                    chromeless
+                                    busy={busy}
+                                    onEdit={() => setEditingConfig(syncConfig)}
+                                    onDelete={() => void removeSyncConfig(syncConfig)}
+                                    footer={syncConfig.type === 'p2p'
+                                        ? (
+                                            <div className="flex flex-wrap items-center gap-2">
                                                 <SyncConfigActionButtons
                                                     syncConfig={syncConfig}
                                                     busy={busy}
                                                     serverRunning={serverRunning[syncConfig.id] ?? false}
                                                     onPickDirectory={onPickDirectory}
-                                                    onCompareAndSync={onCompareAndSync}
-                                                    onExportZip={onExportZip}
-                                                    onImportZip={onImportZip}
                                                     onToggleServer={onToggleServer}
                                                 />
-                                            )}
-                                    />
-                                </AddableListItem>
-                            );
-                        })
-                    )}
+                                                <span className="text-note text-muted-foreground">
+                                                    {syncConfig.network.relayMode ? '中转模式' : '直连模式'}
+                                                </span>
+                                            </div>
+                                        )
+                                        : (
+                                            <SyncConfigActionButtons
+                                                syncConfig={syncConfig}
+                                                busy={busy}
+                                                serverRunning={serverRunning[syncConfig.id] ?? false}
+                                                onPickDirectory={onPickDirectory}
+                                                onCompareAndSync={onCompareAndSync}
+                                                onExportZip={onExportZip}
+                                                onImportZip={onImportZip}
+                                                onToggleServer={onToggleServer}
+                                            />
+                                        )}
+                                />
+                            </AddableListItem>
+                        );
+                    })}
                 </AddableList>
             </SettingSection>
 

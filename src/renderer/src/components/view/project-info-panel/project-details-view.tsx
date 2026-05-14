@@ -348,7 +348,6 @@ function FingerprintEditor({
                     <div className="flex items-center justify-between gap-2">
                         <div>
                             <p className="text-subheading text-foreground">选中文件路径</p>
-                            <p className="mt-1 text-note text-muted-foreground">灰色条目已被忽略，无法作为文件列表指纹。</p>
                         </div>
                         <Button
                             size="default"
@@ -421,7 +420,7 @@ function FingerprintFileDialog({
     return (
         <EditDialogShell
             title="选择指纹文件"
-            note="按文件列表匹配项目时，仅使用已勾选的相对路径。"
+            note="勾选文件作为项目的识别依据。"
             onClose={onClose}
             panelClassName="h-[min(76vh,720px)] w-[min(760px,calc(100vw-2rem))]"
             bodyPaddingClassName="p-0"
