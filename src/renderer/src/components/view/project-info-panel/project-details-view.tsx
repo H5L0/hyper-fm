@@ -1,15 +1,12 @@
-import type { ProjectDirectoryEntry, ProjectDirectoryInspection, ProjectFingerprint, ScanRoot, TagDefinition } from '@shared/bridge.js';
-import { FileTreeView } from '@/components/basic/file-tree';
+import type { ProjectDirectoryInspection, ProjectFingerprint, ScanRoot, TagDefinition } from '@shared/bridge.js';
 import { TagSelector } from '@/components/basic/tag-selector';
-import { EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import { SegmentedToggleGroup } from '@/components/ui/segmented-toggle-group';
 import { cn } from '@/lib/utils';
 import { useAppActions } from '@/store/app-store';
 import { META_FILE_NAME } from '@shared/types';
-import { ChevronDown, FileCode2, FolderOpen, Files, FileMinus, FolderPlus, FolderTree, Search, X } from 'lucide-react';
-import { ReactNode, useState, useMemo, useRef, useEffect } from 'react';
+import { ChevronDown, FileCode2, FolderOpen, Files, FileMinus, FolderPlus, FolderTree } from 'lucide-react';
+import { ReactNode, useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { filterTree } from './project-files-view';
 
 type TagSelectorMode = 'alwaysEdit' | 'editable' | 'readonly';
 
@@ -20,6 +17,7 @@ export interface ProjectFormValue {
     description: string;
     tags: string[];
     ignore: string[];
+    favoriteFiles: string[];
     syncRespectGitignore: boolean;
     fingerprint: ProjectFingerprint;
 }
@@ -27,6 +25,17 @@ export interface ProjectFormValue {
 function inferFolderName(path: string): string {
     const normalized = path.replace(/\\/g, '/').trim();
     return normalized.split('/').filter(Boolean).pop() ?? '';
+}
+
+function describeInspectionHint(inspection: ProjectDirectoryInspection | null): string | null {
+    if (!inspection) return null;
+    if (inspection.hasMetaFile) {
+        return `检测到 .meta-data${inspection.metaProjectId ? `（projectId: ${inspection.metaProjectId}）` : ''}`;
+    }
+    if (inspection.filesComplete) {
+        return `共发现 ${inspection.files.length} 个文件，可用于文件列表指纹。`;
+    }
+    return `已预加载 ${inspection.files.length} 个文件；修改文件列表或切换到文件视图后会继续按需扫描。`;
 }
 
 export function ProjectInfoForm({
@@ -48,6 +57,7 @@ export function ProjectInfoForm({
     mode = 'import',
     onAddTag,
     onRemoveTag,
+    onEditFileFingerprint,
 }: {
     form: ProjectFormValue;
     onFormChange: (next: ProjectFormValue) => void;
@@ -67,6 +77,7 @@ export function ProjectInfoForm({
     mode?: 'new' | 'import';
     onAddTag: (tag: string) => void;
     onRemoveTag: (tag: string) => void;
+    onEditFileFingerprint?: () => void;
 }) {
     return (
         <div className="px-5 py-5">
@@ -135,6 +146,7 @@ export function ProjectInfoForm({
                         editable={fingerprintEditable}
                         path={form.path}
                         onChange={fingerprint => onFormChange({ ...form, fingerprint })}
+                        onEditFileFingerprint={onEditFileFingerprint}
                     />
                 </Field>
 
@@ -258,15 +270,16 @@ function FingerprintEditor({
     editable,
     path,
     onChange,
+    onEditFileFingerprint,
 }: {
     inspection: ProjectDirectoryInspection | null;
     fingerprint: ProjectFingerprint;
     editable: boolean;
     path: string;
     onChange: (fingerprint: ProjectFingerprint) => void;
+    onEditFileFingerprint?: () => void;
 }) {
     const actions = useAppActions();
-    const [dialogOpen, setDialogOpen] = useState(false);
     const folderName = inspection?.suggestedName ?? inferFolderName(path);
     const projectId = inspection?.metaProjectId ?? '';
     const selectedPaths = fingerprint.kind === 'file-paths' ? fingerprint.paths : [];
@@ -282,7 +295,12 @@ function FingerprintEditor({
             onChange({ kind: 'folder-name', folderName });
             return;
         }
-        onChange({ kind: 'file-paths', paths: selectedPaths.filter(file => inspection?.files.includes(file)) });
+        onChange({
+            kind: 'file-paths',
+            paths: inspection?.filesComplete
+                ? selectedPaths.filter(file => inspection.files.includes(file))
+                : selectedPaths,
+        });
     };
 
     return (
@@ -353,7 +371,7 @@ function FingerprintEditor({
                             size="default"
                             variant="outline"
                             disabled={!editable || !inspection?.tree.length}
-                            onClick={() => setDialogOpen(true)}
+                            onClick={onEditFileFingerprint}
                         >
                             修改文件列表
                         </Button>
@@ -371,120 +389,16 @@ function FingerprintEditor({
                         <p className="text-note text-muted-foreground">尚未选择任何文件。</p>
                     )}
 
+                    {inspection && !inspection.filesComplete ? (
+                        <p className="text-note text-muted-foreground">当前仅预加载了部分目录，展开文件夹或搜索时会继续扫描。</p>
+                    ) : null}
+
                     {!inspection?.tree.length ? (
                         <p className="text-note text-muted-foreground">请先选择有效项目目录后再配置文件列表。</p>
                     ) : null}
                 </div>
             ) : null}
-
-            {dialogOpen && inspection ? (
-                <FingerprintFileDialog
-                    tree={inspection.tree}
-                    files={inspection.files}
-                    selectedPaths={selectedPaths}
-                    onClose={() => setDialogOpen(false)}
-                    onConfirm={paths => {
-                        onChange({ kind: 'file-paths', paths });
-                        setDialogOpen(false);
-                    }}
-                />
-            ) : null}
         </div>
-    );
-}
-
-function FingerprintFileDialog({
-    tree,
-    files,
-    selectedPaths,
-    onClose,
-    onConfirm,
-}: {
-    tree: ProjectDirectoryEntry[];
-    files: string[];
-    selectedPaths: string[];
-    onClose: () => void;
-    onConfirm: (paths: string[]) => void;
-}) {
-    const [query, setQuery] = useState('');
-    const [draft, setDraft] = useState<string[]>(selectedPaths.filter(file => files.includes(file)));
-    const visibleTree = useMemo(() => filterTree(tree, query), [tree, query]);
-
-    const toggleFile = (file: string, checked: boolean) => {
-        setDraft(current => {
-            if (checked) return [...new Set([...current, file])].sort();
-            return current.filter(item => item !== file);
-        });
-    };
-
-    return (
-        <EditDialogShell
-            title="选择指纹文件"
-            note="勾选文件作为项目的识别依据。"
-            onClose={onClose}
-            panelClassName="h-[min(76vh,720px)] w-[min(760px,calc(100vw-2rem))]"
-            bodyPaddingClassName="p-0"
-            bodyClassName="grid min-h-0 flex-1 gap-0 md:grid-cols-[minmax(0,1.2fr)_minmax(240px,0.8fr)]"
-            footerEnd={(
-                <>
-                    <Button size="default" variant="outline" onClick={onClose}>
-                        取消
-                    </Button>
-                    <Button size="default" onClick={() => onConfirm(draft)}>
-                        确认
-                    </Button>
-                </>
-            )}
-        >
-            <div className="flex min-h-0 flex-col border-r border-border px-4 py-4">
-                <div className="relative">
-                    <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                        value={query}
-                        onChange={event => setQuery(event.target.value)}
-                        placeholder="搜索文件路径"
-                        className="h-9 w-full rounded-lg border border-border bg-background pr-3 pl-9 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                    />
-                </div>
-                <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-background px-2 py-2">
-                    {visibleTree.length > 0 ? (
-                        <FileTreeView
-                            tree={visibleTree}
-                            selected={new Set(draft)}
-                            onToggleFile={toggleFile}
-                            expandAll={query.trim().length > 0}
-                        />
-                    ) : (
-                        <div className="px-2 py-6 text-note text-muted-foreground">没有匹配的文件。</div>
-                    )}
-                </div>
-            </div>
-
-            <div className="flex min-h-0 flex-col px-4 py-4">
-                <p className="text-subheading text-foreground">选中文件</p>
-                <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-background px-3 py-3">
-                    {draft.length > 0 ? (
-                        <div className="space-y-1.5">
-                            {draft.map(file => (
-                                <div key={file} className="flex items-center justify-between gap-2 rounded-lg bg-muted/35 px-2.5 py-1">
-                                    <span className="break-all text-note text-foreground/90">{file}</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleFile(file, false)}
-                                        className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
-                                        aria-label={`移除 ${file}`}
-                                    >
-                                        <X className="size-3" />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="text-note text-muted-foreground">尚未选择任何文件。</p>
-                    )}
-                </div>
-            </div>
-        </EditDialogShell>
     );
 }
 
@@ -505,6 +419,7 @@ export function ProjectDetailsView({
     mode,
     onAddTag,
     onRemoveTag,
+    onEditFileFingerprint,
 }: {
     form: ProjectFormValue;
     onFormChange: (next: ProjectFormValue) => void;
@@ -522,6 +437,7 @@ export function ProjectDetailsView({
     mode?: 'new' | 'import';
     onAddTag: (tag: string) => void;
     onRemoveTag: (tag: string) => void;
+    onEditFileFingerprint?: () => void;
 }) {
     return (
         <ProjectInfoForm
@@ -541,6 +457,9 @@ export function ProjectDetailsView({
             mode={mode}
             onAddTag={onAddTag}
             onRemoveTag={onRemoveTag}
+            onEditFileFingerprint={onEditFileFingerprint}
         />
     );
 }
+
+export { describeInspectionHint };

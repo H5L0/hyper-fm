@@ -15,6 +15,7 @@ export function createEmptyProjectForm(): ProjectFormValue {
         description: '',
         tags: [],
         ignore: [],
+        favoriteFiles: [],
         syncRespectGitignore: false,
         fingerprint: { kind: 'folder-name', folderName: '' },
     };
@@ -65,6 +66,7 @@ export function createBatchProjectForm(inspection: ProjectDirectoryInspection): 
         description: '',
         tags: [],
         ignore: [],
+        favoriteFiles: [],
         syncRespectGitignore: false,
         fingerprint: { kind: 'folder-name', folderName: inspection.suggestedName },
     };
@@ -119,7 +121,7 @@ export async function createBatchImportItem(directoryPath: string): Promise<Batc
     const normalizedPath = normalizeBatchPath(directoryPath);
     const itemId = createBatchImportId(normalizedPath);
     try {
-        const inspection = await window.fm.projects.inspectDirectory(normalizedPath, []);
+        const inspection = await window.fm.projects.inspectDirectory(normalizedPath, [], { mode: 'summary' });
         const form = createBatchProjectForm(inspection);
         const validation = await window.fm.projects.validateNew(toManualProjectInput(form));
         return {
@@ -140,6 +142,7 @@ export async function createBatchImportItem(directoryPath: string): Promise<Batc
                 description: '',
                 tags: [],
                 ignore: [],
+                favoriteFiles: [],
                 syncRespectGitignore: false,
                 fingerprint: { kind: 'folder-name', folderName: projectName },
             },
@@ -153,9 +156,17 @@ export async function createBatchImportItem(directoryPath: string): Promise<Batc
 
 export async function refreshBatchItemSnapshot(item: BatchImportItem, nextForm: ProjectFormValue): Promise<BatchImportItem> {
     try {
-        const inspection = await window.fm.projects.inspectDirectory(nextForm.path.trim(), nextForm.ignore);
+        const inspection = await window.fm.projects.inspectDirectory(nextForm.path.trim(), nextForm.ignore, {
+            mode: 'summary',
+            includeFiles: nextForm.fingerprint.kind === 'file-paths' ? nextForm.fingerprint.paths : [],
+        });
         const fingerprint: ProjectFingerprint = nextForm.fingerprint.kind === 'file-paths'
-            ? { kind: 'file-paths', paths: nextForm.fingerprint.paths.filter(file => inspection.files.includes(file)) }
+            ? {
+                kind: 'file-paths',
+                paths: inspection.filesComplete
+                    ? nextForm.fingerprint.paths.filter(file => inspection.files.includes(file))
+                    : nextForm.fingerprint.paths,
+            }
             : nextForm.fingerprint.kind === 'folder-name' && !nextForm.fingerprint.folderName.trim()
                 ? { kind: 'folder-name', folderName: inspection.suggestedName }
                 : nextForm.fingerprint;

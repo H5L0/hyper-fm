@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import { createLogger } from '../shared/logger.js';
@@ -11,8 +12,11 @@ import {
   type AppInfo,
   type ConfigSnapshot,
   type ManualProjectInput,
+  type ProjectDirectoryExpandResult,
+  type ProjectGitignorePreview,
   type ManualProjectValidationResult,
   type ProjectDirectoryInspection,
+  type ProjectDirectoryScanOptions,
   type Project,
   type ProjectMetaPatch,
   type TagDefinition,
@@ -68,9 +72,11 @@ import { scanRoot } from './scanner.js';
 import { readMetaFile, removeMetaFile, writeMetaFile } from './meta-file.js';
 import { FmError, toFmError } from './fm-error.js';
 import {
+  expandProjectDirectory,
   findFingerprintConflicts,
   findMatchingProjectsForDirectory,
   inspectProjectDirectory,
+  listProjectGitignoreFiles,
   normalizeFingerprint,
 } from './project-matcher.js';
 import {
@@ -162,8 +168,82 @@ function normalizeIgnoreInput(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string');
 }
 
+function normalizeProjectDirectoryScanOptions(value: unknown): ProjectDirectoryScanOptions {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+  const candidate = value as { mode?: unknown; includeFiles?: unknown };
+  const mode = candidate.mode === 'summary' || candidate.mode === 'interactive' || candidate.mode === 'full'
+    ? candidate.mode
+    : undefined;
+  const includeFiles = Array.isArray(candidate.includeFiles)
+    ? candidate.includeFiles.filter((item): item is string => typeof item === 'string')
+    : undefined;
+  return {
+    ...(mode ? { mode } : {}),
+    ...(includeFiles ? { includeFiles } : {}),
+  };
+}
+
 function senderWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender);
+}
+
+function resolveProjectFilePath(project: Project, relativePath: string): string {
+  const normalizedRelativePath = relativePath.replace(/\\/g, '/').replace(/^\/+/, '').trim();
+  if (!normalizedRelativePath) {
+    throw new FmError('PATH_NOT_FOUND', '文件路径不能为空');
+  }
+  if (!project.path) {
+    throw new FmError('PROJECT_NOT_BOUND', `项目未绑定到本机目录：${project.name}`);
+  }
+  const absolutePath = path.resolve(project.path, normalizedRelativePath);
+  const relativeToProject = path.relative(project.path, absolutePath).replace(/\\/g, '/');
+  if (relativeToProject.startsWith('..') || path.isAbsolute(relativeToProject)) {
+    throw new FmError('PATH_NOT_FOUND', `文件不在项目目录内：${relativePath}`);
+  }
+  return absolutePath;
+}
+
+async function openProjectFilePath(project: Project, relativePath: string): Promise<void> {
+  const absolutePath = resolveProjectFilePath(project, relativePath);
+  const errorMessage = await shell.openPath(path.normalize(absolutePath));
+  if (errorMessage) {
+    throw new FmError('COMMAND_FAILED', `打开文件失败：${errorMessage}`);
+  }
+}
+
+function openProjectFilePathWith(project: Project, relativePath: string): void {
+  const absolutePath = resolveProjectFilePath(project, relativePath);
+  if (process.platform === 'win32') {
+    const child = spawn('rundll32.exe', ['shell32.dll,OpenAs_RunDLL', path.normalize(absolutePath)], {
+      detached: true,
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+    return;
+  }
+  void shell.openPath(path.normalize(absolutePath));
+}
+
+async function openProjectFolderPath(project: Project, relativePath: string): Promise<void> {
+  const absolutePath = resolveProjectFilePath(project, relativePath);
+  const errorMessage = await shell.openPath(path.normalize(absolutePath));
+  if (errorMessage) {
+    throw new FmError('COMMAND_FAILED', `打开文件夹失败：${errorMessage}`);
+  }
+}
+
+function openProjectFolderInVscode(project: Project, relativePath: string): void {
+  const absolutePath = resolveProjectFilePath(project, relativePath);
+  const child = spawn('code', [path.normalize(absolutePath)], {
+    detached: true,
+    windowsHide: true,
+    stdio: 'ignore',
+    shell: true,
+  });
+  child.unref();
 }
 
 async function rememberRecentConfig(store: AppConfigStore, sharedPath: string, configId: string): Promise<void> {
@@ -513,13 +593,66 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
   );
 
   ipcMain.handle(
+    'fm:projects:openFile',
+    wrap('fm:projects:openFile', async (_e, id: unknown, relativePath: unknown) => {
+      assertString(id, 'id');
+      assertString(relativePath, 'relativePath');
+      const session = requireSession();
+      const project = findProjectById(session.shared, session.local, id);
+      if (!project) throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${id}`);
+      await openProjectFilePath(project, relativePath);
+      return undefined as void;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:projects:openFileWith',
+    wrap('fm:projects:openFileWith', async (_e, id: unknown, relativePath: unknown) => {
+      assertString(id, 'id');
+      assertString(relativePath, 'relativePath');
+      const session = requireSession();
+      const project = findProjectById(session.shared, session.local, id);
+      if (!project) throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${id}`);
+      openProjectFilePathWith(project, relativePath);
+      return undefined as void;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:projects:openFolder',
+    wrap('fm:projects:openFolder', async (_e, id: unknown, relativePath: unknown) => {
+      assertString(id, 'id');
+      assertString(relativePath, 'relativePath');
+      const session = requireSession();
+      const project = findProjectById(session.shared, session.local, id);
+      if (!project) throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${id}`);
+      await openProjectFolderPath(project, relativePath);
+      return undefined as void;
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:projects:openFolderInVscode',
+    wrap('fm:projects:openFolderInVscode', async (_e, id: unknown, relativePath: unknown) => {
+      assertString(id, 'id');
+      assertString(relativePath, 'relativePath');
+      const session = requireSession();
+      const project = findProjectById(session.shared, session.local, id);
+      if (!project) throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${id}`);
+      openProjectFolderInVscode(project, relativePath);
+      return undefined as void;
+    }),
+  );
+
+  ipcMain.handle(
     'fm:projects:inspectDirectory',
-    wrap('fm:projects:inspectDirectory', async (_e, projectPath: unknown, projectIgnore: unknown): Promise<ProjectDirectoryInspection> => {
+    wrap('fm:projects:inspectDirectory', async (_e, projectPath: unknown, projectIgnore: unknown, scanOptions: unknown): Promise<ProjectDirectoryInspection> => {
       assertString(projectPath, 'path');
       const session = requireSession();
       const inspection = await inspectProjectDirectory(projectPath, {
         globalIgnore: session.config.ignore.globs,
         projectIgnore: normalizeIgnoreInput(projectIgnore),
+        ...normalizeProjectDirectoryScanOptions(scanOptions),
       });
       return {
         path: inspection.path,
@@ -528,8 +661,41 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
         metaProjectId: inspection.metaProjectId,
         tree: inspection.tree,
         files: inspection.files,
+        filesComplete: inspection.filesComplete,
       };
     }),
+  );
+
+  ipcMain.handle(
+    'fm:projects:expandDirectory',
+    wrap(
+      'fm:projects:expandDirectory',
+      async (_e, projectPath: unknown, relativePath: unknown, projectIgnore: unknown, scanOptions: unknown): Promise<ProjectDirectoryExpandResult> => {
+        assertString(projectPath, 'path');
+        assertString(relativePath, 'relativePath');
+        const session = requireSession();
+        return expandProjectDirectory(projectPath, relativePath, {
+          globalIgnore: session.config.ignore.globs,
+          projectIgnore: normalizeIgnoreInput(projectIgnore),
+          ...normalizeProjectDirectoryScanOptions(scanOptions),
+        });
+      },
+    ),
+  );
+
+  ipcMain.handle(
+    'fm:projects:listGitignoreFiles',
+    wrap(
+      'fm:projects:listGitignoreFiles',
+      async (_e, projectPath: unknown, projectIgnore: unknown): Promise<ProjectGitignorePreview[]> => {
+        assertString(projectPath, 'path');
+        const session = requireSession();
+        return listProjectGitignoreFiles(projectPath, {
+          globalIgnore: session.config.ignore.globs,
+          projectIgnore: normalizeIgnoreInput(projectIgnore),
+        });
+      },
+    ),
   );
 
   ipcMain.handle(

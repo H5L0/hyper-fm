@@ -38,6 +38,7 @@ export function buildProjects(shared: SharedConfig, local: LocalConfig): Project
             description: sharedProject.description,
             tags: [...sharedProject.tags],
             ignore: [...sharedProject.ignore],
+            favoriteFiles: [...(sharedProject.favoriteFiles ?? [])],
             syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
         });
@@ -56,6 +57,7 @@ export function buildProjects(shared: SharedConfig, local: LocalConfig): Project
             description: sharedProject.description,
             tags: [...sharedProject.tags],
             ignore: [...sharedProject.ignore],
+            favoriteFiles: [...(sharedProject.favoriteFiles ?? [])],
             syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
         });
@@ -154,6 +156,9 @@ export function applyProjectPatch(
         ignore: patch.ignore
             ? [...new Set(patch.ignore.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean))].sort()
             : existing.ignore,
+        favoriteFiles: patch.favoriteFiles
+            ? [...new Set(patch.favoriteFiles.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean))].sort()
+            : existing.favoriteFiles,
         syncRespectGitignore:
             patch.syncRespectGitignore !== undefined
                 ? patch.syncRespectGitignore
@@ -173,6 +178,7 @@ export function applyProjectPatch(
             description: nextProject.description,
             tags: nextProject.tags,
             ignore: nextProject.ignore,
+            favoriteFiles: nextProject.favoriteFiles,
             syncRespectGitignore: nextProject.syncRespectGitignore,
             fingerprint: nextProject.fingerprint,
         },
@@ -233,6 +239,7 @@ export function addProjectManual(
         description: input.description,
         tags: input.tags?.map(tag => tag.trim()).filter(Boolean) ?? [],
         ignore: [...new Set((input.ignore ?? []).map(item => item.replace(/\\/g, '/').trim()).filter(Boolean))].sort(),
+        favoriteFiles: [],
         syncRespectGitignore: input.syncRespectGitignore,
         fingerprint: normalizeFingerprint(input.fingerprint),
     };
@@ -256,6 +263,7 @@ export function addProjectManual(
             description: sharedProject.description,
             tags: sharedProject.tags,
             ignore: sharedProject.ignore,
+            favoriteFiles: sharedProject.favoriteFiles,
             syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
         },

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 export function DrawerPanelShell({
     title,
     banner,
+    edgeAccessory,
     headerActions,
     headerTabs,
     activeTabId,
@@ -15,24 +16,32 @@ export function DrawerPanelShell({
     panelOffsetRight = 0,
     backdropZIndex = 30,
     panelZIndex = 40,
+    panelClassName,
+    bodyClassName,
+    panelStyle,
 }: {
     title?: string;
     banner?: ReactNode;
+    edgeAccessory?: ReactNode;
     headerActions?: ReactNode;
     headerTabs?: ReadonlyArray<{ id: string; label: string }>;
     activeTabId?: string;
     onTabChange?: (tabId: string) => void;
     children: ReactNode;
-    footer: ReactNode;
+    footer?: ReactNode;
     onClose: () => void;
     showBackdrop?: boolean;
-    panelOffsetRight?: number;
+    panelOffsetRight?: number | string;
     backdropZIndex?: number;
     panelZIndex?: number;
+    panelClassName?: string;
+    bodyClassName?: string;
+    panelStyle?: CSSProperties;
 }) {
-    const panelStyle: CSSProperties = {
+    const computedPanelStyle: CSSProperties = {
         zIndex: panelZIndex,
-        right: `${panelOffsetRight}px`,
+        right: typeof panelOffsetRight === 'number' ? `${panelOffsetRight}px` : panelOffsetRight,
+        ...panelStyle,
     };
 
     return (
@@ -50,11 +59,17 @@ export function DrawerPanelShell({
                 className={cn(
                     'fixed top-0 flex h-full w-140 max-w-[calc(100vw-1rem)] flex-col border-l border-border bg-card shadow-2xl transition-[right] duration-150',
                     'animate-in slide-in-from-right-20 fade-in duration-100',
+                    panelClassName,
                 )}
-                style={panelStyle}
+                style={computedPanelStyle}
             >
-                <div className="shrink-0 border-b border-border px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
+                {edgeAccessory ? (
+                    <div className="absolute top-0 left-px z-10 -translate-x-full">
+                        {edgeAccessory}
+                    </div>
+                ) : null}
+                <div className="shrink-0 border-b border-border px-4 py-2.5">
+                    <div className="relative flex items-center justify-between gap-3">
                         {headerTabs && headerTabs.length > 0 && !title ? (
                             <div className="flex items-center gap-1">
                                 {headerTabs.map(tab => {
@@ -65,7 +80,7 @@ export function DrawerPanelShell({
                                             type="button"
                                             onClick={() => onTabChange?.(tab.id)}
                                             className={cn(
-                                                'rounded-lg px-3 py-1.5 text-note font-semibold transition-colors',
+                                                'rounded-lg px-3 py-1 text-note font-semibold transition-colors',
                                                 active
                                                     ? 'bg-secondary text-foreground'
                                                     : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
@@ -82,7 +97,7 @@ export function DrawerPanelShell({
                         <div className="flex items-center gap-1">{headerActions}</div>
                     </div>
                     {headerTabs && headerTabs.length > 0 && title ? (
-                        <div className="mt-3 flex items-center gap-1">
+                        <div className="mt-2 flex items-center gap-1">
                             {headerTabs.map(tab => {
                                 const active = tab.id === activeTabId;
                                 return (
@@ -91,7 +106,7 @@ export function DrawerPanelShell({
                                         type="button"
                                         onClick={() => onTabChange?.(tab.id)}
                                         className={cn(
-                                            'rounded-lg px-3 py-1.5 text-note font-semibold transition-colors',
+                                            'rounded-lg px-3 py-1 text-note font-semibold transition-colors',
                                             active
                                                 ? 'bg-secondary text-foreground'
                                                 : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
@@ -111,9 +126,11 @@ export function DrawerPanelShell({
                     </div>
                 ) : null}
 
-                <div className="flex-1 overflow-y-auto">{children}</div>
+                <div className={cn('flex-1 overflow-y-auto', bodyClassName)}>{children}</div>
 
-                <div className="shrink-0 border-t border-border bg-card/90 px-5 py-3">{footer}</div>
+                {footer ? (
+                    <div className="shrink-0 border-t border-border bg-card/90 px-5 py-3">{footer}</div>
+                ) : null}
             </aside>
         </>
     );

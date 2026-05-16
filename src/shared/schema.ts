@@ -210,6 +210,7 @@ function validateSharedProject(value: unknown, idx: number, errors: ValidationEr
         description: isString(value.description) ? value.description : undefined,
         tags: isStringArray(value.tags) ? normalizeStringList(value.tags) : [],
         ignore: isStringArray(value.ignore) ? normalizeStringList(value.ignore).map(v => v.replace(/\\/g, '/')) : [],
+        favoriteFiles: isStringArray(value.favoriteFiles) ? normalizeFingerprintPaths(value.favoriteFiles) : [],
         syncRespectGitignore: typeof value.syncRespectGitignore === 'boolean' ? value.syncRespectGitignore : undefined,
         fingerprint,
     };
@@ -943,6 +944,7 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
             description: sharedProject.description,
             tags: [...sharedProject.tags],
             ignore: [...sharedProject.ignore],
+            favoriteFiles: [...(sharedProject.favoriteFiles ?? [])],
             syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
         });
@@ -992,6 +994,7 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
                 description: project.description,
                 tags: [...project.tags],
                 ignore: [...project.ignore],
+                favoriteFiles: [...(project.favoriteFiles ?? [])],
                 syncRespectGitignore: project.syncRespectGitignore,
                 fingerprint: cloneFingerprint(project.fingerprint),
             });
@@ -1003,6 +1006,7 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
             description: project.description,
             tags: [...project.tags],
             ignore: [...project.ignore],
+            favoriteFiles: [...(project.favoriteFiles ?? [])],
             syncRespectGitignore: project.syncRespectGitignore,
             fingerprint: cloneFingerprint(project.fingerprint),
         });

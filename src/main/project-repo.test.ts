@@ -93,6 +93,7 @@ describe('project-repo / manual add', () => {
         expect(result.nextLocal.bindings).toHaveLength(1);
         expect(result.project.id).toMatch(/^pj-[a-z0-9]{6}$/);
         expect(result.project.ignore).toEqual(['README.md', 'dist/']);
+        expect(result.project.favoriteFiles).toEqual([]);
         expect(result.project.syncRespectGitignore).toBe(true);
         expect(result.project.fingerprint.kind).toBe('folder-name');
     });
@@ -113,10 +114,12 @@ describe('project-repo / manual add', () => {
         const patched = applyProjectPatch(added.nextShared, added.nextLocal, added.project.id, {
             tags: [' a ', '', 'b'],
             ignore: ['dist/', ' README.md ', ''],
+            favoriteFiles: [' src/main.ts ', 'README.md', 'src\\main.ts'],
             syncRespectGitignore: true,
         });
         expect(patched.project.tags).toEqual(['a', 'b']);
         expect(patched.project.ignore).toEqual(['README.md', 'dist/']);
+        expect(patched.project.favoriteFiles).toEqual(['README.md', 'src/main.ts']);
         expect(patched.project.syncRespectGitignore).toBe(true);
     });
 

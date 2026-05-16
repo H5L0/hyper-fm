@@ -19,7 +19,7 @@ import {
 } from '@/project-import/validation-text.js';
 import { useAppActions, useAppState } from '../store/app-store.js';
 import { AddScanRootDialog } from './view/scan-root-dialog.js';
-import { ProjectFormValue, ProjectInfoForm } from './view/project-info-panel/project-details-view.js';
+import { describeInspectionHint, ProjectFormValue, ProjectInfoForm } from './view/project-info-panel/project-details-view.js';
 import { SplitMenuButton, SplitMenuEntry } from './ui/split-menu-button.js';
 
 export function Toolbar() {
@@ -34,6 +34,7 @@ export function Toolbar() {
         description: '',
         tags: [],
         ignore: [],
+        favoriteFiles: [],
         syncRespectGitignore: false,
         fingerprint: { kind: 'folder-name', folderName: '' },
     });
@@ -64,7 +65,7 @@ export function Toolbar() {
     };
 
     const inspectAndSync = async (dir: string, forceName = false) => {
-        const next = await window.fm.projects.inspectDirectory(dir);
+        const next = await window.fm.projects.inspectDirectory(dir, [], { mode: 'summary' });
         setInspection(next);
         setForm(prev => ({
             ...prev,
@@ -84,6 +85,7 @@ export function Toolbar() {
         if (!inspection) return;
         setForm(current => {
             if (current.fingerprint.kind !== 'file-paths') return current;
+            if (!inspection.filesComplete) return current;
             const nextPaths = current.fingerprint.paths.filter(item => inspection.files.includes(item));
             if (nextPaths.length === current.fingerprint.paths.length) return current;
             return {
@@ -251,9 +253,7 @@ export function Toolbar() {
                         pathHint={
                             inspection ? (
                                 <p className="text-note text-muted-foreground">
-                                    {inspection.hasMetaFile
-                                        ? `检测到 .meta-data${inspection.metaProjectId ? `（projectId: ${inspection.metaProjectId}）` : ''}`
-                                        : `共发现 ${inspection.files.length} 个文件，可用于文件列表指纹。`}
+                                    {describeInspectionHint(inspection)}
                                 </p>
                             ) : null
                         }

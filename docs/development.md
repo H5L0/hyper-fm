@@ -290,7 +290,7 @@ type ProjectFingerprint =
 - `meta-file.ts`：读写项目根 `.meta-data`。
 - `ignore-matcher.ts`：忽略规则匹配。
 - `scanner.ts`：扫描根递归遍历、候选目录发现。
-- `project-matcher.ts`：目录检查、指纹匹配、冲突判断。
+- `project-matcher.ts`：目录检查、指纹匹配、冲突判断；`inspectDirectory()` 默认只预加载首层目录，文件视图/指纹选择再按需用广度优先继续展开，避免超大目录首次打开时做整树扫描；同时提供 `.gitignore` 预览所需的递归发现能力。
 
 #### 进程边界与错误
 
@@ -343,7 +343,7 @@ preload 的职责非常明确：
 - `store/`：全局状态与 action 组织
 - `components/ui/`：通用原子控件与基础交互控件
 - `components/basic/`：可复用的小型业务组件，例如 tag、项目表单、抽屉壳、忽略规则编辑器等
-- `components/view/`：大界面或大区域组件，例如项目浏览视图、项目信息面板与 panel 下的 info/files/sync 子视图
+- `components/view/`：大界面或大区域组件，例如项目浏览视图、项目信息面板与 panel 下的 info/sync 主视图，以及可复用的文件扩展面板
 - `components/` 根目录：尚未沉淀为三层结构的业务组件、对话框与设置面板
 - `browser-bridge.ts`：对桥接调用做渲染层适配
 
@@ -352,7 +352,8 @@ preload 的职责非常明确：
 当前与项目浏览相关的视图组织约定如下：
 
 - 整个右侧详情抽屉统一命名为 `project-info-panel`
-- panel 内的三个区域分别拆成 `project-info-view`、`project-files-view`、`project-sync-view`
+- panel 主体拆成 `project-info-view`、`project-sync-view`，文件树则作为可复用的左侧扩展面板 `project-files-view`
+- `project-sync-view` 负责项目级忽略规则、`.gitignore` 预览与同步目标设置
 - 若某段 UI 会被多个 view 或对话框复用，应优先下沉到 `components/basic/`
 
 ### 3.6 关键链路
@@ -385,6 +386,12 @@ preload 的职责非常明确：
 3. 校验通过后 `add()` 创建 shared 项目；
 4. 同步创建本地 binding；
 5. 若指纹为 `metadata`，写入 `.meta-data.projectId`。
+
+补充约定：
+
+- `inspectDirectory()` 分为 `summary / interactive / full` 三种模式；默认使用 `summary`，仅检查首层目录与基础元信息。
+- 文件树展开与“修改文件列表”走 `interactive` 模式，按广度优先继续扫描，并在当前层文件很多时停止向更深层预取。
+- 搜索整棵文件树或确实需要完整文件列表时，才升级到 `full` 模式执行全量递归扫描。
 
 #### 批量添加项目
 

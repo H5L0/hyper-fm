@@ -114,6 +114,7 @@ describe('schema', () => {
         expect(config.projects[0]?.id).toBe('pj-aaaaaa');
         expect(config.projects[0]?.fingerprint.kind).toBe('metadata');
         expect(config.projects[0]?.ignore).toEqual([]);
+        expect(config.projects[0]?.favoriteFiles).toEqual([]);
         expect(config.name).toBe('fm');
     });
 
@@ -129,6 +130,7 @@ describe('schema', () => {
                     name: 'Game',
                     tags: ['unity'],
                     ignore: ['dist/'],
+                    favoriteFiles: [' src/main.ts ', 'README.md', 'src\\main.ts'],
                     syncRespectGitignore: true,
                     fingerprint: { kind: 'file-paths', paths: ['package.json', 'src/main.ts'] },
                 },
@@ -141,6 +143,7 @@ describe('schema', () => {
         expect(config.name).toBe('workspace');
         expect(config.description).toBe('shared config');
         expect(config.projects[0]?.fingerprint.kind).toBe('file-paths');
+        expect(config.projects[0]?.favoriteFiles).toEqual(['README.md', 'src/main.ts']);
         expect(config.projects[0]?.ignore).toEqual(['dist/']);
         expect(config.projects[0]?.syncRespectGitignore).toBe(true);
         expect(config.tags?.[0]?.name).toBe('unity');
@@ -239,6 +242,7 @@ describe('schema', () => {
                 name: 'Demo',
                 tags: [],
                 ignore: [],
+                favoriteFiles: ['README.md', 'src/main.ts'],
                 fingerprint: { kind: 'metadata' },
             },
         ];
@@ -246,5 +250,28 @@ describe('schema', () => {
         const shared = createDefaultSharedConfig();
         const local = mergeAppConfigIntoLocal(app, shared);
         expect(local.bindings[0]).not.toHaveProperty('lastModifiedAt');
+    });
+
+    test('[mergeAppConfigIntoShared] 应将项目 favoriteFiles 写回共享配置', () => {
+        const shared = createDefaultSharedConfig();
+        const app = createDefaultConfig();
+        app.projects = [
+            {
+                projectId: 'pj-aaaaaa',
+                id: 'pj-aaaaaa',
+                path: 'D:/projects/demo',
+                rootId: 'root_1',
+                hasMetaFile: false,
+                lastScannedAt: '2026-01-01T00:00:00Z',
+                name: 'Demo',
+                tags: [],
+                ignore: [],
+                favoriteFiles: ['README.md', 'src/main.ts'],
+                fingerprint: { kind: 'metadata' },
+            },
+        ];
+
+        const nextShared = mergeAppConfigIntoShared(shared, app);
+        expect(nextShared.projects[0]?.favoriteFiles).toEqual(['README.md', 'src/main.ts']);
     });
 });

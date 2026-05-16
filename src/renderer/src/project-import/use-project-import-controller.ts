@@ -70,7 +70,10 @@ export function useProjectImportController() {
     };
 
     const inspectAndSync = async (dir: string, forceName = false, projectIgnore: string[] = form.ignore) => {
-        const next = await window.fm.projects.inspectDirectory(dir, projectIgnore);
+        const next = await window.fm.projects.inspectDirectory(dir, projectIgnore, {
+            mode: 'summary',
+            includeFiles: form.fingerprint.kind === 'file-paths' ? form.fingerprint.paths : [],
+        });
         setInspection(next);
         setForm(prev => ({
             ...prev,
@@ -90,6 +93,7 @@ export function useProjectImportController() {
         if (!inspection) return;
         setForm(current => {
             if (current.fingerprint.kind !== 'file-paths') return current;
+            if (!inspection.filesComplete) return current;
             const nextPaths = current.fingerprint.paths.filter(item => inspection.files.includes(item));
             if (nextPaths.length === current.fingerprint.paths.length) return current;
             return {
@@ -101,8 +105,11 @@ export function useProjectImportController() {
 
     useEffect(() => {
         if (!addOpen || !form.path.trim()) return;
-        void window.fm.projects.inspectDirectory(form.path.trim(), form.ignore).then(setInspection).catch(() => setInspection(null));
-    }, [addOpen, form.path, form.ignore]);
+        void window.fm.projects.inspectDirectory(form.path.trim(), form.ignore, {
+            mode: 'summary',
+            includeFiles: form.fingerprint.kind === 'file-paths' ? form.fingerprint.paths : [],
+        }).then(setInspection).catch(() => setInspection(null));
+    }, [addOpen, form.fingerprint, form.path, form.ignore]);
 
     useEffect(() => {
         if (!addOpen || !form.path.trim()) return;

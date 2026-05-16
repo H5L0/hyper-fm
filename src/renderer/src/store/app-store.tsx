@@ -75,6 +75,7 @@ export interface AppState {
   view: View;
   route: Route;
   selectedProjectId?: string;
+  fileViewProjectId?: string;
   scanProgress?: ScanProgressEvent & { running: boolean };
   pendingNewProject: number;
 }
@@ -127,6 +128,8 @@ type Action =
   | { type: 'view'; value: View }
   | { type: 'route'; value: Route }
   | { type: 'select'; id?: string }
+  | { type: 'openProjectFiles'; id: string }
+  | { type: 'closeProjectFiles' }
   | { type: 'progress'; value?: ScanProgressEvent & { running: boolean } }
   | { type: 'triggerNewProject' };
 
@@ -189,7 +192,20 @@ function reducer(state: AppState, action: Action): AppState {
     case 'route':
       return { ...state, route: action.value };
     case 'select':
-      return { ...state, selectedProjectId: action.id };
+      return {
+        ...state,
+        selectedProjectId: action.id,
+        fileViewProjectId: action.id ? undefined : state.fileViewProjectId,
+      };
+    case 'openProjectFiles':
+      return {
+        ...state,
+        route: 'browse',
+        selectedProjectId: undefined,
+        fileViewProjectId: action.id,
+      };
+    case 'closeProjectFiles':
+      return { ...state, fileViewProjectId: undefined };
     case 'progress':
       return { ...state, scanProgress: action.value };
     case 'triggerNewProject':
@@ -217,6 +233,8 @@ interface AppActions {
   setView(value: View): void;
   setRoute(value: Route): void;
   selectProject(id?: string): void;
+  openProjectFiles(id: string): void;
+  closeProjectFiles(): void;
   saveProject(id: string, patch: ProjectMetaPatch, writeFile: boolean): Promise<void>;
   removeMetaFile(id: string): Promise<void>;
   revealProject(id: string): Promise<void>;
@@ -789,6 +807,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setView,
       setRoute: value => dispatch({ type: 'route', value }),
       selectProject: id => dispatch({ type: 'select', id }),
+      openProjectFiles: id => dispatch({ type: 'openProjectFiles', id }),
+      closeProjectFiles: () => dispatch({ type: 'closeProjectFiles' }),
       saveProject,
       removeMetaFile,
       revealProject,

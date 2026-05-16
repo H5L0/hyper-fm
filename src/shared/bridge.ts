@@ -139,7 +139,13 @@ export interface FmProjectsBridge {
   writeMetaFile(id: string, patch: ProjectMetaPatch): Promise<Project>;
   removeMetaFile(id: string): Promise<Project>;
   revealInOs(id: string): Promise<void>;
-  inspectDirectory(path: string, projectIgnore?: string[]): Promise<ProjectDirectoryInspection>;
+  openFile(id: string, relativePath: string): Promise<void>;
+  openFileWith(id: string, relativePath: string): Promise<void>;
+  openFolder(id: string, relativePath: string): Promise<void>;
+  openFolderInVscode(id: string, relativePath: string): Promise<void>;
+  inspectDirectory(path: string, projectIgnore?: string[], options?: ProjectDirectoryScanOptions): Promise<ProjectDirectoryInspection>;
+  expandDirectory(path: string, relativePath: string, projectIgnore?: string[], options?: ProjectDirectoryScanOptions): Promise<ProjectDirectoryExpandResult>;
+  listGitignoreFiles(path: string, projectIgnore?: string[]): Promise<ProjectGitignorePreview[]>;
   validateNew(input: ManualProjectInput): Promise<ManualProjectValidationResult>;
   add(input: ManualProjectInput): Promise<Project>;
   remove(id: string): Promise<void>;
@@ -167,12 +173,20 @@ export interface ManualProjectInput {
 
 export type ProjectDirectoryIgnoreSource = 'global' | 'project';
 
+export type ProjectDirectoryScanMode = 'summary' | 'interactive' | 'full';
+
+export interface ProjectDirectoryScanOptions {
+  mode?: ProjectDirectoryScanMode;
+  includeFiles?: string[];
+}
+
 export interface ProjectDirectoryEntry {
   path: string;
   name: string;
   kind: 'file' | 'folder';
   ignoredBy?: ProjectDirectoryIgnoreSource;
   children?: ProjectDirectoryEntry[];
+  childrenLoaded?: boolean;
 }
 
 export interface ProjectDirectoryInspection {
@@ -182,6 +196,18 @@ export interface ProjectDirectoryInspection {
   metaProjectId?: string;
   tree: ProjectDirectoryEntry[];
   files: string[];
+  filesComplete: boolean;
+}
+
+export interface ProjectDirectoryExpandResult {
+  parentPath: string;
+  entries: ProjectDirectoryEntry[];
+}
+
+export interface ProjectGitignorePreview {
+  path: string;
+  content: string;
+  truncated: boolean;
 }
 
 export type ManualProjectValidationConflictKind =

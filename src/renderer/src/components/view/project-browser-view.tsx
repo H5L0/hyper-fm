@@ -409,6 +409,15 @@ function ProjectContextMenu({
             >
                 编辑详情…
             </MenuItem>
+            <MenuItem
+                onClick={() => {
+                    actions.openProjectFiles(project.id);
+                    onClose();
+                }}
+                icon={<FileText className="size-4" />}
+            >
+                查看文件
+            </MenuItem>
             <MenuSeparator />
             {presets.map(preset => {
                 const Icon = iconOf(preset.id);

@@ -62,6 +62,8 @@ export interface SharedProject {
   description?: string;
   tags: string[];
   ignore: string[];
+  /** 收藏的相对文件路径，持久化到 shared 配置，供文件视图快速筛选与展示 */
+  favoriteFiles?: string[];
   /** 同步项目文件时是否额外遵循项目目录中的 .gitignore（含嵌套目录） */
   syncRespectGitignore?: boolean;
   fingerprint: ProjectFingerprint;
@@ -73,6 +75,7 @@ export interface Project extends ProjectBinding {
   description?: string;
   tags: string[];
   ignore: string[];
+  favoriteFiles?: string[];
   syncRespectGitignore?: boolean;
   fingerprint: ProjectFingerprint;
 }
@@ -226,6 +229,7 @@ export interface ProjectMetaPatch {
   description?: string;
   tags?: string[];
   ignore?: string[];
+  favoriteFiles?: string[];
   syncRespectGitignore?: boolean;
   fingerprint?: ProjectFingerprint;
 }

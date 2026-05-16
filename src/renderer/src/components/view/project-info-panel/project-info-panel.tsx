@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, FolderOpen, Save, Terminal, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, FolderOpen, Save, Terminal, X } from 'lucide-react';
 import type {
     CustomCommand,
     ManualProjectValidationResult,
@@ -20,17 +20,18 @@ import {
     getManualProjectValidationTitle,
 } from '@/project-import/validation-text.js';
 import { useAppActions, useAppState } from '@/store/app-store.js';
-import { ProjectFormValue, ProjectDetailsView } from './project-details-view.js';
-import { ProjectFilesView } from './project-files-view.js';
+import { describeInspectionHint, ProjectFormValue, ProjectDetailsView } from './project-details-view.js';
+import { ProjectFilesSidePanel } from './project-files-view.js';
 import { ProjectSyncView, readProjectRule } from './project-sync-view.js';
+import { cn } from '@/lib/utils.js';
 
-export type ProjectInfoPanelViewId = 'info' | 'files' | 'sync';
+export type ProjectInfoPanelViewId = 'info' | 'sync';
+type ProjectFilePanelMode = 'browse' | 'select-fingerprint' | null;
 
 type SyncRuleOverrides = Partial<Record<string, SyncProjectRule>>;
 
 const PROJECT_INFO_PANEL_VIEWS: ReadonlyArray<{ id: ProjectInfoPanelViewId; label: string }> = [
     { id: 'info', label: '信息' },
-    { id: 'files', label: '文件' },
     { id: 'sync', label: '同步' },
 ];
 
@@ -43,6 +44,7 @@ function projectToForm(project: Project): FormState {
         description: project.description ?? '',
         tags: [...project.tags],
         ignore: [...project.ignore],
+        favoriteFiles: [...(project.favoriteFiles ?? [])],
         syncRespectGitignore: project.syncRespectGitignore ?? false,
         fingerprint: project.fingerprint,
     };
@@ -55,6 +57,10 @@ function formsEqual(a: FormState, b: FormState): boolean {
     if (a.ignore.length !== b.ignore.length) return false;
     for (let index = 0; index < a.ignore.length; index++) {
         if (a.ignore[index] !== b.ignore[index]) return false;
+    }
+    if (a.favoriteFiles.length !== b.favoriteFiles.length) return false;
+    for (let index = 0; index < a.favoriteFiles.length; index++) {
+        if (a.favoriteFiles[index] !== b.favoriteFiles[index]) return false;
     }
     if (a.syncRespectGitignore !== b.syncRespectGitignore) return false;
     if (!sameFingerprint(a.fingerprint, b.fingerprint)) return false;
@@ -70,13 +76,10 @@ function hasEmptyFileFingerprint(form: ProjectFormValue): boolean {
 }
 
 function renderInspectionHint(inspection: ProjectDirectoryInspection | null) {
-    if (!inspection) return null;
+    const text = describeInspectionHint(inspection);
+    if (!text) return null;
     return (
-        <p className="text-note text-muted-foreground">
-            {inspection.hasMetaFile
-                ? `检测到 .meta-data${inspection.metaProjectId ? `（projectId: ${inspection.metaProjectId}）` : ''}`
-                : `共发现 ${inspection.files.length} 个文件，可用于文件列表指纹。`}
-        </p>
+        <p className="text-note text-muted-foreground">{text}</p>
     );
 }
 
@@ -113,6 +116,36 @@ function renderAddProjectValidation(validation: ManualProjectValidationResult, m
             {missingFingerprintFile ? renderEmptyFingerprintValidation() : null}
         </div>
     );
+}
+
+function ProjectFilesPanelToggle({ onClick }: { onClick: () => void }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            title="查看文件"
+            className={cn(
+                'group inline-flex mt-2 mr-3 h-8 pl-2 pr-3 items-center gap-1.5 rounded-xl border border-border bg-card',
+                'text-note font-semibold text-foreground shadow-lg',
+                'transition-[background-color,color,transform] duration-150 hover:bg-muted/60',
+            )}
+        >
+            <ChevronLeft className="size-3.5 text-muted-foreground transition-transform duration-150 group-hover:-translate-x-0.5" />
+            <span>文件</span>
+        </button>
+    );
+}
+
+function createInspectionFallback(project: Pick<Project, 'id' | 'name' | 'path' | 'hasMetaFile' | 'fingerprint'>): ProjectDirectoryInspection {
+    return {
+        path: project.path,
+        suggestedName: project.path.split(/[\\/]/).filter(Boolean).pop() ?? project.name,
+        hasMetaFile: project.hasMetaFile,
+        metaProjectId: project.id,
+        tree: [],
+        files: project.fingerprint.kind === 'file-paths' ? project.fingerprint.paths : [],
+        filesComplete: false,
+    };
 }
 
 function hasSyncRuleOverrides(ruleOverrides: SyncRuleOverrides): boolean {
@@ -187,11 +220,13 @@ export function AddProjectInfoPanel({
     onRemoveTag: (tag: string) => void;
 }) {
     const [activeView, setActiveView] = useState<ProjectInfoPanelViewId>('info');
+    const [filePanelMode, setFilePanelMode] = useState<ProjectFilePanelMode>(null);
     const [ignoreText, setIgnoreText] = useState(form.ignore.join('\n'));
 
     useEffect(() => {
         if (!open) return;
         setActiveView('info');
+        setFilePanelMode(null);
     }, [open]);
 
     useEffect(() => {
@@ -208,6 +243,7 @@ export function AddProjectInfoPanel({
             hasMetaFile: false,
             tree: [],
             files: form.fingerprint.kind === 'file-paths' ? form.fingerprint.paths : [],
+            filesComplete: false,
         }
         : null);
     const draftProject = {
@@ -224,78 +260,114 @@ export function AddProjectInfoPanel({
     };
 
     return (
-        <DrawerPanelShell
-            title={mode === 'new' ? '新建项目' : '导入项目'}
-            headerTabs={PROJECT_INFO_PANEL_VIEWS}
-            activeTabId={activeView}
-            onTabChange={tabId => setActiveView(tabId as ProjectInfoPanelViewId)}
-            onClose={onClose}
-            headerActions={
-                <Button size="icon-xs" variant="ghost" onClick={onClose}>
-                    <X className="size-3.5" />
-                </Button>
-            }
-            footer={
-                <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={onClose}>
-                        取消
+        <>
+            <DrawerPanelShell
+                title={mode === 'new' ? '新建项目' : '导入项目'}
+                headerTabs={PROJECT_INFO_PANEL_VIEWS}
+                activeTabId={activeView}
+                onTabChange={tabId => setActiveView(tabId as ProjectInfoPanelViewId)}
+                onClose={onClose}
+                panelClassName={filePanelMode ? 'shadow-xl' : undefined}
+                edgeAccessory={filePanelMode === null ? (
+                    <ProjectFilesPanelToggle onClick={() => setFilePanelMode('browse')} />
+                ) : null}
+                headerActions={(
+                    <Button size="icon-xs" variant="ghost" onClick={onClose}>
+                        <X className="size-3.5" />
                     </Button>
-                    <Button size="sm" disabled={submitDisabled} onClick={onSubmit}>
-                        添加
-                    </Button>
-                </div>
-            }
-        >
-            {activeView === 'files' ? (
-                <ProjectFilesView
-                    tree={effectiveInspection?.tree ?? []}
-                    ignoreText={ignoreText}
-                    onIgnoreTextChange={updateIgnoreText}
-                />
-            ) : activeView === 'sync' ? (
-                <ProjectSyncView
-                    syncRespectGitignore={form.syncRespectGitignore}
-                    onSyncRespectGitignoreChange={checked => onFormChange({
+                )}
+                footer={(
+                    <div className="flex items-center justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={onClose}>
+                            取消
+                        </Button>
+                        <Button size="sm" disabled={submitDisabled} onClick={onSubmit}>
+                            添加
+                        </Button>
+                    </div>
+                )}
+            >
+                {activeView === 'sync' ? (
+                    <ProjectSyncView
+                        path={form.path}
+                        projectIgnore={form.ignore}
+                        ignoreText={ignoreText}
+                        onIgnoreTextChange={updateIgnoreText}
+                        syncRespectGitignore={form.syncRespectGitignore}
+                        onSyncRespectGitignoreChange={checked => onFormChange({
+                            ...form,
+                            syncRespectGitignore: checked,
+                        })}
+                        project={draftProject}
+                        allProjects={allProjects}
+                        syncConfigs={syncConfigs}
+                        ruleOverrides={syncRuleOverrides}
+                        busyId={null}
+                        onChangeRule={onSyncRuleChange}
+                    />
+                ) : (
+                    <ProjectDetailsView
+                        form={form}
+                        onFormChange={onFormChange}
+                        tagDefs={tagDefs}
+                        inspection={effectiveInspection}
+                        pathEditable
+                        pathHint={renderInspectionHint(inspection)}
+                        validation={renderAddProjectValidation(validation, hasEmptyFileFingerprint(form))}
+                        tagSelectorMode="alwaysEdit"
+                        onPickPath={onPickPath}
+                        onPathCommit={onPathCommit}
+                        onPickParentPath={onPickParentPath}
+                        onSetPathFromScanRoot={onSetPathFromScanRoot}
+                        scanRoots={scanRoots}
+                        mode={mode}
+                        onAddTag={onAddTag}
+                        onRemoveTag={onRemoveTag}
+                        onEditFileFingerprint={() => setFilePanelMode('select-fingerprint')}
+                    />
+                )}
+            </DrawerPanelShell>
+
+            {filePanelMode ? (
+                <ProjectFilesSidePanel
+                    mode={filePanelMode}
+                    path={form.path}
+                    projectIgnore={form.ignore}
+                    initialInspection={effectiveInspection}
+                    selectedPaths={form.fingerprint.kind === 'file-paths' ? form.fingerprint.paths : []}
+                    favoriteFiles={form.favoriteFiles}
+                    onFavoriteFilesChange={paths => onFormChange({
                         ...form,
-                        syncRespectGitignore: checked,
+                        favoriteFiles: paths,
                     })}
-                    project={draftProject}
-                    allProjects={allProjects}
-                    syncConfigs={syncConfigs}
-                    ruleOverrides={syncRuleOverrides}
-                    busyId={null}
-                    onChangeRule={onSyncRuleChange}
+                    onClose={() => setFilePanelMode(null)}
+                    onConfirmSelection={paths => {
+                        onFormChange({
+                            ...form,
+                            fingerprint: { kind: 'file-paths', paths },
+                        });
+                        setFilePanelMode(null);
+                    }}
                 />
-            ) : (
-                <ProjectDetailsView
-                    form={form}
-                    onFormChange={onFormChange}
-                    tagDefs={tagDefs}
-                    inspection={effectiveInspection}
-                    pathEditable
-                    pathHint={renderInspectionHint(inspection)}
-                    validation={renderAddProjectValidation(validation, hasEmptyFileFingerprint(form))}
-                    tagSelectorMode="alwaysEdit"
-                    onPickPath={onPickPath}
-                    onPathCommit={onPathCommit}
-                    onPickParentPath={onPickParentPath}
-                    onSetPathFromScanRoot={onSetPathFromScanRoot}
-                    scanRoots={scanRoots}
-                    mode={mode}
-                    onAddTag={onAddTag}
-                    onRemoveTag={onRemoveTag}
-                />
-            )}
-        </DrawerPanelShell>
+            ) : null}
+        </>
     );
 }
 
 export function ProjectInfoPanel() {
-    const { selectedProjectId, config, search } = useAppState();
+    const { selectedProjectId, fileViewProjectId, config, search } = useAppState();
     const actions = useAppActions();
     const project = useMemo(
         () => config.projects.find(item => item.id === selectedProjectId),
         [config.projects, selectedProjectId],
+    );
+    const standaloneFileProject = useMemo(
+        () => selectedProjectId ? undefined : config.projects.find(item => item.id === fileViewProjectId),
+        [config.projects, fileViewProjectId, selectedProjectId],
+    );
+    const standaloneFileInspection = useMemo(
+        () => standaloneFileProject ? createInspectionFallback(standaloneFileProject) : null,
+        [standaloneFileProject],
     );
 
     const [form, setForm] = useState<FormState | null>(project ? projectToForm(project) : null);
@@ -306,6 +378,7 @@ export function ProjectInfoPanel() {
     const [confirmClose, setConfirmClose] = useState(false);
     const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
     const [activeView, setActiveView] = useState<ProjectInfoPanelViewId>('info');
+    const [filePanelMode, setFilePanelMode] = useState<ProjectFilePanelMode>(null);
     const [ignoreText, setIgnoreText] = useState(project ? project.ignore.join('\n') : '');
     const [syncRuleOverrides, setSyncRuleOverrides] = useState<SyncRuleOverrides>({});
 
@@ -320,21 +393,32 @@ export function ProjectInfoPanel() {
         setCommandsOpen(false);
         setConfirmClose(false);
         setActiveView('info');
+        setFilePanelMode(null);
         setSyncRuleOverrides({});
     }, [project?.id]);
+
+    useEffect(() => {
+        if (fileViewProjectId && !standaloneFileProject) {
+            actions.closeProjectFiles();
+        }
+    }, [actions, fileViewProjectId, standaloneFileProject]);
 
     useEffect(() => {
         if (!form?.path) {
             setInspection(null);
             return;
         }
-        void window.fm.projects.inspectDirectory(form.path, form.ignore).then(setInspection).catch(() => setInspection(null));
-    }, [form?.ignore, form?.path]);
+        void window.fm.projects.inspectDirectory(form.path, form.ignore, {
+            mode: 'summary',
+            includeFiles: form.fingerprint.kind === 'file-paths' ? form.fingerprint.paths : [],
+        }).then(setInspection).catch(() => setInspection(null));
+    }, [form?.fingerprint, form?.ignore, form?.path]);
 
     useEffect(() => {
         if (!inspection) return;
         setForm(current => {
             if (!current || current.fingerprint.kind !== 'file-paths') return current;
+            if (!inspection.filesComplete) return current;
             const nextPaths = current.fingerprint.paths.filter(item => inspection.files.includes(item));
             if (nextPaths.length === current.fingerprint.paths.length) return current;
             return {
@@ -389,7 +473,45 @@ export function ProjectInfoPanel() {
         return explain ? explainMatch(explain) : '';
     }, [project, search]);
 
-    if (!project || !form) return null;
+    const effectiveInspection = useMemo(
+        () => project ? (inspection ?? createInspectionFallback(project)) : null,
+        [inspection, project],
+    );
+
+    const saveStandaloneFavoriteFiles = async (paths: string[]) => {
+        if (!standaloneFileProject) return;
+        try {
+            const patch: ProjectMetaPatch = { favoriteFiles: paths };
+            if (standaloneFileProject.hasMetaFile) {
+                await window.fm.projects.writeMetaFile(standaloneFileProject.id, patch);
+            } else {
+                await window.fm.projects.updateMeta(standaloneFileProject.id, patch);
+            }
+            await actions.loadConfig();
+        } catch (error) {
+            actions.toast('error', error instanceof Error ? error.message : '保存收藏文件失败');
+        }
+    };
+
+    if (!project || !form) {
+        if (!standaloneFileProject) return null;
+        return (
+            <ProjectFilesSidePanel
+                mode="browse"
+                path={standaloneFileProject.path}
+                projectIgnore={standaloneFileProject.ignore}
+                initialInspection={standaloneFileInspection}
+                favoriteFiles={standaloneFileProject.favoriteFiles}
+                onFavoriteFilesChange={paths => void saveStandaloneFavoriteFiles(paths)}
+                attachedToInfoPanel={false}
+                onClose={() => actions.closeProjectFiles()}
+                onOpenFile={relativePath => void window.fm.projects.openFile(standaloneFileProject.id, relativePath)}
+                onOpenFileWith={relativePath => void window.fm.projects.openFileWith(standaloneFileProject.id, relativePath)}
+                onOpenFolder={relativePath => void window.fm.projects.openFolder(standaloneFileProject.id, relativePath)}
+                onOpenFolderInVscode={relativePath => void window.fm.projects.openFolderInVscode(standaloneFileProject.id, relativePath)}
+            />
+        );
+    }
 
     const runCommand = async (commandId: string) => {
         try {
@@ -407,6 +529,7 @@ export function ProjectInfoPanel() {
         description: form.description,
         tags: form.tags,
         ignore: form.ignore,
+        favoriteFiles: form.favoriteFiles,
         syncRespectGitignore: form.syncRespectGitignore,
         fingerprint: form.fingerprint,
     });
@@ -456,14 +579,6 @@ export function ProjectInfoPanel() {
 
     const saveDisabled = hasEmptyFileFingerprint(form);
     const saveButtonDisabled = saveDisabled || !isDirty;
-    const effectiveInspection = inspection ?? {
-        path: project.path,
-        suggestedName: project.path.split(/[\\/]/).filter(Boolean).pop() ?? project.name,
-        hasMetaFile: project.hasMetaFile,
-        metaProjectId: project.id,
-        tree: [],
-        files: project.fingerprint.kind === 'file-paths' ? project.fingerprint.paths : [],
-    } satisfies ProjectDirectoryInspection;
 
     return (
         <>
@@ -473,6 +588,10 @@ export function ProjectInfoPanel() {
                 onTabChange={tabId => setActiveView(tabId as ProjectInfoPanelViewId)}
                 banner={matchExplanation || undefined}
                 onClose={tryClose}
+                panelClassName={filePanelMode ? 'shadow-xl' : undefined}
+                edgeAccessory={filePanelMode === null ? (
+                    <ProjectFilesPanelToggle onClick={() => setFilePanelMode('browse')} />
+                ) : null}
                 headerActions={(
                     <>
                         <div className="relative">
@@ -545,14 +664,12 @@ export function ProjectInfoPanel() {
                     </div>
                 )}
             >
-                {activeView === 'files' ? (
-                    <ProjectFilesView
-                        tree={inspection?.tree ?? []}
+                {activeView === 'sync' ? (
+                    <ProjectSyncView
+                        path={form.path}
+                        projectIgnore={form.ignore}
                         ignoreText={ignoreText}
                         onIgnoreTextChange={updateIgnoreText}
-                    />
-                ) : activeView === 'sync' ? (
-                    <ProjectSyncView
                         syncRespectGitignore={form.syncRespectGitignore}
                         onSyncRespectGitignoreChange={checked => setForm({
                             ...form,
@@ -579,9 +696,37 @@ export function ProjectInfoPanel() {
                         tagSelectorMode={form.tags.length === 0 ? 'alwaysEdit' : 'editable'}
                         onAddTag={addTag}
                         onRemoveTag={removeTag}
+                        onEditFileFingerprint={() => setFilePanelMode('select-fingerprint')}
                     />
                 )}
             </DrawerPanelShell>
+
+            {filePanelMode ? (
+                <ProjectFilesSidePanel
+                    mode={filePanelMode}
+                    path={form.path}
+                    projectIgnore={form.ignore}
+                    initialInspection={inspection ?? effectiveInspection}
+                    selectedPaths={form.fingerprint.kind === 'file-paths' ? form.fingerprint.paths : []}
+                    favoriteFiles={form.favoriteFiles}
+                    onFavoriteFilesChange={paths => setForm(current => current ? {
+                        ...current,
+                        favoriteFiles: paths,
+                    } : current)}
+                    onClose={() => setFilePanelMode(null)}
+                    onOpenFile={relativePath => void window.fm.projects.openFile(project.id, relativePath)}
+                    onOpenFileWith={relativePath => void window.fm.projects.openFileWith(project.id, relativePath)}
+                    onOpenFolder={relativePath => void window.fm.projects.openFolder(project.id, relativePath)}
+                    onOpenFolderInVscode={relativePath => void window.fm.projects.openFolderInVscode(project.id, relativePath)}
+                    onConfirmSelection={paths => {
+                        setForm(current => current ? {
+                            ...current,
+                            fingerprint: { kind: 'file-paths', paths },
+                        } : current);
+                        setFilePanelMode(null);
+                    }}
+                />
+            ) : null}
 
             {confirmClose ? (
                 <UnsavedConfirmDialog

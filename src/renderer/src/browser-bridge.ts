@@ -8,8 +8,12 @@ import type {
     ManualProjectInput,
     ManualProjectValidationResult,
     Project,
+    ProjectDirectoryExpandResult,
     ProjectDirectoryEntry,
+    ProjectGitignorePreview,
     ProjectDirectoryInspection,
+    ProjectDirectoryScanMode,
+    ProjectDirectoryScanOptions,
     ProjectFingerprint,
     ProjectRuntimeInfo,
     ProjectMetaPatch,
@@ -526,6 +530,9 @@ function matchesExistingProjectFingerprint(
     if (fingerprint.kind === 'folder-name') {
         return inspection.suggestedName.trim().toLowerCase() === fingerprint.folderName.trim().toLowerCase();
     }
+    if (!inspection.filesComplete) {
+        return false;
+    }
     const fileSet = new Set(inspection.files);
     return fingerprint.paths.every(rel => fileSet.has(rel));
 }
@@ -547,6 +554,7 @@ function createSampleConfig(): AppConfig {
             description: '浏览器模式下的示例项目，用来检查前端布局与交互。',
             tags: ['electron', 'tooling'],
             ignore: ['README.md'],
+            favoriteFiles: ['package.json', 'src/App.tsx'],
             fingerprint: { kind: 'metadata' },
             hasMetaFile: true,
             lastScannedAt: nowIso(),
@@ -766,16 +774,24 @@ function createProjectFromInput(input: ManualProjectInput): Project {
     };
 }
 
-function buildMockInspection(path: string, projectIgnore: readonly string[] = []): ProjectDirectoryInspection {
+function buildMockInspection(
+    path: string,
+    projectIgnore: readonly string[] = [],
+    options: ProjectDirectoryScanOptions = {},
+): ProjectDirectoryInspection {
     const normalizedPath = normalizePath(path);
     const existingProject = browserState.snapshot.data.projects.find(project => normalizePath(project.path) === normalizedPath);
     const projectIgnored = new Set(projectIgnore.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean));
+    const includeFiles = new Set((options.includeFiles ?? []).map(item => item.replace(/\\/g, '/').trim()).filter(Boolean));
+    const mode: ProjectDirectoryScanMode = options.mode ?? 'summary';
+    const shouldLoadSrcChildren = mode !== 'summary' || includeFiles.has('src/App.tsx') || includeFiles.has('src/main.ts');
     const tree: ProjectDirectoryEntry[] = [
         {
             path: 'node_modules',
             name: 'node_modules',
             kind: 'folder',
             ignoredBy: 'global',
+            childrenLoaded: false,
         },
         {
             path: 'src',
@@ -784,10 +800,13 @@ function buildMockInspection(path: string, projectIgnore: readonly string[] = []
             ...(projectIgnored.has('src') || projectIgnored.has('src/')
                 ? { ignoredBy: 'project' as const }
                 : {
-                    children: [
-                        { path: 'src/App.tsx', name: 'App.tsx', kind: 'file' as const },
-                        { path: 'src/main.ts', name: 'main.ts', kind: 'file' as const },
-                    ],
+                    childrenLoaded: shouldLoadSrcChildren,
+                    ...(shouldLoadSrcChildren ? {
+                        children: [
+                            { path: 'src/App.tsx', name: 'App.tsx', kind: 'file' as const },
+                            { path: 'src/main.ts', name: 'main.ts', kind: 'file' as const },
+                        ],
+                    } : {}),
                 }),
         },
         {
@@ -810,7 +829,7 @@ function buildMockInspection(path: string, projectIgnore: readonly string[] = []
     ];
 
     const files = ['package.json'];
-    if (!(projectIgnored.has('src') || projectIgnored.has('src/'))) {
+    if (!(projectIgnored.has('src') || projectIgnored.has('src/')) && shouldLoadSrcChildren) {
         files.push('src/App.tsx', 'src/main.ts');
     }
     if (!projectIgnored.has('README.md')) {
@@ -824,7 +843,45 @@ function buildMockInspection(path: string, projectIgnore: readonly string[] = []
         metaProjectId: existingProject?.hasMetaFile ? existingProject.id : undefined,
         tree,
         files: files.sort(),
+        filesComplete: mode === 'full',
     };
+}
+
+function buildMockExpandedEntries(
+    relativePath: string,
+    projectIgnore: readonly string[] = [],
+    options: ProjectDirectoryScanOptions = {},
+): ProjectDirectoryEntry[] {
+    const inspection = buildMockInspection('D:/projects/mock', projectIgnore, {
+        ...options,
+        mode: options.mode ?? 'interactive',
+    });
+    if (!relativePath) {
+        return inspection.tree;
+    }
+    const target = inspection.tree.find(entry => entry.path === relativePath);
+    return target?.children ?? [];
+}
+
+function buildMockGitignoreFiles(projectIgnore: readonly string[] = []): ProjectGitignorePreview[] {
+    void projectIgnore;
+    return [
+        {
+            path: '.gitignore',
+            content: ['dist', '.DS_Store', '.meta-data.local', 'coverage'].join('\n'),
+            truncated: false,
+        },
+        {
+            path: 'packages/demo/.gitignore',
+            content: ['node_modules', '.turbo', '*.log'].join('\n'),
+            truncated: false,
+        },
+        {
+            path: 'packages/demo/nested/.gitignore',
+            content: ['.cache', '*.tmp'].join('\n'),
+            truncated: false,
+        },
+    ];
 }
 
 function pickMockProjectDirectory(): string {
@@ -868,7 +925,7 @@ export function ensureBrowserBridge(): void {
                 return clone(browserState.appPreferences);
             },
             onOpenNewProject: (_handler: () => void) => {
-                return () => {};
+                return () => { };
             },
         },
         config: {
@@ -1007,6 +1064,7 @@ export function ensureBrowserBridge(): void {
                     description: patch.description,
                     tags: patch.tags?.map(tag => tag.trim()).filter(Boolean),
                     ignore: patch.ignore?.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean),
+                    favoriteFiles: patch.favoriteFiles?.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean),
                     syncRespectGitignore: patch.syncRespectGitignore,
                     fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : undefined,
                     hasMetaFile: patch.fingerprint?.kind === 'metadata'
@@ -1019,13 +1077,28 @@ export function ensureBrowserBridge(): void {
                     description: patch.description,
                     tags: patch.tags?.map(tag => tag.trim()).filter(Boolean),
                     ignore: patch.ignore?.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean),
+                    favoriteFiles: patch.favoriteFiles?.map(item => item.replace(/\\/g, '/').trim()).filter(Boolean),
                     syncRespectGitignore: patch.syncRespectGitignore,
                     fingerprint: patch.fingerprint ? normalizeFingerprint(patch.fingerprint) : undefined,
                     hasMetaFile: true,
                 }),
             removeMetaFile: async (id: string) => updateProject(id, { hasMetaFile: false }),
             revealInOs: async () => undefined,
-            inspectDirectory: async (path: string, projectIgnore?: string[]) => buildMockInspection(path, projectIgnore),
+            openFile: async () => undefined,
+            openFileWith: async () => undefined,
+            openFolder: async () => undefined,
+            openFolderInVscode: async () => undefined,
+            inspectDirectory: async (path: string, projectIgnore?: string[], options?: ProjectDirectoryScanOptions) => buildMockInspection(path, projectIgnore, options),
+            expandDirectory: async (
+                _path: string,
+                relativePath: string,
+                projectIgnore?: string[],
+                options?: ProjectDirectoryScanOptions,
+            ): Promise<ProjectDirectoryExpandResult> => ({
+                parentPath: relativePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, ''),
+                entries: buildMockExpandedEntries(relativePath, projectIgnore, options),
+            }),
+            listGitignoreFiles: async (_path: string, projectIgnore?: string[]) => buildMockGitignoreFiles(projectIgnore),
             validateNew: async (input: ManualProjectInput) => validateNewProject(input),
             add: async (input: ManualProjectInput) => {
                 const validation = validateNewProject(input);

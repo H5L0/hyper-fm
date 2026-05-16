@@ -10,8 +10,11 @@ import type {
   FmBridge,
   ManualProjectInput,
   ManualProjectValidationResult,
+  ProjectDirectoryExpandResult,
+  ProjectGitignorePreview,
   PresetCommandDescriptor,
   ProjectDirectoryInspection,
+  ProjectDirectoryScanOptions,
   Project,
   ProjectRuntimeInfo,
   ProjectMetaPatch,
@@ -106,8 +109,22 @@ const fmApi: FmBridge = {
     removeMetaFile: id =>
       ipcRenderer.invoke('fm:projects:removeMetaFile', id) as Promise<Project>,
     revealInOs: id => ipcRenderer.invoke('fm:projects:revealInOs', id) as Promise<void>,
-    inspectDirectory: (path, projectIgnore) =>
-      ipcRenderer.invoke('fm:projects:inspectDirectory', path, projectIgnore) as Promise<ProjectDirectoryInspection>,
+    openFile: (id, relativePath) => ipcRenderer.invoke('fm:projects:openFile', id, relativePath) as Promise<void>,
+    openFileWith: (id, relativePath) => ipcRenderer.invoke('fm:projects:openFileWith', id, relativePath) as Promise<void>,
+    openFolder: (id, relativePath) => ipcRenderer.invoke('fm:projects:openFolder', id, relativePath) as Promise<void>,
+    openFolderInVscode: (id, relativePath) => ipcRenderer.invoke('fm:projects:openFolderInVscode', id, relativePath) as Promise<void>,
+    inspectDirectory: (path, projectIgnore, options) =>
+      ipcRenderer.invoke('fm:projects:inspectDirectory', path, projectIgnore, options as ProjectDirectoryScanOptions | undefined) as Promise<ProjectDirectoryInspection>,
+    expandDirectory: (path, relativePath, projectIgnore, options) =>
+      ipcRenderer.invoke(
+        'fm:projects:expandDirectory',
+        path,
+        relativePath,
+        projectIgnore,
+        options as ProjectDirectoryScanOptions | undefined,
+      ) as Promise<ProjectDirectoryExpandResult>,
+    listGitignoreFiles: (path, projectIgnore) =>
+      ipcRenderer.invoke('fm:projects:listGitignoreFiles', path, projectIgnore) as Promise<ProjectGitignorePreview[]>,
     validateNew: input =>
       ipcRenderer.invoke('fm:projects:validateNew', input as ManualProjectInput) as Promise<ManualProjectValidationResult>,
     add: input => ipcRenderer.invoke('fm:projects:add', input as ManualProjectInput) as Promise<Project>,
