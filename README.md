@@ -11,6 +11,7 @@
 ### 界面导览
 
 ![fm 界面导览](docs/assets/app-screenshot.png)
+![fm 界面导览](docs/assets/app-screenshot-details.png)
 
 - **侧边栏**：根据标签、动态标签和标签组筛选项目。
 - **主区域**：浏览项目卡片、搜索项目。
