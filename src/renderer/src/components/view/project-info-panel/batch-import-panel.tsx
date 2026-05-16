@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, LoaderCircle, PencilLine, X } from 'lucide-react';
 import type {
     ManualProjectValidationResult,
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { DrawerPanelShell } from '@/components/basic/drawer-panel-shell.js';
 import { IgnoreRulesEditor } from '@/components/basic/ignore-rules-editor.js';
 import { TagSelector } from '@/components/basic/tag-selector.js';
-import { ProjectInfoForm, type ProjectFormValue } from './project-details-view.js';
+import { describeInspectionHint, ProjectDetailsView, type ProjectFormValue } from './project-details-view.js';
 import type { BatchImportItem } from '@/project-import/types.js';
 import {
     hasEmptyFileFingerprint,
@@ -20,6 +20,10 @@ import {
     describeManualProjectValidationConflict,
     getManualProjectValidationTitle,
 } from '@/project-import/validation-text.js';
+import { ProjectFilesSidePanel } from './project-files-view.js';
+import { ProjectFilesPanelToggle } from './project-info-panel.js';
+
+type ProjectFilePanelMode = 'browse' | 'select-fingerprint' | null;
 
 export function BatchImportPanel({
     open,
@@ -174,57 +178,107 @@ export function BatchImportOverridePanel({
     onSubmit: () => void;
     onFormChange: (next: ProjectFormValue) => void;
 }) {
+    const [filePanelMode, setFilePanelMode] = useState<ProjectFilePanelMode>(null);
+
+    useEffect(() => {
+        setFilePanelMode(null);
+    }, [item?.id]);
+
     if (!item) return null;
 
+    const effectiveInspection = item.inspection ?? createInspectionFallback(item.form);
+
     return (
-        <DrawerPanelShell
-            title={`手动添加：${item.form.name || item.inspection?.suggestedName || '未命名项目'}`}
-            onClose={onClose}
-            showBackdrop
-            panelZIndex={50}
-            backdropZIndex={45}
-            footer={
-                <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={onClose}>
-                        返回批量列表
-                    </Button>
-                    <Button size="sm" disabled={busy || !item.validation.valid || hasEmptyFileFingerprint(item.form)} onClick={onSubmit}>
-                        {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-                        仅添加这个项目
-                    </Button>
-                </div>
-            }
-        >
-            <ProjectInfoForm
-                form={item.form}
-                onFormChange={onFormChange}
-                tagDefs={tagDefs}
-                inspection={item.inspection}
-                pathEditable={false}
-                pathHint={renderInspectionHint(item.inspection)}
-                validation={renderAddProjectValidation(item.validation, hasEmptyFileFingerprint(item.form))}
-                onAddTag={tag => onFormChange({
-                    ...item.form,
-                    tags: item.form.tags.includes(tag) ? item.form.tags : [...item.form.tags, tag],
-                })}
-                onRemoveTag={tag => onFormChange({
-                    ...item.form,
-                    tags: item.form.tags.filter(current => current !== tag),
-                })}
-            />
-        </DrawerPanelShell>
+        <>
+            <DrawerPanelShell
+                title={`手动添加：${item.form.name || item.inspection?.suggestedName || '未命名项目'}`}
+                onClose={onClose}
+                showBackdrop
+                panelClassName={filePanelMode ? 'shadow-xl' : undefined}
+                edgeAccessory={filePanelMode === null ? (
+                    <ProjectFilesPanelToggle onClick={() => setFilePanelMode('browse')} />
+                ) : null}
+                panelZIndex={50}
+                backdropZIndex={45}
+                footer={
+                    <div className="flex items-center justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={onClose}>
+                            返回批量列表
+                        </Button>
+                        <Button size="sm" disabled={busy || !item.validation.valid || hasEmptyFileFingerprint(item.form)} onClick={onSubmit}>
+                            {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                            仅添加这个项目
+                        </Button>
+                    </div>
+                }
+            >
+                <ProjectDetailsView
+                    form={item.form}
+                    onFormChange={onFormChange}
+                    tagDefs={tagDefs}
+                    inspection={effectiveInspection}
+                    pathEditable={false}
+                    pathHint={renderInspectionHint(item.inspection)}
+                    validation={renderAddProjectValidation(item.validation, hasEmptyFileFingerprint(item.form))}
+                    onAddTag={tag => onFormChange({
+                        ...item.form,
+                        tags: item.form.tags.includes(tag) ? item.form.tags : [...item.form.tags, tag],
+                    })}
+                    onRemoveTag={tag => onFormChange({
+                        ...item.form,
+                        tags: item.form.tags.filter(current => current !== tag),
+                    })}
+                    onEditFileFingerprint={() => setFilePanelMode('select-fingerprint')}
+                />
+            </DrawerPanelShell>
+
+            {filePanelMode ? (
+                <ProjectFilesSidePanel
+                    mode={filePanelMode}
+                    path={item.form.path}
+                    projectIgnore={item.form.ignore}
+                    initialInspection={effectiveInspection}
+                    selectedPaths={item.form.fingerprint.kind === 'file-paths' ? item.form.fingerprint.paths : []}
+                    favoriteFiles={item.form.favoriteFiles}
+                    onFavoriteFilesChange={paths => onFormChange({
+                        ...item.form,
+                        favoriteFiles: paths,
+                    })}
+                    onClose={() => setFilePanelMode(null)}
+                    onConfirmSelection={paths => {
+                        onFormChange({
+                            ...item.form,
+                            fingerprint: { kind: 'file-paths', paths },
+                        });
+                        setFilePanelMode(null);
+                    }}
+                />
+            ) : null}
+        </>
     );
 }
 
 function renderInspectionHint(inspection: ProjectDirectoryInspection | null) {
-    if (!inspection) return null;
+    const text = describeInspectionHint(inspection);
+    if (!text) return null;
     return (
         <p className="text-note text-muted-foreground">
-            {inspection.hasMetaFile
-                ? `检测到 .meta-data${inspection.metaProjectId ? `（projectId: ${inspection.metaProjectId}）` : ''}`
-                : `共发现 ${inspection.files.length} 个文件，可用于文件列表指纹。`}
+            {text}
         </p>
     );
+}
+
+function createInspectionFallback(form: ProjectFormValue): ProjectDirectoryInspection | null {
+    const path = form.path.trim();
+    if (!path) return null;
+    return {
+        path,
+        suggestedName: path.split(/[\\/]/).filter(Boolean).pop() ?? form.name,
+        hasMetaFile: false,
+        tree: [],
+        files: form.fingerprint.kind === 'file-paths' ? form.fingerprint.paths : [],
+        filesComplete: false,
+    };
 }
 
 function renderConflictValidation(validation: ManualProjectValidationResult) {

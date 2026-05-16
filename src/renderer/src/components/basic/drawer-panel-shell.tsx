@@ -43,6 +43,30 @@ export function DrawerPanelShell({
         right: typeof panelOffsetRight === 'number' ? `${panelOffsetRight}px` : panelOffsetRight,
         ...panelStyle,
     };
+    const hasHeaderTabs = Boolean(headerTabs && headerTabs.length > 0);
+
+    const renderedHeaderTabs = hasHeaderTabs ? (
+        <div className="flex shrink-0 items-center gap-1">
+            {headerTabs!.map(tab => {
+                const active = tab.id === activeTabId;
+                return (
+                    <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => onTabChange?.(tab.id)}
+                        className={cn(
+                            'rounded-lg px-3 py-1 text-note font-semibold transition-colors',
+                            active
+                                ? 'bg-secondary text-foreground'
+                                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                        )}
+                    >
+                        {tab.label}
+                    </button>
+                );
+            })}
+        </div>
+    ) : null;
 
     return (
         <>
@@ -64,60 +88,22 @@ export function DrawerPanelShell({
                 style={computedPanelStyle}
             >
                 {edgeAccessory ? (
-                    <div className="absolute top-0 left-px z-10 -translate-x-full">
+                    <div className="absolute top-0 left-px -translate-x-full">
                         {edgeAccessory}
                     </div>
                 ) : null}
                 <div className="shrink-0 border-b border-border px-4 py-2.5">
                     <div className="relative flex items-center justify-between gap-3">
-                        {headerTabs && headerTabs.length > 0 && !title ? (
-                            <div className="flex items-center gap-1">
-                                {headerTabs.map(tab => {
-                                    const active = tab.id === activeTabId;
-                                    return (
-                                        <button
-                                            key={tab.id}
-                                            type="button"
-                                            onClick={() => onTabChange?.(tab.id)}
-                                            className={cn(
-                                                'rounded-lg px-3 py-1 text-note font-semibold transition-colors',
-                                                active
-                                                    ? 'bg-secondary text-foreground'
-                                                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                                            )}
-                                        >
-                                            {tab.label}
-                                        </button>
-                                    );
-                                })}
+                        {title ? (
+                            <div className="flex min-w-0 items-center gap-3">
+                                <h2 className="min-w-0 truncate text-heading text-foreground">{title}</h2>
+                                {renderedHeaderTabs}
                             </div>
-                        ) : title ? (
-                            <h2 className="truncate text-heading text-foreground">{title}</h2>
+                        ) : hasHeaderTabs ? (
+                            renderedHeaderTabs
                         ) : <div />}
                         <div className="flex items-center gap-1">{headerActions}</div>
                     </div>
-                    {headerTabs && headerTabs.length > 0 && title ? (
-                        <div className="mt-2 flex items-center gap-1">
-                            {headerTabs.map(tab => {
-                                const active = tab.id === activeTabId;
-                                return (
-                                    <button
-                                        key={tab.id}
-                                        type="button"
-                                        onClick={() => onTabChange?.(tab.id)}
-                                        className={cn(
-                                            'rounded-lg px-3 py-1 text-note font-semibold transition-colors',
-                                            active
-                                                ? 'bg-secondary text-foreground'
-                                                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                                        )}
-                                    >
-                                        {tab.label}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ) : null}
                 </div>
 
                 {banner ? (

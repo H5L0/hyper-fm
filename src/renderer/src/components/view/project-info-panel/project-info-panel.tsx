@@ -118,7 +118,7 @@ function renderAddProjectValidation(validation: ManualProjectValidationResult, m
     );
 }
 
-function ProjectFilesPanelToggle({ onClick }: { onClick: () => void }) {
+export function ProjectFilesPanelToggle({ onClick }: { onClick: () => void }) {
     return (
         <button
             type="button"

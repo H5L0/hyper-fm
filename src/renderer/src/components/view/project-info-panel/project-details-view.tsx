@@ -32,10 +32,7 @@ function describeInspectionHint(inspection: ProjectDirectoryInspection | null): 
     if (inspection.hasMetaFile) {
         return `检测到 .meta-data${inspection.metaProjectId ? `（projectId: ${inspection.metaProjectId}）` : ''}`;
     }
-    if (inspection.filesComplete) {
-        return `共发现 ${inspection.files.length} 个文件，可用于文件列表指纹。`;
-    }
-    return `已预加载 ${inspection.files.length} 个文件；修改文件列表或切换到文件视图后会继续按需扫描。`;
+    return null;
 }
 
 export function ProjectInfoForm({
