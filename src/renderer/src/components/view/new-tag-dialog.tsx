@@ -33,6 +33,8 @@ export function NewTagDialog({
   const [name, setName] = useState(initial?.name ?? '');
   const [color, setColor] = useState(initial?.color ?? DEFAULT_TAG_COLOR);
   const [busy, setBusy] = useState(false);
+  const normalizedColor = color.toLowerCase();
+  const customColorSelected = !TAG_COLOR_PRESETS.includes(normalizedColor);
 
   const dirty = editing
     ? name.trim() !== initial!.name || color !== initial!.color
@@ -76,7 +78,6 @@ export function NewTagDialog({
   return (
     <EditDialogShell
       title={editing ? '修改标签' : '新建标签'}
-      note="名称和颜色会同时应用到标签注册表与当前界面预览；“最近一月”“最近一年”等系统动态标签名称不可占用。"
       onClose={onClose}
       panelClassName="w-[min(420px,calc(100vw-2rem))]"
       bodyClassName="space-y-4"
@@ -99,7 +100,7 @@ export function NewTagDialog({
           onKeyDown={e => {
             if (e.key === 'Enter') void submit();
           }}
-          placeholder="如：unity"
+          placeholder="如：Game"
           className="h-9 w-full rounded-md border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
         />
       </EditDialogField>
@@ -122,14 +123,38 @@ export function NewTagDialog({
             />
           ))}
           <label
-            className="relative inline-flex size-6 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border text-caption text-muted-foreground hover:text-foreground"
+            className={cn(
+              'relative inline-flex size-6 cursor-pointer items-center justify-center overflow-hidden rounded-full border transition-transform',
+              customColorSelected
+                ? 'border-foreground/60 ring-2 ring-ring/50'
+                : 'border-border hover:scale-110',
+            )}
             title="自定义颜色"
           >
-            #
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0.5 rounded-full blur-[1px]"
+              style={{
+                background: 'conic-gradient(from 220deg, #fb7185, #f59e0b, #fde047, #4ade80, #22d3ee, #60a5fa, #a78bfa, #f472b6, #fb7185)',
+              }}
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-1 rounded-full opacity-90"
+              style={{
+                background: 'radial-gradient(circle at 28% 28%, rgba(255,255,255,0.72), transparent 34%), radial-gradient(circle at 72% 32%, rgba(251,113,133,0.6), transparent 38%), radial-gradient(circle at 56% 72%, rgba(59,130,246,0.65), transparent 42%), radial-gradient(circle at 34% 72%, rgba(74,222,128,0.48), transparent 40%)',
+                mixBlendMode: 'screen',
+              }}
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0.75 rounded-full border border-white/20"
+            />
             <input
               type="color"
               value={color}
               onChange={e => setColor(e.target.value)}
+              aria-label="选择自定义颜色"
               className="absolute inset-0 size-full cursor-pointer opacity-0"
             />
           </label>

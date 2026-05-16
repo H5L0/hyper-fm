@@ -444,7 +444,7 @@ export function AddableList({
                             : typeof emptyState === 'string'
                                 ? (
                                     <AddableListEmpty className="rounded-[calc(var(--addable-list-radius)-0.25rem)] border border-dashed border-border bg-muted/10 text-body text-foreground">
-                                        {emptyState}
+                                        <span className="text-muted-foreground">{emptyState}</span>
                                     </AddableListEmpty>
                                 )
                                 : emptyState}
