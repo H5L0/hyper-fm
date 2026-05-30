@@ -20,7 +20,7 @@ export function WelcomeScreen() {
             <FolderOpen className="size-4" /> 打开已有配置
           </Button>
           <Button variant="outline" onClick={() => void actions.pickAndCreateConfig()}>
-            <FolderPlus className="size-4" /> 选择目录并创建
+            <FolderPlus className="size-4" /> 创建新配置
           </Button>
         </div>
       </div>
