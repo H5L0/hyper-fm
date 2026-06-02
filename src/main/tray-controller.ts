@@ -2,9 +2,9 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { Menu, Tray, app, nativeImage, type BrowserWindow, type MenuItemConstructorOptions } from 'electron';
 import {
-    PRESET_COMMANDS,
-    type CustomCommand,
-    type PresetCommandId,
+    PRESET_ACTIONS,
+    type CustomAction,
+    type PresetActionId,
     type SyncApplyResult,
     type SyncConfig,
 } from '../shared/sync-types.js';
@@ -12,15 +12,15 @@ import { resolveSyncProjectIds } from '../shared/sync-config.js';
 import { FAVORITE_TAG_GROUP_NAME, findRequiredTagGroup, matchesTagGroup } from '../shared/dynamic-tags.js';
 import type { AppConfig, AppPreferences } from '../shared/types.js';
 import { createLogger } from '../shared/logger.js';
-import { runCommand } from './commands/runner.js';
+import { runAction } from './commands/runner.js';
 import { getSnapshot, mutate } from './session.js';
 import { applyFolderSync, applySharedDirSync } from './sync/file-sync.js';
 
 const logger = createLogger('main:tray');
-const TRAY_PRESET_COMMAND_IDS: PresetCommandId[] = ['open.explorer', 'open.vscode', 'open.terminal'];
-const PRESET_LABELS = new Map(PRESET_COMMANDS.map(command => [command.id, command.label] as const));
+const TRAY_PRESET_ACTION_IDS: PresetActionId[] = ['open.explorer', 'open.vscode', 'open.terminal'];
+const PRESET_LABELS = new Map(PRESET_ACTIONS.map(a => [a.id, a.label] as const));
 
-export interface TrayProjectCommandDescriptor {
+export interface TrayProjectActionDescriptor {
     id: string;
     label: string;
     kind: 'preset' | 'custom';
@@ -30,7 +30,7 @@ export interface TrayProjectEntry {
     projectId: string;
     label: string;
     path: string;
-    commands: TrayProjectCommandDescriptor[];
+    actions: TrayProjectActionDescriptor[];
 }
 
 export interface TraySyncActionDescriptor {
@@ -54,23 +54,37 @@ interface TrayControllerOptions {
     openNewProject(): void;
 }
 
-function buildProjectCommandDescriptors(customCommands: readonly CustomCommand[]): TrayProjectCommandDescriptor[] {
+function buildProjectActionDescriptors(
+    projectActions: readonly CustomAction[],
+    sharedProjectActions: readonly CustomAction[],
+    globalActions: readonly CustomAction[],
+): TrayProjectActionDescriptor[] {
     return [
-        ...TRAY_PRESET_COMMAND_IDS.map(id => ({
+        ...TRAY_PRESET_ACTION_IDS.map(id => ({
             id,
             label: PRESET_LABELS.get(id) ?? id,
             kind: 'preset' as const,
         })),
-        ...customCommands.map(command => ({
-            id: command.id,
-            label: command.label,
+        ...projectActions.map(a => ({
+            id: a.id,
+            label: a.label,
+            kind: 'custom' as const,
+        })),
+        ...sharedProjectActions.map(a => ({
+            id: a.id,
+            label: a.label,
+            kind: 'custom' as const,
+        })),
+        ...globalActions.map(a => ({
+            id: a.id,
+            label: a.label,
             kind: 'custom' as const,
         })),
     ];
 }
 
 export function listTrayProjectEntries(config: AppConfig): TrayProjectEntry[] {
-    const customCommands = config.commands ?? [];
+    const globalActions = config.actions ?? [];
     const favoriteGroup = findRequiredTagGroup(config.tagGroups, FAVORITE_TAG_GROUP_NAME);
     if (!favoriteGroup || favoriteGroup.tags.length === 0) {
         return [];
@@ -84,7 +98,7 @@ export function listTrayProjectEntries(config: AppConfig): TrayProjectEntry[] {
             projectId: project.id,
             label: project.name.trim() || project.path,
             path: project.path,
-            commands: buildProjectCommandDescriptors(customCommands),
+            actions: buildProjectActionDescriptors(project.actions ?? [], project.sharedActions ?? [], globalActions),
         }));
 }
 
@@ -148,15 +162,15 @@ async function runTraySync(configId: string): Promise<SyncApplyResult> {
 
 function buildProjectSubmenu(
     entry: TrayProjectEntry,
-    onRunCommand: (projectId: string, commandId: string) => void,
+    onRunAction: (projectId: string, actionId: string) => void,
 ): MenuItemConstructorOptions[] {
     return [
         { label: entry.path, enabled: false },
         { type: 'separator' },
-        ...entry.commands.map(command => ({
-            label: command.label,
+        ...entry.actions.map(a => ({
+            label: a.label,
             click: () => {
-                onRunCommand(entry.projectId, command.id);
+                onRunAction(entry.projectId, a.id);
             },
         })),
     ];
@@ -193,16 +207,16 @@ export function createTrayController(options: TrayControllerOptions): TrayContro
         }
     }
 
-    async function runCommandFromTray(projectId: string, commandId: string): Promise<void> {
+    async function runActionFromTray(projectId: string, actionId: string): Promise<void> {
         try {
             const snapshot = getSnapshot();
             if (!snapshot.hasLoadedConfig) {
-                throw new Error('当前尚未加载配置，无法执行项目命令');
+                throw new Error('当前尚未加载配置，无法执行项目动作');
             }
-            await runCommand(snapshot.data, { projectId, commandId }, process.platform);
+            await runAction(snapshot.data, { projectId, actionId }, process.platform);
         } catch (error) {
-            const message = error instanceof Error ? error.message : '项目命令执行失败';
-            notify('托盘命令执行失败', message);
+            const message = error instanceof Error ? error.message : '项目动作执行失败';
+            notify('托盘动作执行失败', message);
         }
     }
 
@@ -225,8 +239,8 @@ export function createTrayController(options: TrayControllerOptions): TrayContro
         const projectMenuItems: MenuItemConstructorOptions[] = projectEntries.length > 0
             ? projectEntries.map(entry => ({
                 label: entry.label,
-                submenu: buildProjectSubmenu(entry, (projectId, commandId) => {
-                    void runCommandFromTray(projectId, commandId);
+                submenu: buildProjectSubmenu(entry, (projectId, actionId) => {
+                    void runActionFromTray(projectId, actionId);
                 }),
             }))
             : [{ label: snapshot.hasLoadedConfig ? '暂无项目' : '尚未加载配置', enabled: false }];

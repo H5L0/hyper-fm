@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { Copy, Ellipsis, FileText, FolderOpen, Pencil, Terminal, Trash2 } from 'lucide-react';
-import type { PresetCommandDescriptor, Project } from '@shared/bridge.js';
+import { Ellipsis, FileText, Pencil, Trash2 } from 'lucide-react';
+import type { CustomAction, PresetActionDescriptor, Project } from '@shared/bridge.js';
 import { matchesDynamicTag, matchesTagGroup } from '@shared/dynamic-tags.js';
 import {
     type HighlightSegment,
@@ -10,6 +10,7 @@ import {
     matchProject,
     parseSearchQuery,
 } from '@shared/search.js';
+import { ProjectCommandMenu } from '@/components/basic/project-command-menu.js';
 import { cn } from '@/lib/utils';
 import { useAppActions, useAppState } from '@/store/app-store.js';
 import { TagPill, resolveTagColor, sortTagsByDefinition } from '@/components/basic/tag-pill.js';
@@ -72,10 +73,10 @@ export function ProjectBrowserView() {
     const { config, projectRuntimeInfo, tagFilter, search, view, selectedProjectId } = useAppState();
     const actions = useAppActions();
     const [menu, setMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
-    const [presets, setPresets] = useState<PresetCommandDescriptor[]>([]);
+    const [presets, setPresets] = useState<PresetActionDescriptor[]>([]);
 
     useEffect(() => {
-        void window.fm.commands.presets().then(setPresets);
+        void window.fm.actions.presets().then(setPresets);
     }, []);
 
     const openMenu = (event: MouseEvent, project: Project) => {
@@ -132,6 +133,7 @@ export function ProjectBrowserView() {
             x={menu.x}
             y={menu.y}
             project={menu.project}
+            globalActions={config.actions ?? []}
             presets={presets}
             onClose={() => setMenu(null)}
         />
@@ -340,13 +342,15 @@ function ProjectContextMenu({
     x,
     y,
     project,
+    globalActions,
     presets,
     onClose,
 }: {
     x: number;
     y: number;
     project: Project;
-    presets: PresetCommandDescriptor[];
+    globalActions: CustomAction[];
+    presets: PresetActionDescriptor[];
     onClose: () => void;
 }) {
     const actions = useAppActions();
@@ -369,21 +373,15 @@ function ProjectContextMenu({
         };
     }, [onClose]);
 
-    const run = async (commandId: string) => {
+    const run = async (actionId: string) => {
         onClose();
         try {
-            const result = await window.fm.commands.run(commandId, project.id);
+            const result = await window.fm.actions.run(actionId, project.id);
             if (result.clipboard) actions.toast('success', `已复制：${result.clipboard}`);
-            else actions.toast('success', '命令已启动');
+            else actions.toast('success', '动作已启动');
         } catch (error) {
-            actions.toast('error', error instanceof Error ? error.message : '命令执行失败');
+            actions.toast('error', error instanceof Error ? error.message : '动作执行失败');
         }
-    };
-
-    const iconOf = (id: string) => {
-        if (id.startsWith('open.')) return id === 'open.terminal' ? Terminal : FolderOpen;
-        if (id.startsWith('copy.')) return Copy;
-        return FileText;
     };
 
     const style: React.CSSProperties = { top: y, left: x };
@@ -396,75 +394,48 @@ function ProjectContextMenu({
     return (
         <div
             ref={ref}
-            role="menu"
-            className="fixed z-50 min-w-55 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-md"
+            className="fixed z-50"
             style={style}
         >
-            <MenuItem
-                onClick={() => {
-                    actions.selectProject(project.id);
-                    onClose();
-                }}
-                icon={<Pencil className="size-4" />}
-            >
-                编辑详情…
-            </MenuItem>
-            <MenuItem
-                onClick={() => {
-                    actions.openProjectFiles(project.id);
-                    onClose();
-                }}
-                icon={<FileText className="size-4" />}
-            >
-                查看文件
-            </MenuItem>
-            <MenuSeparator />
-            {presets.map(preset => {
-                const Icon = iconOf(preset.id);
-                return (
-                    <MenuItem key={preset.id} onClick={() => void run(preset.id)} icon={<Icon className="size-4" />}>
-                        {preset.label}
-                    </MenuItem>
-                );
-            })}
-            <MenuSeparator />
-            <MenuItem
-                onClick={() => {
-                    onClose();
-                    if (confirm(`从列表移除项目 “${project.name}”？（不会删除磁盘文件）`)) {
-                        void actions.removeProject(project.id);
-                    }
-                }}
-                icon={<Trash2 className="size-4" />}
-            >
-                从列表移除
-            </MenuItem>
+            <ProjectCommandMenu
+                project={project}
+                globalActions={globalActions}
+                presets={presets}
+                onRunAction={actionId => void run(actionId)}
+                leadingActions={[
+                    {
+                        id: 'edit-project',
+                        label: '编辑详情…',
+                        icon: <Pencil className="size-4" />,
+                        onSelect: () => {
+                            actions.selectProject(project.id);
+                            onClose();
+                        },
+                    },
+                    {
+                        id: 'view-files',
+                        label: '查看文件',
+                        icon: <FileText className="size-4" />,
+                        onSelect: () => {
+                            actions.openProjectFiles(project.id);
+                            onClose();
+                        },
+                    },
+                ]}
+                trailingActions={[
+                    {
+                        id: 'remove-project',
+                        label: '从列表移除',
+                        icon: <Trash2 className="size-4" />,
+                        onSelect: () => {
+                            onClose();
+                            if (confirm(`从列表移除项目 “${project.name}”？（不会删除磁盘文件）`)) {
+                                void actions.removeProject(project.id);
+                            }
+                        },
+                    },
+                ]}
+            />
         </div>
     );
-}
-
-function MenuItem({
-    icon,
-    children,
-    onClick,
-}: {
-    icon: React.ReactNode;
-    children: React.ReactNode;
-    onClick: () => void;
-}) {
-    return (
-        <button
-            type="button"
-            role="menuitem"
-            onClick={onClick}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
-        >
-            <span className="text-muted-foreground">{icon}</span>
-            {children}
-        </button>
-    );
-}
-
-function MenuSeparator() {
-    return <div className="my-1 border-t border-border" />;
 }

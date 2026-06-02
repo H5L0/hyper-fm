@@ -39,13 +39,30 @@ function createConfig(projectPath: string): AppConfig {
                 fingerprint: { kind: 'folder-name', folderName: 'alpha' },
                 hasMetaFile: false,
                 lastScannedAt: '2026-05-09T00:00:00.000Z',
+                actions: [
+                    {
+                        id: 'cmd-project-1',
+                        label: '运行项目脚本',
+                        command: 'pnpm',
+                        args: ['dev'],
+                        cwd: 'project',
+                    },
+                ],
+                sharedActions: [
+                    {
+                        id: 'cmd-shared-1',
+                        label: '运行共享脚本',
+                        command: 'pnpm build',
+                        cwd: 'project',
+                    },
+                ],
             },
         ],
         ui: { theme: 'system', view: 'grid' },
         warnings: [],
         ignoredPaths: [],
         tagGroups: [{ name: FAVORITE_TAG_GROUP_NAME, tags: ['featured'] }],
-        commands: [
+        actions: [
             {
                 id: 'cmd-1',
                 label: '打开 JetBrains IDE',
@@ -75,14 +92,16 @@ function createConfig(projectPath: string): AppConfig {
 }
 
 describe('tray-controller', () => {
-    test('[listTrayProjectEntries] 应只返回收藏组中的项目并附带常用命令与自定义命令', async () => {
+    test('[listTrayProjectEntries] 应只返回收藏组中的项目并附带常用动作、项目动作与全局动作', async () => {
         const dir = await createTempDir();
         const entries = listTrayProjectEntries(createConfig(dir));
         expect(entries).toHaveLength(1);
-        expect(entries[0]?.commands.map(command => command.id)).toEqual([
+        expect(entries[0]?.actions.map(a => a.id)).toEqual([
             'open.explorer',
             'open.vscode',
             'open.terminal',
+            'cmd-project-1',
+            'cmd-shared-1',
             'cmd-1',
         ]);
         await cleanupTempDirs();

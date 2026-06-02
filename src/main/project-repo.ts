@@ -6,6 +6,7 @@
 import {
     type LocalConfig,
     type Project,
+    type ProjectActionListsPatch,
     type ProjectFingerprint,
     type ProjectMetaPatch,
     type ScanReport,
@@ -13,11 +14,20 @@ import {
     type SharedConfig,
     type SharedProject,
 } from '../shared/types.js';
+import type { CustomAction } from '../shared/sync-types.js';
 import { generateId, generateProjectId, ID_PREFIX } from '../shared/id.js';
 import { normalizePath, pathEquals, basename } from '../shared/path-utils.js';
 import { FmError } from './fm-error.js';
 import type { ScanCandidate } from './scanner.js';
 import { matchScanCandidates, normalizeFingerprint } from './project-matcher.js';
+
+function cloneActions(actions?: readonly CustomAction[]): CustomAction[] | undefined {
+    if (!actions) return undefined;
+    return actions.map(a => ({
+        ...a,
+        ...(a.args ? { args: [...a.args] } : {}),
+    }));
+}
 
 // ---------------------------------------------------------------------------
 // 查询
@@ -41,6 +51,8 @@ export function buildProjects(shared: SharedConfig, local: LocalConfig): Project
             favoriteFiles: [...(sharedProject.favoriteFiles ?? [])],
             syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
+            ...(sharedProject.actions ? { sharedActions: cloneActions(sharedProject.actions) } : {}),
+            ...(binding.actions ? { actions: cloneActions(binding.actions) } : {}),
         });
     }
     // 未绑定的 shared 项目：路径不在本机或尚未扫描到，仍然展示
@@ -60,6 +72,7 @@ export function buildProjects(shared: SharedConfig, local: LocalConfig): Project
             favoriteFiles: [...(sharedProject.favoriteFiles ?? [])],
             syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
+            ...(sharedProject.actions ? { sharedActions: cloneActions(sharedProject.actions) } : {}),
         });
     }
     return projects;
@@ -98,12 +111,11 @@ export async function mergeScanResult(
 ): Promise<{ nextLocal: LocalConfig; report: ScanReport }> {
     const start = Date.now();
     const candidatePaths = candidates.map(candidate => candidate.path);
-    const existingBindings = ctx.local.bindings.filter(binding => binding.rootId === ctx.rootId);
     const matched = await matchScanCandidates(
         {
             rootId: ctx.rootId,
             projects: ctx.shared.projects,
-            existingBindings,
+            existingBindings: ctx.local.bindings,
         },
         candidatePaths,
     );
@@ -181,7 +193,61 @@ export function applyProjectPatch(
             favoriteFiles: nextProject.favoriteFiles,
             syncRespectGitignore: nextProject.syncRespectGitignore,
             fingerprint: nextProject.fingerprint,
+            ...(nextProject.actions ? { sharedActions: cloneActions(nextProject.actions) } : {}),
         },
+    };
+}
+
+export function applyProjectActionsPatch(
+    shared: SharedConfig,
+    local: LocalConfig,
+    id: string,
+    patch: ProjectActionListsPatch,
+): { nextShared: SharedConfig; nextLocal: LocalConfig; project: Project } {
+    const existing = findSharedProjectById(shared, id);
+    if (!existing) throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${id}`);
+
+    const nextShared: SharedConfig = patch.sharedActions === undefined
+        ? shared
+        : {
+            ...shared,
+            projects: shared.projects.map(project => (
+                project.id === id
+                    ? {
+                        ...project,
+                        actions: cloneActions(patch.sharedActions),
+                    }
+                    : project
+            )),
+        };
+
+    const nextLocal: LocalConfig = patch.localActions === undefined
+        ? local
+        : {
+            ...local,
+            bindings: local.bindings.map(binding => (
+                binding.projectId === id
+                    ? {
+                        ...binding,
+                        actions: cloneActions(patch.localActions),
+                    }
+                    : binding
+            )),
+        };
+
+    if (patch.localActions !== undefined && !nextLocal.bindings.some(binding => binding.projectId === id)) {
+        throw new FmError('PROJECT_NOT_BOUND', `项目未绑定当前设备：${id}`);
+    }
+
+    const project = findProjectById(nextShared, nextLocal, id);
+    if (!project) {
+        throw new FmError('PROJECT_NOT_FOUND', `项目不存在：${id}`);
+    }
+
+    return {
+        nextShared,
+        nextLocal,
+        project,
     };
 }
 

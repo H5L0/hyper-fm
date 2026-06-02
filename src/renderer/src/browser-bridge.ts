@@ -36,10 +36,10 @@ import type {
 } from '@shared/bridge.js';
 import { createDefaultDynamicTagGroups } from '@shared/dynamic-tags.js';
 import {
-    PRESET_COMMANDS,
+    PRESET_ACTIONS,
     createDefaultSyncConfig,
-    type CommandRunResult,
-    type CustomCommand,
+    type ActionRunResult,
+    type CustomAction,
     type DeviceRegistry,
     type SyncFileOperation,
     type SyncFileOperationKind,
@@ -638,13 +638,13 @@ function createSampleConfig(): AppConfig {
                 },
             }),
         ],
-        commands: [
+        actions: [
             {
                 id: 'cmd-demo-01',
-                label: '运行预览命令',
+                label: '运行预览动作',
                 command: 'echo browser-preview',
                 cwd: 'project',
-                description: '浏览器 mock 命令，不会真的执行。',
+                description: '浏览器 mock 动作，不会真的执行。',
             },
         ],
     };
@@ -718,6 +718,43 @@ function updateProject(id: string, patch: Partial<Project>): Project {
     const project = projects.find(item => item.id === id);
     if (!project) throw new Error(`项目不存在：${id}`);
     return clone(project);
+}
+
+function readMockActions(projectId?: string): CustomAction[] {
+    if (!projectId) {
+        return clone(browserState.snapshot.data.actions ?? []);
+    }
+    const project = browserState.snapshot.data.projects.find(item => item.id === projectId);
+    if (!project) {
+        throw new Error(`项目不存在：${projectId}`);
+    }
+    return clone(project.actions ?? []);
+}
+
+function writeMockActions(actions: CustomAction[], projectId?: string): CustomAction[] {
+    if (!projectId) {
+        updateConfig({
+            ...browserState.snapshot.data,
+            actions,
+        });
+        return clone(actions);
+    }
+    const project = browserState.snapshot.data.projects.find(item => item.id === projectId);
+    if (!project) {
+        throw new Error(`项目不存在：${projectId}`);
+    }
+    updateConfig({
+        ...browserState.snapshot.data,
+        projects: browserState.snapshot.data.projects.map(item => (
+            item.id === projectId
+                ? {
+                    ...item,
+                    actions,
+                }
+                : item
+        )),
+    });
+    return clone(actions);
 }
 
 function listMockProjectRuntimeInfo(projectIds?: string[]): ProjectRuntimeInfo[] {
@@ -1071,6 +1108,10 @@ export function ensureBrowserBridge(): void {
                         ? true
                         : browserState.snapshot.data.projects.find(item => item.id === id)?.hasMetaFile,
                 }),
+            updateActions: async (id, patch) => updateProject(id, {
+                actions: patch.localActions,
+                sharedActions: patch.sharedActions,
+            }),
             writeMetaFile: async (id: string, patch: ProjectMetaPatch) =>
                 updateProject(id, {
                     name: patch.name?.trim() || browserState.snapshot.data.projects.find(item => item.id === id)?.name,
@@ -1286,38 +1327,33 @@ export function ensureBrowserBridge(): void {
             },
             isServerRunning: async (configId: string) => browserState.runningServers.includes(configId),
         },
-        commands: {
-            presets: async () => clone(PRESET_COMMANDS),
-            list: async (): Promise<CustomCommand[]> => clone(browserState.snapshot.data.commands ?? []),
-            add: async input => {
-                const command: CustomCommand = {
-                    id: `cmd_${Math.random().toString(36).slice(2, 8)}`,
+        actions: {
+            presets: async () => clone(PRESET_ACTIONS),
+            list: async (projectId?: string): Promise<CustomAction[]> => readMockActions(projectId),
+            add: async (input, projectId?: string) => {
+                const action: CustomAction = {
+                    id: `act_${Math.random().toString(36).slice(2, 8)}`,
                     ...input,
                 };
-                updateConfig({
-                    ...browserState.snapshot.data,
-                    commands: [...(browserState.snapshot.data.commands ?? []), command],
-                });
-                return clone(command);
+                writeMockActions([...readMockActions(projectId), action], projectId);
+                return clone(action);
             },
-            update: async (id, patch) => {
-                const commands = (browserState.snapshot.data.commands ?? []).map(command =>
-                    command.id === id ? { ...command, ...patch } : command,
+            update: async (id, patch, projectId?: string) => {
+                const actions = readMockActions(projectId).map(a =>
+                    a.id === id ? { ...a, ...patch } : a,
                 );
-                updateConfig({ ...browserState.snapshot.data, commands });
-                const command = commands.find(item => item.id === id);
-                if (!command) throw new Error(`命令不存在：${id}`);
-                return clone(command);
+                writeMockActions(actions, projectId);
+                const action = actions.find(item => item.id === id);
+                if (!action) throw new Error(`动作不存在：${id}`);
+                return clone(action);
             },
-            remove: async id => {
-                updateConfig({
-                    ...browserState.snapshot.data,
-                    commands: (browserState.snapshot.data.commands ?? []).filter(command => command.id !== id),
-                });
+            replace: async (actions, projectId?: string) => writeMockActions(clone(actions), projectId),
+            remove: async (id, projectId?: string) => {
+                writeMockActions(readMockActions(projectId).filter(a => a.id !== id), projectId);
             },
-            run: async (): Promise<CommandRunResult> => ({
+            run: async (): Promise<ActionRunResult> => ({
                 started: true,
-                message: 'browser mock command started',
+                message: 'browser mock action started',
             }),
         },
     };

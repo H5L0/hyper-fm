@@ -11,6 +11,7 @@ import type {
   ProjectRuntimeInfo,
   ProjectFingerprint,
   Project,
+  ProjectActionListsPatch,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanReport,
@@ -21,11 +22,11 @@ import type {
 } from './types.js';
 import type { DynamicTagId } from './dynamic-tags.js';
 import type {
-  CommandRunResult,
-  CustomCommand,
+  ActionRunResult,
+  CustomAction,
   DeviceRegistry,
   KnownDevice,
-  PresetCommandDescriptor,
+  PresetActionDescriptor,
   SyncApplyResult,
   SyncConfig,
   SyncConflictMergeDraft,
@@ -52,6 +53,7 @@ export type {
   DynamicTagId,
   ProjectFingerprint,
   Project,
+  ProjectActionListsPatch,
   ProjectMetaPatch,
   ScanProgressEvent,
   ScanReport,
@@ -62,11 +64,11 @@ export type {
 };
 
 export type {
-  CommandRunResult,
-  CustomCommand,
+  ActionRunResult,
+  CustomAction,
   DeviceRegistry,
   KnownDevice,
-  PresetCommandDescriptor,
+  PresetActionDescriptor,
   SyncApplyResult,
   SyncConfig,
   SyncConflictMergeDraft,
@@ -136,6 +138,7 @@ export interface FmProjectsBridge {
   listRuntimeInfo(projectIds?: string[]): Promise<ProjectRuntimeInfo[]>;
   get(id: string): Promise<Project>;
   updateMeta(id: string, patch: ProjectMetaPatch): Promise<Project>;
+  updateActions(id: string, patch: ProjectActionListsPatch): Promise<Project>;
   writeMetaFile(id: string, patch: ProjectMetaPatch): Promise<Project>;
   removeMetaFile(id: string): Promise<Project>;
   revealInOs(id: string): Promise<void>;
@@ -237,7 +240,7 @@ export interface FmBridge {
   projects: FmProjectsBridge;
   tags: FmTagsBridge;
   sync: FmSyncBridge;
-  commands: FmCommandsBridge;
+  actions: FmActionsBridge;
 }
 
 // ---------------------------------------------------------------------------
@@ -345,14 +348,15 @@ export interface SyncImportTarget {
 }
 
 // ---------------------------------------------------------------------------
-// 命令
+// 动作
 // ---------------------------------------------------------------------------
 
-export interface FmCommandsBridge {
-  presets(): Promise<PresetCommandDescriptor[]>;
-  list(): Promise<CustomCommand[]>;
-  add(input: Omit<CustomCommand, 'id'>): Promise<CustomCommand>;
-  update(id: string, patch: Partial<Omit<CustomCommand, 'id'>>): Promise<CustomCommand>;
-  remove(id: string): Promise<void>;
-  run(commandId: string, projectId: string): Promise<CommandRunResult>;
+export interface FmActionsBridge {
+  presets(): Promise<PresetActionDescriptor[]>;
+  list(projectId?: string): Promise<CustomAction[]>;
+  add(input: Omit<CustomAction, 'id'>, projectId?: string): Promise<CustomAction>;
+  update(id: string, patch: Partial<Omit<CustomAction, 'id'>>, projectId?: string): Promise<CustomAction>;
+  replace(actions: CustomAction[], projectId?: string): Promise<CustomAction[]>;
+  remove(id: string, projectId?: string): Promise<void>;
+  run(actionId: string, projectId: string): Promise<ActionRunResult>;
 }

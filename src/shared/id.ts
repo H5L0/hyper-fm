@@ -27,6 +27,6 @@ export const ID_PREFIX = {
   scanRoot: 'root',
   device: 'dev',
   syncConfig: 'sync',
-  command: 'cmd',
+  action: 'act',
   config: 'cfg',
 } as const;

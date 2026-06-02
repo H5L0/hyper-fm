@@ -35,6 +35,8 @@ export interface ProjectBinding {
   rootId: string;
   hasMetaFile: boolean;
   lastScannedAt: string;
+  /** 当前设备上仅对该项目生效的自定义动作 */
+  actions?: import('./sync-types.js').CustomAction[];
 }
 
 export interface MetadataFingerprint {
@@ -67,6 +69,8 @@ export interface SharedProject {
   /** 同步项目文件时是否额外遵循项目目录中的 .gitignore（含嵌套目录） */
   syncRespectGitignore?: boolean;
   fingerprint: ProjectFingerprint;
+  /** 跟随项目共享的项目级动作 */
+  actions?: import('./sync-types.js').CustomAction[];
 }
 
 export interface Project extends ProjectBinding {
@@ -78,6 +82,8 @@ export interface Project extends ProjectBinding {
   favoriteFiles?: string[];
   syncRespectGitignore?: boolean;
   fingerprint: ProjectFingerprint;
+  /** 跟随项目共享的项目级动作 */
+  sharedActions?: import('./sync-types.js').CustomAction[];
 }
 
 export interface ProjectRuntimeInfo {
@@ -151,6 +157,8 @@ export interface SharedConfig {
   tags?: TagDefinition[];
   tagGroups?: TagGroupDefinition[];
   syncConfigs?: import('./sync-types.js').SyncConfig[];
+  /** 全局共享的自定义动作 */
+  actions?: import('./sync-types.js').CustomAction[];
 }
 
 export interface LocalConfig {
@@ -163,7 +171,7 @@ export interface LocalConfig {
   ignoredPaths?: string[];
   devices?: import('./sync-types.js').DeviceRegistry;
   syncConfigs?: import('./sync-types.js').LocalSyncConfigEntry[];
-  commands?: import('./sync-types.js').CustomCommand[];
+  actions?: import('./sync-types.js').CustomAction[];
 }
 
 export interface AppConfig {
@@ -184,8 +192,8 @@ export interface AppConfig {
   devices?: import('./sync-types.js').DeviceRegistry;
   /** 同步配置（shared + local 合并视图） */
   syncConfigs?: import('./sync-types.js').SyncConfig[];
-  /** M3：自定义命令列表 */
-  commands?: import('./sync-types.js').CustomCommand[];
+  /** M3：自定义动作列表 */
+  actions?: import('./sync-types.js').CustomAction[];
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +240,11 @@ export interface ProjectMetaPatch {
   favoriteFiles?: string[];
   syncRespectGitignore?: boolean;
   fingerprint?: ProjectFingerprint;
+}
+
+export interface ProjectActionListsPatch {
+  localActions?: import('./sync-types.js').CustomAction[];
+  sharedActions?: import('./sync-types.js').CustomAction[];
 }
 
 export interface ScanReport {
@@ -292,6 +305,6 @@ export type FmErrorCode =
   | 'SYNC_BUNDLE_DIR_MISSING'
   | 'SYNC_DEVICE_UNKNOWN'
   | 'SYNC_TRANSPORT_FAILED'
-  | 'COMMAND_NOT_FOUND'
-  | 'COMMAND_FAILED'
+  | 'ACTION_NOT_FOUND'
+  | 'ACTION_FAILED'
   | 'INTERNAL';

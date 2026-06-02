@@ -27,7 +27,7 @@ import {
     CONFIG_SCHEMA_VERSION,
 } from './types.js';
 import {
-    type CustomCommand,
+    type CustomAction,
     type DeviceRegistry,
     type KnownDevice,
     type LegacySyncSettings,
@@ -201,6 +201,7 @@ function validateSharedProject(value: unknown, idx: number, errors: ValidationEr
     if (!isString(value.id)) pushError(errors, `${base}.id`, '缺少 id');
     if (!isString(value.name)) pushError(errors, `${base}.name`, '缺少 name');
     const fingerprint = validateFingerprint(value.fingerprint, `${base}.fingerprint`, errors);
+    const actions = validateActions(value.actions, `${base}.actions`, errors);
     if (!isString(value.id) || !isString(value.name) || !fingerprint) {
         return null;
     }
@@ -213,6 +214,7 @@ function validateSharedProject(value: unknown, idx: number, errors: ValidationEr
         favoriteFiles: isStringArray(value.favoriteFiles) ? normalizeFingerprintPaths(value.favoriteFiles) : [],
         syncRespectGitignore: typeof value.syncRespectGitignore === 'boolean' ? value.syncRespectGitignore : undefined,
         fingerprint,
+        ...(actions ? { actions } : {}),
     };
 }
 
@@ -236,12 +238,14 @@ function validateProjectBinding(value: unknown, idx: number, errors: ValidationE
     ) {
         return null;
     }
+    const actions = validateActions(value.actions, `${base}.actions`, errors);
     return {
         projectId: value.projectId,
         path: value.path,
         rootId: value.rootId,
         hasMetaFile: value.hasMetaFile,
         lastScannedAt: value.lastScannedAt,
+        ...(actions ? { actions } : {}),
     };
 }
 
@@ -598,8 +602,7 @@ function migrateLegacySyncSettings(value: unknown): SyncConfig[] | undefined {
     return configs.length > 0 ? configs : undefined;
 }
 
-function validateCommand(value: unknown, idx: number, errors: ValidationError[]): CustomCommand | null {
-    const base = `commands[${idx}]`;
+function validateAction(value: unknown, base: string, errors: ValidationError[]): CustomAction | null {
     if (!isObject(value)) {
         pushError(errors, base, '必须为对象');
         return null;
@@ -619,15 +622,15 @@ function validateCommand(value: unknown, idx: number, errors: ValidationError[])
     };
 }
 
-function validateCommands(value: unknown, errors: ValidationError[]): CustomCommand[] | undefined {
+function validateActions(value: unknown, base: string, errors: ValidationError[]): CustomAction[] | undefined {
     if (value === undefined) return undefined;
     if (!Array.isArray(value)) {
-        pushError(errors, 'commands', '必须为数组');
+        pushError(errors, base, '必须为数组');
         return undefined;
     }
     return value
-        .map((c, i) => validateCommand(c, i, errors))
-        .filter((c): c is CustomCommand => c !== null);
+        .map((c, i) => validateAction(c, `${base}[${i}]`, errors))
+        .filter((c): c is CustomAction => c !== null);
 }
 
 function validateTagDefinition(value: unknown, idx: number, errors: ValidationError[]): TagDefinition | null {
@@ -774,7 +777,7 @@ export function validateLocalConfig(input: unknown): ValidationResult<LocalConfi
             }));
         }
     }
-    const commands = validateCommands(input.commands, errors);
+    const actions = validateActions(input.actions, 'actions', errors);
     const config: LocalConfig = {
         version: CONFIG_SCHEMA_VERSION,
         sharedConfigId: isString(input.sharedConfigId) ? input.sharedConfigId : '',
@@ -785,7 +788,7 @@ export function validateLocalConfig(input: unknown): ValidationResult<LocalConfi
         ignoredPaths,
         ...(devices ? { devices } : {}),
         ...(syncConfigs ? { syncConfigs } : {}),
-        ...(commands ? { commands } : {}),
+        ...(actions ? { actions } : {}),
     };
     return { config, errors };
 }
@@ -813,6 +816,7 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
                 syncRespectGitignore: isObject(project) && typeof project.syncRespectGitignore === 'boolean'
                     ? project.syncRespectGitignore
                     : undefined,
+                actions: isObject(project) ? project.sharedActions : undefined,
                 fingerprint:
                     isObject(project) && isObject(project.fingerprint)
                         ? project.fingerprint
@@ -836,6 +840,7 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
                     isObject(project) && isString(project.lastScannedAt)
                         ? project.lastScannedAt
                         : new Date(0).toISOString(),
+                actions: isObject(project) ? project.actions : undefined,
             }))
             : [],
         ui: input.ui,
@@ -843,7 +848,7 @@ export function validateConfig(input: unknown): ValidationResult<AppConfig> {
         ignoredPaths: input.ignoredPaths,
         devices: input.devices,
         syncConfigs: input.syncConfigs,
-        commands: input.commands,
+        actions: input.actions,
     };
     const shared = validateSharedConfig(sharedInput);
     const local = validateLocalConfig(localInput);
@@ -947,6 +952,8 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
             favoriteFiles: [...(sharedProject.favoriteFiles ?? [])],
             syncRespectGitignore: sharedProject.syncRespectGitignore,
             fingerprint: sharedProject.fingerprint,
+            ...(sharedProject.actions ? { sharedActions: cloneActions(sharedProject.actions) } : {}),
+            ...(binding.actions ? { actions: cloneActions(binding.actions) } : {}),
         });
     }
     const effectiveSyncConfigs = resolveEffectiveSyncConfigs(shared, local);
@@ -971,7 +978,7 @@ export function composeAppConfig(shared: SharedConfig, local: LocalConfig): AppC
             : {}),
         ...(local.devices ? { devices: local.devices } : {}),
         ...(effectiveSyncConfigs.length > 0 ? { syncConfigs: effectiveSyncConfigs } : {}),
-        ...(local.commands ? { commands: local.commands } : {}),
+        ...(shared.actions || local.actions ? { actions: [...(shared.actions ?? []), ...(local.actions ?? [])] } : {}),
     };
 }
 
@@ -997,6 +1004,7 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
                 favoriteFiles: [...(project.favoriteFiles ?? [])],
                 syncRespectGitignore: project.syncRespectGitignore,
                 fingerprint: cloneFingerprint(project.fingerprint),
+                ...(project.sharedActions ? { actions: cloneActions(project.sharedActions) } : {}),
             });
             continue;
         }
@@ -1009,6 +1017,7 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
             favoriteFiles: [...(project.favoriteFiles ?? [])],
             syncRespectGitignore: project.syncRespectGitignore,
             fingerprint: cloneFingerprint(project.fingerprint),
+            ...(project.sharedActions ? { actions: cloneActions(project.sharedActions) } : {}),
         });
     }
     return {
@@ -1028,6 +1037,13 @@ export function mergeAppConfigIntoShared(current: SharedConfig, appConfig: AppCo
                 syncConfigs: appConfig.syncConfigs
                     .filter(config => config.scope === 'shared')
                     .map(normalizeSyncConfig),
+            }
+            : {}),
+        ...(appConfig.actions
+            ? {
+                actions: appConfig.actions
+                    .filter(a => a.scope === 'shared')
+                    .map(a => ({ ...a, scope: undefined })),
             }
             : {}),
     };
@@ -1065,13 +1081,14 @@ export function mergeAppConfigIntoLocal(appConfig: AppConfig, shared: SharedConf
             rootId: project.rootId,
             hasMetaFile: project.hasMetaFile,
             lastScannedAt: project.lastScannedAt,
+            ...(project.actions ? { actions: cloneActions(project.actions) } : {}),
         })),
         ui: { ...appConfig.ui },
         warnings: [...appConfig.warnings],
         ignoredPaths: [...appConfig.ignoredPaths],
         ...(localSyncConfigs.length > 0 ? { syncConfigs: localSyncConfigs } : {}),
         ...(appConfig.devices ? { devices: appConfig.devices } : {}),
-        ...(appConfig.commands ? { commands: appConfig.commands } : {}),
+        ...(appConfig.actions ? { actions: appConfig.actions.filter(a => a.scope !== 'shared') } : {}),
     };
 }
 
@@ -1081,6 +1098,13 @@ function cloneFingerprint(fingerprint: ProjectFingerprint): ProjectFingerprint {
         return { kind: 'folder-name', folderName: fingerprint.folderName };
     }
     return { kind: 'file-paths', paths: [...fingerprint.paths] };
+}
+
+function cloneActions(actions: readonly CustomAction[]): CustomAction[] {
+    return actions.map(a => ({
+        ...a,
+        ...(a.args ? { args: [...a.args] } : {}),
+    }));
 }
 
 function cloneTagGroup(group: TagGroupDefinition): TagGroupDefinition {

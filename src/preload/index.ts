@@ -1,23 +1,24 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
+  ActionRunResult,
   AppBridge,
   AppPreferences,
-  CommandRunResult,
   ConfigOpenInspection,
   ConfigSnapshot,
-  CustomCommand,
+  CustomAction,
   DeviceRegistry,
   FmBridge,
   ManualProjectInput,
   ManualProjectValidationResult,
+  PresetActionDescriptor,
   ProjectDirectoryExpandResult,
   ProjectGitignorePreview,
-  PresetCommandDescriptor,
   ProjectDirectoryInspection,
   ProjectDirectoryScanOptions,
   Project,
-  ProjectRuntimeInfo,
+  ProjectActionListsPatch,
   ProjectMetaPatch,
+  ProjectRuntimeInfo,
   ScanProgressEvent,
   ScanReport,
   ScanRoot,
@@ -104,6 +105,8 @@ const fmApi: FmBridge = {
     get: id => ipcRenderer.invoke('fm:projects:get', id) as Promise<Project>,
     updateMeta: (id, patch: ProjectMetaPatch) =>
       ipcRenderer.invoke('fm:projects:updateMeta', id, patch) as Promise<Project>,
+    updateActions: (id, patch: ProjectActionListsPatch) =>
+      ipcRenderer.invoke('fm:projects:updateActions', id, patch) as Promise<Project>,
     writeMetaFile: (id, patch: ProjectMetaPatch) =>
       ipcRenderer.invoke('fm:projects:writeMetaFile', id, patch) as Promise<Project>,
     removeMetaFile: id =>
@@ -217,15 +220,17 @@ const fmApi: FmBridge = {
     stopServer: configId => ipcRenderer.invoke('fm:sync:stopServer', configId) as Promise<void>,
     isServerRunning: configId => ipcRenderer.invoke('fm:sync:isServerRunning', configId) as Promise<boolean>,
   },
-  commands: {
-    presets: () => ipcRenderer.invoke('fm:commands:presets') as Promise<PresetCommandDescriptor[]>,
-    list: () => ipcRenderer.invoke('fm:commands:list') as Promise<CustomCommand[]>,
-    add: input => ipcRenderer.invoke('fm:commands:add', input) as Promise<CustomCommand>,
-    update: (id, patch) =>
-      ipcRenderer.invoke('fm:commands:update', id, patch) as Promise<CustomCommand>,
-    remove: id => ipcRenderer.invoke('fm:commands:remove', id) as Promise<void>,
-    run: (commandId, projectId) =>
-      ipcRenderer.invoke('fm:commands:run', commandId, projectId) as Promise<CommandRunResult>,
+  actions: {
+    presets: () => ipcRenderer.invoke('fm:actions:presets') as Promise<PresetActionDescriptor[]>,
+    list: projectId => ipcRenderer.invoke('fm:actions:list', projectId) as Promise<CustomAction[]>,
+    add: (input, projectId) => ipcRenderer.invoke('fm:actions:add', input, projectId) as Promise<CustomAction>,
+    update: (id, patch, projectId) =>
+      ipcRenderer.invoke('fm:actions:update', id, patch, projectId) as Promise<CustomAction>,
+    replace: (actions, projectId) =>
+      ipcRenderer.invoke('fm:actions:replace', actions, projectId) as Promise<CustomAction[]>,
+    remove: (id, projectId) => ipcRenderer.invoke('fm:actions:remove', id, projectId) as Promise<void>,
+    run: (actionId, projectId) =>
+      ipcRenderer.invoke('fm:actions:run', actionId, projectId) as Promise<ActionRunResult>,
   },
 };
 

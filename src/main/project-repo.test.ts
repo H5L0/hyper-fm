@@ -3,6 +3,7 @@ import {
     addIgnoredPath,
     addProjectManual,
     addScanRoot,
+    applyProjectActionsPatch,
     applyProjectPatch,
     buildProjects,
     mergeScanResult,
@@ -121,6 +122,31 @@ describe('project-repo / manual add', () => {
         expect(patched.project.ignore).toEqual(['README.md', 'dist/']);
         expect(patched.project.favoriteFiles).toEqual(['README.md', 'src/main.ts']);
         expect(patched.project.syncRespectGitignore).toBe(true);
+    });
+
+    test('[applyProjectActionsPatch] 应分别写入本地与共享项目动作', () => {
+        const { shared, local } = createBase();
+        const added = addProjectManual(
+            shared,
+            local,
+            {
+                path: 'D:/p/demo',
+                name: 'Demo',
+                tags: [],
+                fingerprint: { kind: 'metadata' },
+            },
+            'win32',
+        );
+
+        const patched = applyProjectActionsPatch(added.nextShared, added.nextLocal, added.project.id, {
+            localActions: [{ id: 'cmd_local', label: '本地动作', command: 'echo local', cwd: 'project' }],
+            sharedActions: [{ id: 'cmd_shared', label: '共享动作', command: 'echo shared', cwd: 'project' }],
+        });
+
+        expect(patched.nextLocal.bindings[0]?.actions?.map(a => a.id)).toEqual(['cmd_local']);
+        expect(patched.nextShared.projects[0]?.actions?.map(a => a.id)).toEqual(['cmd_shared']);
+        expect(patched.project.actions?.map(a => a.id)).toEqual(['cmd_local']);
+        expect(patched.project.sharedActions?.map(a => a.id)).toEqual(['cmd_shared']);
     });
 
     test('[removeProject] 应删除共享项目、本地绑定与相关告警', () => {
@@ -245,6 +271,41 @@ describe('project-repo / mergeScanResult', () => {
         expect(out.nextLocal.bindings.filter(binding => binding.rootId === root.id)).toHaveLength(0);
         expect(out.nextLocal.warnings).toHaveLength(1);
         expect(out.report.warnings).toBe(1);
+    });
+
+    test('[mergeScanResult] 项目重新匹配后应保留项目级命令', async () => {
+        const { shared, local } = createBase();
+        const added = addProjectManual(
+            shared,
+            local,
+            {
+                path: 'D:/seed/game',
+                name: 'Game',
+                tags: [],
+                fingerprint: { kind: 'folder-name', folderName: 'game' },
+            },
+            'win32',
+        );
+        const localWithCommands = {
+            ...added.nextLocal,
+            bindings: added.nextLocal.bindings.map(binding => (
+                binding.projectId === added.project.id
+                    ? {
+                        ...binding,
+                        commands: [{ id: 'cmd_project', label: '运行脚本', command: 'pnpm', args: ['dev'], cwd: 'project' as const }],
+                    }
+                    : binding
+            )),
+        };
+        const { nextLocal: withRoot, root } = addScanRoot(localWithCommands, { path: 'D:/scan' });
+        const out = await mergeScanResult(
+            { shared: added.nextShared, local: withRoot, rootId: root.id },
+            [{ path: 'D:/scan/game', name: 'game', mtime: '2026-01-01T00:00:00Z', hasMetaFile: false }],
+        );
+
+        const rebound = out.nextLocal.bindings.find(binding => binding.projectId === added.project.id);
+        expect(rebound?.rootId).toBe(root.id);
+        expect(rebound?.actions?.map(a => a.id)).toEqual(['cmd_project']);
     });
 });
 

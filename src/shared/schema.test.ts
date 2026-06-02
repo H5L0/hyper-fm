@@ -73,6 +73,40 @@ describe('schema', () => {
         expect(config.bindings[0]).not.toHaveProperty('lastModifiedAt');
     });
 
+    test('[validateLocalConfig] 应保留项目绑定上的命令列表', () => {
+        const { config } = validateLocalConfig({
+            bindings: [
+                {
+                    projectId: 'pj-aaaaaa',
+                    path: 'D:/projects/demo',
+                    rootId: 'root_1',
+                    hasMetaFile: false,
+                    lastScannedAt: '2026-01-01T00:00:00Z',
+                    commands: [
+                        {
+                            id: 'cmd_1',
+                            label: '运行',
+                            command: 'pnpm',
+                            args: [' dev ', ' --host '],
+                            cwd: 'project',
+                        },
+                    ],
+                },
+            ],
+        });
+
+        expect(config.bindings[0]?.actions).toEqual([
+            {
+                id: 'cmd_1',
+                label: '运行',
+                command: 'pnpm',
+                args: ['dev', '--host'],
+                cwd: 'project',
+                description: undefined,
+            },
+        ]);
+    });
+
     test('[validateSharedConfig] schema 版本过高应抛出', () => {
         expect(() => validateSharedConfig({ version: 9999 })).toThrow(/schema/);
     });
@@ -107,7 +141,13 @@ describe('schema', () => {
             rootId: 'root_1',
             hasMetaFile: true,
             lastScannedAt: '2026-01-01T00:00:00Z',
+            actions: [{ id: 'cmd_local', label: '项目动作', command: 'echo project', cwd: 'project' }],
         });
+        const project = shared.projects[0]!;
+        shared.projects[0] = {
+            ...project,
+            actions: [{ id: 'cmd_shared', label: '共享动作', command: 'echo shared', cwd: 'project' }],
+        };
 
         const config = composeAppConfig(shared, local);
         expect(config.projects).toHaveLength(1);
@@ -115,6 +155,8 @@ describe('schema', () => {
         expect(config.projects[0]?.fingerprint.kind).toBe('metadata');
         expect(config.projects[0]?.ignore).toEqual([]);
         expect(config.projects[0]?.favoriteFiles).toEqual([]);
+        expect(config.projects[0]?.actions?.map(a => a.id)).toEqual(['cmd_local']);
+        expect(config.projects[0]?.sharedActions?.map(a => a.id)).toEqual(['cmd_shared']);
         expect(config.name).toBe('fm');
     });
 
@@ -132,6 +174,7 @@ describe('schema', () => {
                     ignore: ['dist/'],
                     favoriteFiles: [' src/main.ts ', 'README.md', 'src\\main.ts'],
                     syncRespectGitignore: true,
+                    commands: [{ id: 'cmd_shared', label: '共享命令', command: 'pnpm dev', cwd: 'project' }],
                     fingerprint: { kind: 'file-paths', paths: ['package.json', 'src/main.ts'] },
                 },
             ],
@@ -146,6 +189,7 @@ describe('schema', () => {
         expect(config.projects[0]?.favoriteFiles).toEqual(['README.md', 'src/main.ts']);
         expect(config.projects[0]?.ignore).toEqual(['dist/']);
         expect(config.projects[0]?.syncRespectGitignore).toBe(true);
+        expect(config.projects[0]?.actions?.map(a => a.id)).toEqual(['cmd_shared']);
         expect(config.tags?.[0]?.name).toBe('unity');
         expect(config.tagGroups).toEqual([
             { name: FAVORITE_TAG_GROUP_NAME, tags: [getDynamicTagDefinition('recent-month').label] },
@@ -244,12 +288,15 @@ describe('schema', () => {
                 ignore: [],
                 favoriteFiles: ['README.md', 'src/main.ts'],
                 fingerprint: { kind: 'metadata' },
+                actions: [{ id: 'cmd_local', label: '本地动作', command: 'echo demo', cwd: 'project' }],
+                sharedActions: [{ id: 'cmd_shared', label: '共享动作', command: 'echo shared', cwd: 'project' }],
             },
         ];
 
         const shared = createDefaultSharedConfig();
         const local = mergeAppConfigIntoLocal(app, shared);
         expect(local.bindings[0]).not.toHaveProperty('lastModifiedAt');
+        expect(local.bindings[0]?.actions?.map(a => a.id)).toEqual(['cmd_local']);
     });
 
     test('[mergeAppConfigIntoShared] 应将项目 favoriteFiles 写回共享配置', () => {
@@ -273,5 +320,28 @@ describe('schema', () => {
 
         const nextShared = mergeAppConfigIntoShared(shared, app);
         expect(nextShared.projects[0]?.favoriteFiles).toEqual(['README.md', 'src/main.ts']);
+    });
+
+    test('[mergeAppConfigIntoShared] 应将项目 sharedCommands 写回共享配置', () => {
+        const shared = createDefaultSharedConfig();
+        const app = createDefaultConfig();
+        app.projects = [
+            {
+                projectId: 'pj-aaaaaa',
+                id: 'pj-aaaaaa',
+                path: 'D:/projects/demo',
+                rootId: 'root_1',
+                hasMetaFile: false,
+                lastScannedAt: '2026-01-01T00:00:00Z',
+                name: 'Demo',
+                tags: [],
+                ignore: [],
+                fingerprint: { kind: 'metadata' },
+                sharedActions: [{ id: 'cmd_shared', label: '共享动作', command: 'echo shared', cwd: 'project' }],
+            },
+        ];
+
+        const nextShared = mergeAppConfigIntoShared(shared, app);
+        expect(nextShared.projects[0]?.actions?.map(a => a.id)).toEqual(['cmd_shared']);
     });
 });

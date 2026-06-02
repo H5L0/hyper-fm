@@ -2,14 +2,13 @@
 // 设置面板：按扫描 / 同步 / 软件设置拆分
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState } from 'react';
-import { ExternalLink, FolderPlus, FolderRoot, PenLine, Plus, Trash2 } from 'lucide-react';
-import type { CustomCommand } from '@shared/bridge.js';
+import { useEffect, useMemo, useState } from 'react';
+import { ExternalLink, FolderPlus, FolderRoot, PenLine, Trash2 } from 'lucide-react';
+import { ActionListEditor, type ActionListEditorController } from '@/components/basic/command-list-editor.js';
 import { IgnoreRulesEditor } from '@/components/basic/ignore-rules-editor.js';
 import { AddableList, AddableListItem } from '@/components/ui/addable-list';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox-field';
-import { EditDialogField, EditDialogShell } from '@/components/ui/edit-dialog-shell';
 import { SegmentedToggleGroup } from '@/components/ui/segmented-toggle-group';
 import { SettingSection } from '@/components/ui/setting-section';
 import { useAppActions, useAppState } from '../../store/app-store.js';
@@ -234,7 +233,7 @@ export function SettingsPanel() {
           </div>
         </SettingSection>
 
-        <CommandsSection />
+        <ActionsSection />
 
         <SettingSection title="关于">
           <div className="rounded-2xl border border-border bg-card px-4 py-4">
@@ -257,155 +256,21 @@ export function SettingsPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// 自定义命令
+// 自定义动作
 // ---------------------------------------------------------------------------
 
-function CommandsSection() {
-  const { config } = useAppState();
-  const actions = useAppActions();
-  const [list, setList] = useState<CustomCommand[]>([]);
-  const [editingCommand, setEditingCommand] = useState<CustomCommand | null>(null);
-  const [creatingCommand, setCreatingCommand] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const refresh = async () => setList(await window.fm.commands.list());
-
-  useEffect(() => {
-    void refresh();
-  }, []);
-
-  const saveCommand = async ({
-    id,
-    label,
-    command,
-    args,
-    cwd,
-    description,
-  }: {
-    id?: string;
-    label: string;
-    command: string;
-    args: string;
-    cwd: CustomCommand['cwd'];
-    description: string;
-  }) => {
-    if (busy) return;
-    const nextLabel = label.trim();
-    const nextCommand = command.trim();
-    if (!nextLabel || !nextCommand) return;
-
-    setBusy(true);
-    try {
-      const payload = {
-        label: nextLabel,
-        command: nextCommand,
-        args: args.trim() ? args.trim().split(' ').filter(Boolean) : undefined,
-        cwd: cwd ?? 'project',
-        description: description.trim() || undefined,
-      } satisfies Omit<CustomCommand, 'id'>;
-
-      if (id) {
-        await window.fm.commands.update(id, payload);
-      } else {
-        await window.fm.commands.add(payload);
-      }
-
-      await refresh();
-      setEditingCommand(null);
-      setCreatingCommand(false);
-      actions.toast('success', id ? '已更新命令' : '已添加命令');
-    } catch (err) {
-      actions.toast('error', err instanceof Error ? err.message : id ? '更新失败' : '添加失败');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const removeCommand = async (id: string) => {
-    try {
-      await window.fm.commands.remove(id);
-      await refresh();
-      actions.toast('success', '已删除命令');
-    } catch (error) {
-      actions.toast('error', error instanceof Error ? error.message : '删除失败');
-    }
-  };
-
-  const reorderCommands = async (activeId: string, targetIndex: number) => {
-    const source = list.length > 0 ? list : (config.commands ?? []);
-    const nextCommands = moveItemToIndex(source, activeId, targetIndex);
-    if (!nextCommands) return;
-
-    try {
-      await window.fm.config.save({ ...config, commands: nextCommands });
-      setList(nextCommands);
-      await actions.loadConfig();
-      actions.toast('success', '已调整命令顺序');
-    } catch (error) {
-      actions.toast('error', error instanceof Error ? error.message : '调整顺序失败');
-    }
-  };
+function ActionsSection() {
+  const controller = useMemo<ActionListEditorController>(() => ({
+    load: () => window.fm.actions.list(),
+    add: input => window.fm.actions.add(input),
+    update: (id, patch) => window.fm.actions.update(id, patch),
+    replace: actions => window.fm.actions.replace(actions),
+    remove: id => window.fm.actions.remove(id),
+  }), []);
 
   return (
-    <SettingSection title="命令" hint="项目自定义命令。">
-      <AddableList
-        addIcon={<Plus className="size-4" />}
-        addLabel="添加命令"
-        onAdd={() => setCreatingCommand(true)}
-        emptyState="尚未添加自定义命令"
-        footerEnd={<ListMetaBadge>{list.length} 条命令</ListMetaBadge>}
-        divided={false}
-        sortable={{
-          itemIds: list.map(command => command.id),
-          onReorder: (activeId, targetIndex) => reorderCommands(activeId, targetIndex),
-        }}
-      >
-        {list.map(c => (
-          <AddableListItem
-            key={c.id}
-            itemId={c.id}
-            showGrabHandle
-          >
-            <div className="flex items-start gap-2.5">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-body text-foreground">{c.label}</p>
-                <p className="mt-1 truncate text-note text-muted-foreground">
-                  {c.command}
-                  {c.args?.length ? ` ${c.args.join(' ')}` : ''}
-                </p>
-                {c.description ? (
-                  <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">{c.description}</p>
-                ) : null}
-              </div>
-              <div className="flex items-center gap-1">
-                <Button size="icon-xs" variant="ghost" title="编辑命令" onClick={() => setEditingCommand(c)}>
-                  <PenLine className="size-4" />
-                </Button>
-                <Button size="icon-xs" variant="ghost" title="删除命令" onClick={() => void removeCommand(c.id)}>
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-          </AddableListItem>
-        ))}
-      </AddableList>
-
-      {creatingCommand ? (
-        <CommandDialog
-          onClose={() => setCreatingCommand(false)}
-          onSave={draft => void saveCommand(draft)}
-          busy={busy}
-        />
-      ) : null}
-
-      {editingCommand ? (
-        <CommandDialog
-          initial={editingCommand}
-          onClose={() => setEditingCommand(null)}
-          onSave={draft => void saveCommand(draft)}
-          busy={busy}
-        />
-      ) : null}
+    <SettingSection title="动作" hint="所有项目可用的自定义动作。">
+      <ActionListEditor controller={controller} showScopeSelector />
     </SettingSection>
   );
 }
@@ -415,104 +280,5 @@ function ListMetaBadge({ children }: { children: React.ReactNode }) {
     <span className="inline-flex items-center text-note text-muted-foreground">
       {children}
     </span>
-  );
-}
-
-function CommandDialog({
-  initial,
-  onClose,
-  onSave,
-  busy,
-}: {
-  initial?: CustomCommand;
-  onClose: () => void;
-  onSave: (draft: {
-    id?: string;
-    label: string;
-    command: string;
-    args: string;
-    cwd: CustomCommand['cwd'];
-    description: string;
-  }) => void;
-  busy: boolean;
-}) {
-  const [label, setLabel] = useState(initial?.label ?? '');
-  const [command, setCommand] = useState(initial?.command ?? '');
-  const [args, setArgs] = useState(initial?.args?.join(' ') ?? '');
-  const [cwd, setCwd] = useState<CustomCommand['cwd']>(initial?.cwd ?? 'project');
-  const [description, setDescription] = useState(initial?.description ?? '');
-
-  return (
-    <EditDialogShell
-      title={initial ? '编辑命令' : '添加命令'}
-      note="占位符：{{path}} {{name}} {{tag:foo}}。参数使用空格分隔输入。"
-      onClose={onClose}
-      panelClassName="w-[min(620px,calc(100vw-2rem))]"
-      bodyClassName="space-y-4"
-      footerEnd={(
-        <>
-          <Button size="sm" variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button
-            size="sm"
-            disabled={busy || !label.trim() || !command.trim()}
-            onClick={() => onSave({ id: initial?.id, label, command, args, cwd, description })}
-          >
-            {initial ? '保存' : '添加'}
-          </Button>
-        </>
-      )}
-    >
-      <EditDialogField label="名称">
-        <input
-          value={label}
-          onChange={event => setLabel(event.target.value)}
-          className="h-9 w-full rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-        />
-      </EditDialogField>
-
-      <EditDialogField label="命令">
-        <input
-          value={command}
-          onChange={event => setCommand(event.target.value)}
-          placeholder="如 idea64 或 code"
-          className="h-9 w-full rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-        />
-      </EditDialogField>
-
-      <EditDialogField label="参数" note="使用空格分隔，例如 --reuse-window {{path}}。">
-        <input
-          value={args}
-          onChange={event => setArgs(event.target.value)}
-          placeholder="如 {{path}}"
-          className="h-9 w-full rounded-lg border border-border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-        />
-      </EditDialogField>
-
-      <EditDialogField label="工作目录">
-        <SegmentedToggleGroup
-          ariaLabel="选择命令工作目录"
-          value={cwd ?? 'project'}
-          onValueChange={nextValue => setCwd(nextValue as CustomCommand['cwd'])}
-          options={[
-            { value: 'project', label: '项目目录', description: '以项目目录作为 cwd' },
-            { value: 'parent', label: '上级目录', description: '以项目的上级目录作为 cwd' },
-          ]}
-          optionMinWidth={180}
-          align="start"
-        />
-      </EditDialogField>
-
-      <EditDialogField label="备注">
-        <textarea
-          rows={2}
-          value={description}
-          onChange={event => setDescription(event.target.value)}
-          placeholder="可选，用于补充命令用途"
-          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-        />
-      </EditDialogField>
-    </EditDialogShell>
   );
 }

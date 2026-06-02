@@ -470,7 +470,20 @@ export interface ScanMatchResult {
     removed: number;
 }
 
-function buildBinding(project: SharedProject, inspection: DirectoryInspection, rootId: string): ProjectBinding {
+function cloneActions(actions?: ProjectBinding['actions']): ProjectBinding['actions'] {
+    if (!actions) return undefined;
+    return actions.map(a => ({
+        ...a,
+        ...(a.args ? { args: [...a.args] } : {}),
+    }));
+}
+
+function buildBinding(
+    project: SharedProject,
+    inspection: DirectoryInspection,
+    rootId: string,
+    existingBinding?: ProjectBinding,
+): ProjectBinding {
     const now = new Date().toISOString();
     return {
         projectId: project.id,
@@ -478,6 +491,7 @@ function buildBinding(project: SharedProject, inspection: DirectoryInspection, r
         rootId,
         hasMetaFile: inspection.hasMetaFile,
         lastScannedAt: now,
+        ...(existingBinding?.actions ? { actions: cloneActions(existingBinding.actions) } : {}),
     };
 }
 
@@ -528,7 +542,8 @@ export async function matchScanCandidates(
             warnings.push(buildConflictWarning(ctx.rootId, project, hits.map(hit => hit.path)));
             continue;
         }
-        const binding = buildBinding(project, hits[0]!, ctx.rootId);
+        const existingBinding = ctx.existingBindings.find(binding => binding.projectId === project.id);
+        const binding = buildBinding(project, hits[0]!, ctx.rootId, existingBinding);
         bindings.push(binding);
         matchedCount += 1;
         if (ctx.existingBindings.some(existing => existing.projectId === project.id && existing.rootId === ctx.rootId)) {

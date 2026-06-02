@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronLeft, FolderOpen, Save, Terminal, X } from 'lucide-react';
+import { ChevronLeft, FolderOpen, Save, Terminal, X } from 'lucide-react';
 import type {
-    CustomCommand,
+    CustomAction,
     ManualProjectValidationResult,
-    PresetCommandDescriptor,
+    PresetActionDescriptor,
     Project,
     ProjectDirectoryInspection,
     ProjectMetaPatch,
@@ -13,6 +13,8 @@ import type {
     TagDefinition,
 } from '@shared/bridge.js';
 import { explainMatch, matchProject, parseSearchQuery } from '@shared/search.js';
+import type { ScopedActionDraft } from '@/components/basic/command-list-editor.js';
+import { ProjectCommandMenu } from '@/components/basic/project-command-menu.js';
 import { Button } from '@/components/ui/button';
 import { DrawerPanelShell } from '@/components/basic/drawer-panel-shell.js';
 import {
@@ -20,19 +22,25 @@ import {
     getManualProjectValidationTitle,
 } from '@/project-import/validation-text.js';
 import { useAppActions, useAppState } from '@/store/app-store.js';
+import { ProjectActionsView } from './project-commands-view.js';
 import { describeInspectionHint, ProjectFormValue, ProjectDetailsView } from './project-details-view.js';
 import { ProjectFilesSidePanel } from './project-files-view.js';
 import { ProjectSyncView, readProjectRule } from './project-sync-view.js';
 import { cn } from '@/lib/utils.js';
 
-export type ProjectInfoPanelViewId = 'info' | 'sync';
+export type ProjectInfoPanelViewId = 'info' | 'sync' | 'commands';
 type ProjectFilePanelMode = 'browse' | 'select-fingerprint' | null;
 
 type SyncRuleOverrides = Partial<Record<string, SyncProjectRule>>;
 
-const PROJECT_INFO_PANEL_VIEWS: ReadonlyArray<{ id: ProjectInfoPanelViewId; label: string }> = [
+const PROJECT_CREATE_PANEL_VIEWS: ReadonlyArray<{ id: Exclude<ProjectInfoPanelViewId, 'commands'>; label: string }> = [
     { id: 'info', label: '信息' },
     { id: 'sync', label: '同步' },
+];
+
+const PROJECT_INFO_PANEL_VIEWS: ReadonlyArray<{ id: ProjectInfoPanelViewId; label: string }> = [
+    ...PROJECT_CREATE_PANEL_VIEWS,
+    { id: 'commands', label: '动作' },
 ];
 
 type FormState = ProjectFormValue;
@@ -69,6 +77,64 @@ function formsEqual(a: FormState, b: FormState): boolean {
         if (a.tags[index] !== b.tags[index]) return false;
     }
     return true;
+}
+
+function cloneAction(a: CustomAction): CustomAction {
+    return {
+        ...a,
+        ...(a.args ? { args: [...a.args] } : {}),
+    };
+}
+
+function projectToActionDrafts(project: Project): ScopedActionDraft[] {
+    return [
+        ...(project.actions ?? []).map(a => ({ ...cloneAction(a), scope: 'local' as const })),
+        ...(project.sharedActions ?? []).map(a => ({ ...cloneAction(a), scope: 'shared' as const })),
+    ];
+}
+
+function sameActions(a: ScopedActionDraft[], b: ScopedActionDraft[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index += 1) {
+        const left = a[index];
+        const right = b[index];
+        if (!left || !right) return false;
+        if (left.id !== right.id) return false;
+        if (left.label !== right.label) return false;
+        if (left.command !== right.command) return false;
+        if (left.cwd !== right.cwd) return false;
+        if (left.description !== right.description) return false;
+        if ((left.scope ?? 'local') !== (right.scope ?? 'local')) return false;
+        const leftArgs = left.args ?? [];
+        const rightArgs = right.args ?? [];
+        if (leftArgs.length !== rightArgs.length) return false;
+        for (let argsIndex = 0; argsIndex < leftArgs.length; argsIndex += 1) {
+            if (leftArgs[argsIndex] !== rightArgs[argsIndex]) return false;
+        }
+    }
+    return true;
+}
+
+function splitActionDrafts(actions: ScopedActionDraft[], allowLocalActions: boolean) {
+    const localActions: CustomAction[] = [];
+    const sharedActions: CustomAction[] = [];
+
+    for (const a of actions) {
+        const normalized: CustomAction = cloneAction({
+            ...a,
+            args: undefined,
+        });
+        if (a.scope === 'shared') {
+            sharedActions.push(normalized);
+        } else if (allowLocalActions) {
+            localActions.push(normalized);
+        }
+    }
+
+    return {
+        ...(allowLocalActions ? { localActions } : {}),
+        sharedActions,
+    };
 }
 
 function hasEmptyFileFingerprint(form: ProjectFormValue): boolean {
@@ -263,7 +329,7 @@ export function AddProjectInfoPanel({
         <>
             <DrawerPanelShell
                 title={mode === 'new' ? '新建项目' : '导入项目'}
-                headerTabs={PROJECT_INFO_PANEL_VIEWS}
+                headerTabs={PROJECT_CREATE_PANEL_VIEWS}
                 activeTabId={activeView}
                 onTabChange={tabId => setActiveView(tabId as ProjectInfoPanelViewId)}
                 onClose={onClose}
@@ -372,9 +438,11 @@ export function ProjectInfoPanel() {
 
     const [form, setForm] = useState<FormState | null>(project ? projectToForm(project) : null);
     const [initial, setInitial] = useState<FormState | null>(project ? projectToForm(project) : null);
-    const [presets, setPresets] = useState<PresetCommandDescriptor[]>([]);
-    const [customCommands, setCustomCommands] = useState<CustomCommand[]>([]);
-    const [commandsOpen, setCommandsOpen] = useState(false);
+    const [presets, setPresets] = useState<PresetActionDescriptor[]>([]);
+    const [globalActions, setGlobalActions] = useState<CustomAction[]>([]);
+    const [actionDrafts, setActionDrafts] = useState<ScopedActionDraft[]>(project ? projectToActionDrafts(project) : []);
+    const [initialActionDrafts, setInitialActionDrafts] = useState<ScopedActionDraft[]>(project ? projectToActionDrafts(project) : []);
+    const [actionsOpen, setActionsOpen] = useState(false);
     const [confirmClose, setConfirmClose] = useState(false);
     const [inspection, setInspection] = useState<ProjectDirectoryInspection | null>(null);
     const [activeView, setActiveView] = useState<ProjectInfoPanelViewId>('info');
@@ -384,13 +452,16 @@ export function ProjectInfoPanel() {
 
     useEffect(() => {
         const next = project ? projectToForm(project) : null;
+        const nextActions = project ? projectToActionDrafts(project) : [];
         setForm(next);
         setInitial(next);
+        setActionDrafts(nextActions);
+        setInitialActionDrafts(nextActions);
         setIgnoreText(next?.ignore.join('\n') ?? '');
     }, [project]);
 
     useEffect(() => {
-        setCommandsOpen(false);
+        setActionsOpen(false);
         setConfirmClose(false);
         setActiveView('info');
         setFilePanelMode(null);
@@ -435,7 +506,12 @@ export function ProjectInfoPanel() {
 
     const syncRulesDirty = useMemo(() => hasSyncRuleOverrides(syncRuleOverrides), [syncRuleOverrides]);
 
-    const isDirty = formDirty || syncRulesDirty;
+    const commandsDirty = useMemo(
+        () => !sameActions(actionDrafts, initialActionDrafts),
+        [actionDrafts, initialActionDrafts],
+    );
+
+    const isDirty = formDirty || syncRulesDirty || commandsDirty;
 
     const tryClose = () => {
         if (isDirty) {
@@ -462,8 +538,8 @@ export function ProjectInfoPanel() {
     }, [project, isDirty, confirmClose]);
 
     useEffect(() => {
-        void window.fm.commands.presets().then(setPresets);
-        void window.fm.commands.list().then(setCustomCommands);
+        void window.fm.actions.presets().then(setPresets);
+        void window.fm.actions.list().then(setGlobalActions);
     }, []);
 
     const matchExplanation = useMemo(() => {
@@ -513,12 +589,12 @@ export function ProjectInfoPanel() {
         );
     }
 
-    const runCommand = async (commandId: string) => {
+    const runAction = async (actionId: string) => {
         try {
-            const result = await window.fm.commands.run(commandId, project.id);
-            setCommandsOpen(false);
+            const result = await window.fm.actions.run(actionId, project.id);
+            setActionsOpen(false);
             if (result.clipboard) actions.toast('success', `已复制：${result.clipboard}`);
-            else actions.toast('success', '命令已启动');
+            else actions.toast('success', '动作已启动');
         } catch (error) {
             actions.toast('error', error instanceof Error ? error.message : '命令执行失败');
         }
@@ -538,6 +614,19 @@ export function ProjectInfoPanel() {
         if (formDirty) {
             await actions.saveProject(project.id, buildPatch(), writeFile);
         }
+        let shouldReload = false;
+        if (commandsDirty) {
+            try {
+                await window.fm.projects.updateActions(
+                    project.id,
+                    splitActionDrafts(actionDrafts, Boolean(project.path.trim())),
+                );
+                shouldReload = true;
+            } catch (error) {
+                actions.toast('error', error instanceof Error ? error.message : '保存命令失败');
+                return;
+            }
+        }
         if (syncRulesDirty) {
             try {
                 const pendingRules = Object.entries(syncRuleOverrides).flatMap(([configId, rule]) =>
@@ -547,11 +636,14 @@ export function ProjectInfoPanel() {
                     await window.fm.sync.setProjectRule(configId, project.id, rule);
                 }
                 setSyncRuleOverrides({});
-                await actions.loadConfig();
+                shouldReload = true;
             } catch (error) {
                 actions.toast('error', error instanceof Error ? error.message : '保存同步规则失败');
                 return;
             }
+        }
+        if (shouldReload) {
+            await actions.loadConfig();
         }
         if (then === 'close') {
             setConfirmClose(false);
@@ -599,40 +691,18 @@ export function ProjectInfoPanel() {
                                 size="icon-xs"
                                 variant="ghost"
                                 title="项目命令"
-                                onClick={() => setCommandsOpen(value => !value)}
+                                onClick={() => setActionsOpen(value => !value)}
                             >
                                 <Terminal className="size-3.5" />
                             </Button>
-                            {commandsOpen ? (
-                                <div className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-md">
-                                    {presets.map(preset => (
-                                        <button
-                                            key={preset.id}
-                                            type="button"
-                                            onClick={() => void runCommand(preset.id)}
-                                            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
-                                        >
-                                            {preset.label}
-                                        </button>
-                                    ))}
-                                    {customCommands.length > 0 ? (
-                                        <>
-                                            <div className="my-1 border-t border-border" />
-                                            {customCommands.map(command => (
-                                                <button
-                                                    key={command.id}
-                                                    type="button"
-                                                    onClick={() => void runCommand(command.id)}
-                                                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
-                                                    title={command.description ?? command.command}
-                                                >
-                                                    <ChevronDown className="size-3 shrink-0 opacity-0" />
-                                                    {command.label}
-                                                </button>
-                                            ))}
-                                        </>
-                                    ) : null}
-                                </div>
+                            {actionsOpen ? (
+                                <ProjectCommandMenu
+                                    className="absolute right-0 top-full z-50 mt-1 w-56"
+                                    project={project}
+                                    globalActions={globalActions}
+                                    presets={presets}
+                                    onRunAction={actionId => void runAction(actionId)}
+                                />
                             ) : null}
                         </div>
                         <Button
@@ -685,6 +755,12 @@ export function ProjectInfoPanel() {
                                 updateSyncRuleOverrides(current, config.syncConfigs ?? [], project.id, configId, rule),
                             );
                         }}
+                    />
+                ) : activeView === 'commands' ? (
+                    <ProjectActionsView
+                        actions={actionDrafts}
+                        projectBound={Boolean(project.path.trim())}
+                        onActionsChange={setActionDrafts}
                     />
                 ) : (
                     <ProjectDetailsView

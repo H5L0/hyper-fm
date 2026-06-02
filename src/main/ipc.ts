@@ -18,6 +18,7 @@ import {
   type ProjectDirectoryInspection,
   type ProjectDirectoryScanOptions,
   type Project,
+  type ProjectActionListsPatch,
   type ProjectMetaPatch,
   type TagDefinition,
   type ScanReport,
@@ -28,7 +29,7 @@ import {
   type SyncPullItem,
 } from '../shared/bridge.js';
 import {
-  type CustomCommand,
+  type CustomAction,
   getSyncConfigTypeLabel,
 } from '../shared/sync-types.js';
 import { removeTagFromSharedConfig } from '../shared/tag-utils.js';
@@ -41,6 +42,7 @@ import { finalizeManualProjectValidation as finalizeProjectValidation } from '..
 import {
   addIgnoredPath,
   addProjectManual,
+  applyProjectActionsPatch,
   addScanRoot,
   applyProjectPatch,
   buildProjects,
@@ -124,14 +126,16 @@ import {
 import { buildLocalManifest } from './sync/manager.js';
 import { unpackProjectZip } from './sync/zip-bundle.js';
 import {
-  PRESET_COMMANDS,
+  PRESET_ACTIONS,
 } from '../shared/sync-types.js';
 import { isDynamicTagLabel as isReservedDynamicTagLabel } from '../shared/dynamic-tags.js';
 import {
-  addCustomCommand,
-  removeCustomCommand,
-  runCommand,
-  updateCustomCommand,
+  addCustomAction,
+  listCustomActions,
+  removeCustomAction,
+  replaceCustomActions,
+  runAction,
+  updateCustomAction,
 } from './commands/runner.js';
 
 const logger = createLogger('main:ipc');
@@ -209,7 +213,7 @@ async function openProjectFilePath(project: Project, relativePath: string): Prom
   const absolutePath = resolveProjectFilePath(project, relativePath);
   const errorMessage = await shell.openPath(path.normalize(absolutePath));
   if (errorMessage) {
-    throw new FmError('COMMAND_FAILED', `打开文件失败：${errorMessage}`);
+    throw new FmError('ACTION_FAILED', `打开文件失败：${errorMessage}`);
   }
 }
 
@@ -231,7 +235,7 @@ async function openProjectFolderPath(project: Project, relativePath: string): Pr
   const absolutePath = resolveProjectFilePath(project, relativePath);
   const errorMessage = await shell.openPath(path.normalize(absolutePath));
   if (errorMessage) {
-    throw new FmError('COMMAND_FAILED', `打开文件夹失败：${errorMessage}`);
+    throw new FmError('ACTION_FAILED', `打开文件夹失败：${errorMessage}`);
   }
 }
 
@@ -546,6 +550,17 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
   );
 
   ipcMain.handle(
+    'fm:projects:updateActions',
+    wrap('fm:projects:updateActions', async (_e, id: unknown, patch: unknown) => {
+      assertString(id, 'id');
+      return mutate(({ shared, local }) => {
+        const { nextShared, nextLocal, project } = applyProjectActionsPatch(shared, local, id, patch as ProjectActionListsPatch);
+        return { nextShared, nextLocal, result: project };
+      });
+    }),
+  );
+
+  ipcMain.handle(
     'fm:projects:writeMetaFile',
     wrap('fm:projects:writeMetaFile', async (_e, id: unknown, patch: unknown) => {
       assertString(id, 'id');
@@ -846,7 +861,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}): v
 
   // ── 同步 ──
   registerSyncHandlers();
-  registerCommandHandlers();
+  registerActionHandlers();
   registerTagHandlers();
 
   logger.info('IPC 处理器已注册');
@@ -1656,61 +1671,92 @@ function resolveRelayBundleDir(config: AppConfig, preferredScope: SyncConfig['sc
 }
 
 // ---------------------------------------------------------------------------
-// 命令
+// 动作
 // ---------------------------------------------------------------------------
 
-function registerCommandHandlers(): void {
+function registerActionHandlers(): void {
   ipcMain.handle(
-    'fm:commands:presets',
-    wrap('fm:commands:presets', () => PRESET_COMMANDS),
+    'fm:actions:presets',
+    wrap('fm:actions:presets', () => PRESET_ACTIONS),
   );
 
   ipcMain.handle(
-    'fm:commands:list',
-    wrap('fm:commands:list', () => requireSession().config.commands ?? []),
+    'fm:actions:list',
+    wrap('fm:actions:list', (_e, projectId: unknown) => {
+      if (projectId !== undefined) {
+        assertString(projectId, 'projectId');
+      }
+      return listCustomActions(requireSession().config, projectId);
+    }),
   );
 
   ipcMain.handle(
-    'fm:commands:add',
-    wrap('fm:commands:add', async (_e, input: unknown) => {
-      const cmdInput = input as Omit<CustomCommand, 'id'>;
-      return mutate(({ config }) => {
-        const { config: next, command } = addCustomCommand(config, cmdInput);
-        return { nextConfig: next, result: command };
+    'fm:actions:add',
+    wrap('fm:actions:add', async (_e, input: unknown, projectId: unknown) => {
+      if (projectId !== undefined) {
+        assertString(projectId, 'projectId');
+      }
+      const actInput = input as Omit<CustomAction, 'id'>;
+      return mutate(({ local }) => {
+        const { local: nextLocal, action } = addCustomAction(local, actInput, projectId);
+        return { nextLocal, result: action };
       });
     }),
   );
 
   ipcMain.handle(
-    'fm:commands:update',
-    wrap('fm:commands:update', async (_e, id: unknown, patch: unknown) => {
+    'fm:actions:update',
+    wrap('fm:actions:update', async (_e, id: unknown, patch: unknown, projectId: unknown) => {
       assertString(id, 'id');
-      return mutate(({ config }) => {
-        const { config: next, command } = updateCustomCommand(
-          config,
+      if (projectId !== undefined) {
+        assertString(projectId, 'projectId');
+      }
+      return mutate(({ local }) => {
+        const { local: nextLocal, action } = updateCustomAction(
+          local,
           id,
-          patch as Partial<Omit<CustomCommand, 'id'>>,
+          patch as Partial<Omit<CustomAction, 'id'>>,
+          projectId,
         );
-        return { nextConfig: next, result: command };
+        return { nextLocal, result: action };
       });
     }),
   );
 
   ipcMain.handle(
-    'fm:commands:remove',
-    wrap('fm:commands:remove', async (_e, id: unknown) => {
-      assertString(id, 'id');
-      return mutate(({ config }) => ({ nextConfig: removeCustomCommand(config, id), result: undefined as void }));
+    'fm:actions:replace',
+    wrap('fm:actions:replace', async (_e, actions: unknown, projectId: unknown) => {
+      if (projectId !== undefined) {
+        assertString(projectId, 'projectId');
+      }
+      return mutate(({ local }) => {
+        const nextLocal = replaceCustomActions(local, (actions as CustomAction[]) ?? [], projectId);
+        const result = projectId
+          ? nextLocal.bindings.find(binding => binding.projectId === projectId)?.actions ?? []
+          : nextLocal.actions ?? [];
+        return { nextLocal, result };
+      });
     }),
   );
 
   ipcMain.handle(
-    'fm:commands:run',
-    wrap('fm:commands:run', async (_e, commandId: unknown, projectId: unknown) => {
-      assertString(commandId, 'commandId');
+    'fm:actions:remove',
+    wrap('fm:actions:remove', async (_e, id: unknown, projectId: unknown) => {
+      assertString(id, 'id');
+      if (projectId !== undefined) {
+        assertString(projectId, 'projectId');
+      }
+      return mutate(({ local }) => ({ nextLocal: removeCustomAction(local, id, projectId), result: undefined as void }));
+    }),
+  );
+
+  ipcMain.handle(
+    'fm:actions:run',
+    wrap('fm:actions:run', async (_e, actionId: unknown, projectId: unknown) => {
+      assertString(actionId, 'actionId');
       assertString(projectId, 'projectId');
       const session = requireSession();
-      return runCommand(session.config, { commandId, projectId }, process.platform);
+      return runAction(session.config, { actionId, projectId }, process.platform);
     }),
   );
 }

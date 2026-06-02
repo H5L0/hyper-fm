@@ -551,38 +551,40 @@ export function createEmptyBundleIndex(): BundleIndex {
 }
 
 // ---------------------------------------------------------------------------
-// 自定义命令（M3）
+// 自定义动作（M3）
 // ---------------------------------------------------------------------------
 
-export type CommandCwdMode = 'project' | 'parent';
+export type ActionCwdMode = 'project' | 'parent';
 
-export interface CustomCommand {
+export interface CustomAction {
   id: string;
   /** 显示名 */
   label: string;
-  /** 可执行命令；占位符 {{path}} {{name}} {{tag:foo}} */
+  /** 可执行动作；占位符 {{path}} {{name}} {{tag:foo}} */
   command: string;
   /** 参数列表；与 command 二选一传给 spawn；同样支持占位符 */
   args?: string[];
   /** 工作目录：项目根 / 项目所在目录；默认 project */
-  cwd?: CommandCwdMode;
+  cwd?: ActionCwdMode;
   /** 备注（可选） */
   description?: string;
+  /** 存储位置：本地（当前设备）或共享（跟随项目数据同步）；默认本地 */
+  scope?: 'local' | 'shared';
 }
 
-export type PresetCommandId =
+export type PresetActionId =
   | 'open.vscode'
   | 'open.explorer'
   | 'open.terminal'
   | 'copy.path'
   | 'copy.name';
 
-export interface PresetCommandDescriptor {
-  id: PresetCommandId;
+export interface PresetActionDescriptor {
+  id: PresetActionId;
   label: string;
 }
 
-export const PRESET_COMMANDS: PresetCommandDescriptor[] = [
+export const PRESET_ACTIONS: PresetActionDescriptor[] = [
   { id: 'open.explorer', label: '在资源管理器中显示' },
   { id: 'open.vscode', label: '在 VS Code 中打开' },
   { id: 'open.terminal', label: '在终端中打开' },
@@ -590,10 +592,10 @@ export const PRESET_COMMANDS: PresetCommandDescriptor[] = [
   { id: 'copy.name', label: '复制名称' },
 ];
 
-export interface CommandRunResult {
-  /** 命令是否成功启动；不等待退出 */
+export interface ActionRunResult {
+  /** 动作是否成功启动；不等待退出 */
   started: boolean;
-  /** 仅 copy.* 命令使用 */
+  /** 仅 copy.* 动作使用 */
   clipboard?: string;
   message?: string;
 }
