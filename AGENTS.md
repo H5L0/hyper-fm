@@ -58,7 +58,7 @@
 - `session.ts`：当前已加载配置与串行写盘会话。
 - `ipc.ts`：`app:*` 与 `fm:*` IPC 通道注册。
 - `fm-error.ts`：跨进程结构化错误。
-- `commands/runner.ts`：全局 / 项目级自定义命令执行，以及全局命令和项目本地命令 CRUD。
+- `commands/runner.ts`：全局 / 项目级自定义动作执行，以及全局动作和项目本地动作 CRUD。
 - `sync/`：同步相关实现，当前包含：
   - `diff.ts` / `snapshot.ts`：差异与快照计算。
   - `file-sync.ts`：文件同步执行。
@@ -95,7 +95,7 @@
 
 - `shared` 关注”这个项目是谁”：项目 ID、名称、标签、描述、指纹、共享忽略规则、同步配置。
 - `local` 关注”这个项目在这台机器上在哪里”：扫描根、本地路径 binding、warning、ignoredPaths；历史 `ui` 字段仅作兼容保留，运行时主题 / 视图以应用级偏好为准。
-- 自定义命令分层存储：全局命令保存在 local 顶层 `commands`；项目级命令可保存在 `local.bindings[].commands`（仅本机）或 `shared.projects[].commands`（随 shared 配置共享）。项目详情中的命令编辑采用草稿模式，点击面板保存后才会真正写盘。
+- 自定义动作分层存储：全局动作可保存在 `LocalConfig.actions`（scope='local'）或 `SharedConfig.actions`（scope='shared'）；项目级动作可保存在 `local.bindings[].actions`（仅本机）或 `shared.projects[].actions`（随 shared 配置共享）。项目详情中的动作编辑采用草稿模式，点击面板保存后才会真正写盘。
 - `shared` 有唯一 `configId`（`cfg_` 前缀），每台设备的 local 独立存放在 `~/.fm/<configId>.local.json`，互不覆盖。
 - 项目目录的文件系统修改时间、同步基线状态均为运行时数据，不持久化到配置文件。
 - “收藏”属于系统必备标签组：默认包含动态标签”最近一月”，即使配置中缺失，运行时也应补齐；托盘项目列表展示的是”收藏”组命中的项目；该组允许修改筛选条件，但不允许删除或改名。

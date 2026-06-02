@@ -48,7 +48,7 @@
 - 项目 ID
 - 项目名称 / 描述 / 标签
 - 项目身份指纹
-- 项目级共享命令（`shared.projects[].commands`）
+- 项目级共享动作（`shared.projects[].actions`）
 - 共享忽略规则
 - 标签注册表（删除标签时会同步清理项目与标签组中的对应引用）
 - 默认会预置一个“收藏”标签组，初始包含动态标签“最近一月”；如果配置里缺少它，运行时也会虚拟补齐
@@ -85,7 +85,7 @@
 			"name": "fm",
 			"description": "项目文件夹管理器",
 			"tags": ["electron"],
-				"commands": [
+				"actions": [
 					{
 						"id": "cmd_shared01",
 						"label": "运行 build",
@@ -108,13 +108,13 @@
 - `sharedConfigId`：关联的 shared 配置 ID
 - `scanRoots`：从哪里开始扫
 - `bindings`：`projectId` 和本机真实路径之间的关系（不再冗余存储 `id`，不再持久化同步状态）
-- `bindings[].commands`：仅对当前设备、当前项目生效的项目级命令列表
+- `bindings[].actions`：仅对当前设备、当前项目生效的项目级动作列表
 - `warnings`：扫描时遇到的冲突与告警
 - `ignoredPaths`：本机明确忽略的目录
 - `ui`：当前机器的视图、主题等偏好（保留在 local 中兼容旧配置；运行时以应用级偏好为准）
 - `syncConfigs`：`LocalSyncConfigEntry[]` 联合类型——`kind: 'override'` 仅存储 configId + 本地覆盖字段；`kind: 'standalone'` 存储完整的本地独占同步配置
 - `devices`：设备身份与已知对端
-- `commands`：适用于所有项目的全局自定义命令列表（M3）
+- `actions`：适用于所有项目的全局自定义动作列表（M3）
 
 它描述的是”这个 shared 项目在当前设备上长什么样”。
 
@@ -138,7 +138,7 @@
 			"rootId": "root_a1b2c3",
 			"hasMetaFile": true,
 			"lastScannedAt": "2026-04-27T12:34:56Z",
-			"commands": [
+			"actions": [
 				{
 					"id": "cmd_local01",
 					"label": "运行 dev server",
@@ -149,7 +149,7 @@
 			]
 		}
 	],
-	"commands": [
+	"actions": [
 		{
 			"id": "cmd_global01",
 			"label": "在 VS Code Insiders 中打开",
@@ -239,10 +239,10 @@ type ProjectFingerprint =
 | `tags` | `.meta-data.tags` → `shared.tags` |
 | `path` | `local.bindings[].path` |
 | `hasMetaFile` | `local.bindings[].hasMetaFile` |
-| `commands` | `local.bindings[].commands` |
-- `sharedCommands` | `shared.projects[].commands` |
+| `actions` | `local.bindings[].actions` |
+| `sharedActions` | `shared.projects[].actions` |
 
-因此，UI 层不必直接处理 shared/local 的拆分细节，但主进程在写盘时必须准确地把聚合视图拆回两份配置。项目详情中的命令页编辑的是聚合后的草稿列表，保存时再根据 scope 拆回 `local.bindings[].commands` 与 `shared.projects[].commands`。
+因此，UI 层不必直接处理 shared/local 的拆分细节，但主进程在写盘时必须准确地把聚合视图拆回两份配置。项目详情中的动作页编辑的是聚合后的草稿列表，保存时再根据 scope 拆回 `local.bindings[].actions` 与 `shared.projects[].actions`。
 
 ### 2.7 忽略规则
 
@@ -311,7 +311,7 @@ type ProjectFingerprint =
 - `config-store.ts`：shared/local 双配置读写与原子落盘。local 路径由 configId 派生（`~/.fm/<configId>.local.json`），启动时自动迁移旧位置文件。
 - `app-config-store.ts`：应用级持久化存储（`~/.fm.app.json`，开发为 `~/.test.fm.app.json`），通过 `lastSharedConfigId` + `knownConfigs` 映射恢复最近打开的配置，并保存托盘开关、开机启动、主题 / 视图等 UI 偏好。
 - `login-item.ts`：封装系统登录项（开机启动）设置，统一处理平台差异与开发模式跳过逻辑。
-- `tray-controller.ts`：系统托盘生命周期、菜单构建，以及项目快捷命令/快速同步入口。
+- `tray-controller.ts`：系统托盘生命周期、菜单构建，以及项目快捷动作/快速同步入口。
 - `session.ts`：维护当前加载配置的会话状态，负责串行写盘，避免并发写坏配置。
 - `project-repo.ts`：shared 项目、本机 binding、标签、扫描根等仓库级操作。
 
@@ -329,7 +329,7 @@ type ProjectFingerprint =
 
 #### 其他业务能力
 
-- `commands/runner.ts`：全局 / 项目级自定义命令执行，以及全局命令和项目本地命令 CRUD。
+- `commands/runner.ts`：全局 / 项目级自定义动作执行，以及全局动作和项目本地动作 CRUD。
 - `sync/`：同步相关实现，后面单独展开。
 
 ### 3.3 preload 与 IPC 边界
@@ -384,7 +384,7 @@ preload 的职责非常明确：
 - 整个右侧详情抽屉统一命名为 `project-info-panel`
 - panel 主体拆成 `project-info-view`、`project-sync-view`、`project-commands-view`，文件树则作为可复用的左侧扩展面板 `project-files-view`
 - `project-sync-view` 负责项目级忽略规则、`.gitignore` 预览与同步目标设置
-- `project-commands-view` 负责项目命令草稿编辑，支持“本地 / 共享”存储范围切换，并复用设置页的命令编辑器
+- `project-commands-view` 负责项目动作草稿编辑，支持“本地 / 共享”存储范围切换，并复用设置页的动作编辑器
 - 若某段 UI 会被多个 view 或对话框复用，应优先下沉到 `components/basic/`
 
 ### 3.6 关键链路
