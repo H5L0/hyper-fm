@@ -43,13 +43,14 @@ export function resolveLoginItemSettings(
         return {
             openAtLogin: preferences.autoLaunchEnabled,
             path: execPath,
-            args: [],
+            args: ['--tray'],
             enabled: true,
         };
     }
 
     return {
         openAtLogin: preferences.autoLaunchEnabled,
+        openAsHidden: true,
     };
 }
 

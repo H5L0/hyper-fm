@@ -27,7 +27,7 @@ describe('login-item', () => {
         )).toEqual({
             openAtLogin: true,
             path: 'C:/Apps/hyper-fm.exe',
-            args: [],
+            args: ['--tray'],
             enabled: true,
         });
     });
@@ -38,6 +38,7 @@ describe('login-item', () => {
             { platform: 'darwin', isPackaged: true, execPath: '/Applications/hyper-fm.app' },
         )).toEqual({
             openAtLogin: false,
+            openAsHidden: true,
         });
     });
 
@@ -53,7 +54,7 @@ describe('login-item', () => {
         expect(setLoginItemSettings).toHaveBeenCalledWith({
             openAtLogin: true,
             path: 'C:/Apps/hyper-fm.exe',
-            args: [],
+            args: ['--tray'],
             enabled: true,
         });
     });

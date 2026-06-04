@@ -169,7 +169,15 @@ async function bootstrap(): Promise<void> {
     },
   });
   await trayController.applyPreferences(currentAppPreferences);
-  showMainWindow(preloadPath);
+
+  const launchedHidden =
+    process.argv.includes('--tray') || app.getLoginItemSettings().wasOpenedAsHidden;
+  if (launchedHidden) {
+    logger.info('自启动托盘模式，跳过主窗口显示');
+  } else {
+    showMainWindow(preloadPath);
+  }
+
   registerIpcHandlers({
     appConfigStore,
     onAppPreferencesChanged: preferences => {
