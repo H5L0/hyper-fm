@@ -82,7 +82,7 @@ describe('schema', () => {
                     rootId: 'root_1',
                     hasMetaFile: false,
                     lastScannedAt: '2026-01-01T00:00:00Z',
-                    commands: [
+                    actions: [
                         {
                             id: 'cmd_1',
                             label: '运行',
@@ -174,7 +174,7 @@ describe('schema', () => {
                     ignore: ['dist/'],
                     favoriteFiles: [' src/main.ts ', 'README.md', 'src\\main.ts'],
                     syncRespectGitignore: true,
-                    commands: [{ id: 'cmd_shared', label: '共享命令', command: 'pnpm dev', cwd: 'project' }],
+                    actions: [{ id: 'cmd_shared', label: '共享命令', command: 'pnpm dev', cwd: 'project' }],
                     fingerprint: { kind: 'file-paths', paths: ['package.json', 'src/main.ts'] },
                 },
             ],

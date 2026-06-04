@@ -292,7 +292,7 @@ describe('project-repo / mergeScanResult', () => {
                 binding.projectId === added.project.id
                     ? {
                         ...binding,
-                        commands: [{ id: 'cmd_project', label: '运行脚本', command: 'pnpm', args: ['dev'], cwd: 'project' as const }],
+                        actions: [{ id: 'cmd_project', label: '运行脚本', command: 'pnpm', args: ['dev'], cwd: 'project' as const }],
                     }
                     : binding
             )),
