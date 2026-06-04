@@ -201,7 +201,7 @@ function validateSharedProject(value: unknown, idx: number, errors: ValidationEr
     if (!isString(value.id)) pushError(errors, `${base}.id`, '缺少 id');
     if (!isString(value.name)) pushError(errors, `${base}.name`, '缺少 name');
     const fingerprint = validateFingerprint(value.fingerprint, `${base}.fingerprint`, errors);
-    const actions = validateActions(value.actions, `${base}.actions`, errors);
+    const actions = validateActions(value.actions ?? value.commands, `${base}.actions`, errors);
     if (!isString(value.id) || !isString(value.name) || !fingerprint) {
         return null;
     }
@@ -238,7 +238,7 @@ function validateProjectBinding(value: unknown, idx: number, errors: ValidationE
     ) {
         return null;
     }
-    const actions = validateActions(value.actions, `${base}.actions`, errors);
+    const actions = validateActions(value.actions ?? value.commands, `${base}.actions`, errors);
     return {
         projectId: value.projectId,
         path: value.path,

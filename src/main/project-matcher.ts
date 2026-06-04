@@ -491,7 +491,7 @@ function buildBinding(
         rootId,
         hasMetaFile: inspection.hasMetaFile,
         lastScannedAt: now,
-        ...(existingBinding?.actions ? { actions: cloneActions(existingBinding.actions) } : {}),
+        ...(existingBinding?.actions ? { actions: cloneActions(existingBinding.actions) } : (existingBinding as Record<string, unknown>)?.commands ? { actions: cloneActions((existingBinding as Record<string, unknown>).commands as ProjectBinding['actions']) } : {}),
     };
 }
 
